@@ -1,4 +1,4 @@
-use std::{path::PathBuf, fs::File, println, io::{stdin, stdout, Write, self}};
+use std::{path::PathBuf, println, io::{stdin, stdout, Write}};
 
 use clap::Parser;
 
@@ -22,11 +22,10 @@ fn run_prompt() -> anyhow::Result<()> {
 }
 
 fn run(source: String) -> anyhow::Result<()> {
-    let tokens = scanner::scan_tokens(source.chars())?;
+    let scanner = scanner::Scanner::new(&source);
+    let tokens = scanner.scan_tokens();
 
-    for token in tokens {
-        println!("{token:?}");
-    }
+    println!("Tokens: {tokens:?}");
 
     Ok(())
 }
