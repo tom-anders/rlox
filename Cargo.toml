@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "bin",
+    "lib/*",
+]
+
+[workspace.dependencies]
+thiserror = { version = "1.0" }
+itertools = "0.10"
