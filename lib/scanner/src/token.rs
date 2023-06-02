@@ -37,7 +37,7 @@ pub enum TokenData {
 
     // Keywords.
     And,
-    Claas,
+    Class,
     Else,
     False,
     Fun,
