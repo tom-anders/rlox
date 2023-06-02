@@ -1,12 +1,12 @@
-#[derive(Debug)]
-pub struct Token<'a> {
-    pub data: TokenData<'a>,
-    pub lexeme: &'a str,
+#[derive(Debug, Clone, PartialEq)]
+pub struct Token {
+    pub data: TokenData,
+    pub lexeme: String,
     pub line: usize,
 }
 
-#[derive(Debug)]
-pub enum TokenData<'a> {
+#[derive(Debug, Clone, PartialEq)]
+pub enum TokenData {
     // Single-character tokens.
     LeftParen,
     RightParen,
@@ -32,7 +32,7 @@ pub enum TokenData<'a> {
 
     // Literals.
     Identifier,
-    StringLiteral(&'a str),
+    StringLiteral(String),
     Number(f64),
 
     // Keywords.
