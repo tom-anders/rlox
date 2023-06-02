@@ -78,7 +78,7 @@ impl Scanner {
         }
     }
 
-    fn consume_until_char(&mut self, stop: char) -> bool {
+    fn consume_until(&mut self, stop: char) -> bool {
         loop {
             match self.consume() {
                 Some(c) if c == stop => return true,
@@ -139,7 +139,7 @@ impl Scanner {
                 '/' => {
                     if self.try_consume('/') {
                         // Comment
-                        self.consume_until_char('\n');
+                        self.consume_until('\n');
                     } else if self.try_consume('*') {
                         self.block_comment();
                     } else {
@@ -202,7 +202,7 @@ impl Scanner {
     }
 
     fn string(&mut self) {
-        if !self.consume_until_char('"') {
+        if !self.consume_until('"') {
             self.errors.0.push(Error::UnterminatedString(
                 self.source[self.start + 1..self.current - 1]
                     .iter()
