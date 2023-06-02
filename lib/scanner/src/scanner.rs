@@ -63,6 +63,9 @@ impl Scanner {
     fn consume(&mut self) -> Option<char> {
         let c = self.source.get(self.current);
         self.current += 1;
+        if c == Some(&'\n') {
+            self.line += 1;
+        }
         c.copied()
     }
 
@@ -137,7 +140,6 @@ impl Scanner {
                     if self.try_consume('/') {
                         // Comment
                         self.consume_until_char('\n');
-                        self.line += 1;
                     } else if self.try_consume('*') {
                         self.block_comment();
                     } else {
@@ -151,9 +153,7 @@ impl Scanner {
 
                 a if Self::is_alpha_or_underscore(a) => self.identifier(),
 
-                ' ' | '\r' | '\t' => (),
-
-                '\n' => self.line += 1,
+                ' ' | '\r' | '\t' | '\n' => (),
 
                 c => self.errors.0.push(Error::UnexpectedCharacted(c)),
             }
@@ -196,7 +196,6 @@ impl Scanner {
                     self.consume();
                     nest_level += 1;
                 }
-                Some('\n') => self.line += 1,
                 _ => (),
             }
         }
