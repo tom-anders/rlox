@@ -139,16 +139,7 @@ impl Scanner {
                         self.consume_until_char('\n');
                         self.line += 1;
                     } else if self.try_consume('*') {
-                        // block Comment
-                        while self.peek() != Some('*') && self.peek_next() != Some('/') {
-                            if self.try_consume('\n') {
-                                self.line += 1;
-                            } else {
-                                self.consume();
-                            }
-                        }
-                        self.consume();
-                        self.consume();
+                        self.block_comment();
                     } else {
                         self.add_token(Slash)
                     }
@@ -186,6 +177,29 @@ impl Scanner {
 
     fn is_alphanumeric_or_underscore(c: char) -> bool {
         c.is_ascii_alphanumeric() || c == '_'
+    }
+
+    fn block_comment(&mut self) {
+        let mut nest_level = 1;
+
+        loop {
+            match self.consume() {
+                Some('*') if self.peek() == Some('/') => {
+                    if nest_level == 1 {
+                        self.consume();
+                        return;
+                    } else {
+                        nest_level -= 1;
+                    }
+                },
+                Some('/') if self.peek() == Some('*') => {
+                    self.consume();
+                    nest_level += 1;
+                }
+                Some('\n') => self.line += 1,
+                _ => (),
+            }
+        }
     }
 
     fn string(&mut self) {
@@ -303,6 +317,22 @@ mod tests {
                     line: 2,
                 },
                 eof(2),
+            ]
+        );
+
+        // test nested block comments
+        let source = "/* hello /* world */ */ 123";
+        let scanner = Scanner::new(source);
+        let tokens = scanner.scan_tokens().unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Token {
+                    data: Number(123.0),
+                    lexeme: "123".to_string(),
+                    line: 1,
+                },
+                eof(1),
             ]
         );
     }
