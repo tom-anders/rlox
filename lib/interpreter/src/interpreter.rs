@@ -3,7 +3,7 @@ use std::unreachable;
 use parser::{Expr, LiteralValue};
 
 mod value;
-use scanner::{Token, token::TokenData};
+use scanner::{token::TokenData, Token};
 use value::*;
 
 #[derive(Debug, thiserror::Error)]
@@ -12,6 +12,8 @@ pub enum Error {
     UnaryMinusOnNonNumber(Value),
     #[error("Tried to apply binary op on at least one non-number value: {0} {1}")]
     BinaryOpOnUnsupportedValue(Value, Value),
+    #[error("Tried to divide by zero")]
+    DivisionByZero,
 }
 
 #[derive(Debug)]
@@ -47,15 +49,25 @@ impl Interpreter {
                 let right = self.evaluate(right)?;
                 match (&left, &right, &operator.data) {
                     (Value::Number(l), Value::Number(r), TokenData::Minus) => Ok((l - r).into()),
-                    (Value::Number(l), Value::Number(r), TokenData::Slash) => Ok((l / r).into()),
+                    (Value::Number(l), Value::Number(r), TokenData::Slash) => {
+                        if *r != 0.0 {
+                            Ok((l / r).into())
+                        } else {
+                            Err(Error::DivisionByZero)
+                        }
+                    }
                     (Value::Number(l), Value::Number(r), TokenData::Star) => Ok((l * r).into()),
                     (Value::Number(l), Value::Number(r), TokenData::Plus) => Ok((l + r).into()),
                     (Value::Str(l), Value::Str(r), TokenData::Plus) => Ok((l.clone() + r).into()),
 
                     (Value::Number(l), Value::Number(r), TokenData::Greater) => Ok((l > r).into()),
-                    (Value::Number(l), Value::Number(r), TokenData::GreaterEqual) => Ok((l >= r).into()),
+                    (Value::Number(l), Value::Number(r), TokenData::GreaterEqual) => {
+                        Ok((l >= r).into())
+                    }
                     (Value::Number(l), Value::Number(r), TokenData::Less) => Ok((l < r).into()),
-                    (Value::Number(l), Value::Number(r), TokenData::LessEqual) => Ok((l <= r).into()),
+                    (Value::Number(l), Value::Number(r), TokenData::LessEqual) => {
+                        Ok((l <= r).into())
+                    }
 
                     (_, _, TokenData::EqualEqual) => Ok(left.eq_in_lox(&right).into()),
                     (_, _, TokenData::BangEqual) => Ok((!left.eq_in_lox(&right)).into()),
