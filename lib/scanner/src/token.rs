@@ -32,7 +32,7 @@ pub enum TokenData<'a> {
 
     // Literals.
     Identifier,
-    StringLiteral(&'a str),
+    Str(&'a str),
     Number(f64),
 
     // Keywords.
