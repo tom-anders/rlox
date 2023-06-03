@@ -23,9 +23,18 @@ fn run_prompt() -> anyhow::Result<()> {
 
 fn run(source: String) -> anyhow::Result<()> {
     let scanner = scanner::Scanner::new(&source);
-    let tokens = scanner.scan_tokens();
+    let tokens = scanner.scan_tokens()?;
 
-    println!("Tokens: {tokens:?}");
+    let parser = parser::Parser::new(&tokens);
+
+    match parser.parse() {
+        Ok(expr) => println!("Expr: {}", expr),
+        Err(errors) => {
+            for error in errors.iter() {
+                println!("error: {:?}", error);
+            }
+        }
+    }
 
     Ok(())
 }

@@ -19,12 +19,9 @@ impl Display for Errors {
     }
 }
 
-mod token;
-pub use token::Token;
+pub mod token;
+pub use token::*;
 use token::TokenData::{self, *};
-
-mod expressions;
-pub use expressions::Expr;
 
 pub struct Scanner<'a> {
     start: std::str::Chars<'a>,
