@@ -1,8 +1,16 @@
+use std::fmt::Display;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token<'a> {
     pub data: TokenData<'a>,
     pub lexeme: &'a str,
     pub line: usize,
+}
+
+impl Display for Token<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.lexeme)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
