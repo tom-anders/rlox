@@ -23,6 +23,9 @@ mod token;
 pub use token::Token;
 use token::TokenData::{self, *};
 
+mod expressions;
+pub use expressions::Expr;
+
 pub struct Scanner<'a> {
     start: std::str::Chars<'a>,
     line: usize,
@@ -216,7 +219,7 @@ impl<'a> Scanner<'a> {
                 start[1..start.len() - self.iter.as_str().len()].to_string()
             ));
         } else {
-            self.add_token(StringLiteral(
+            self.add_token(Str(
                 &start[1..start.len() - self.iter.as_str().len() - 1],
             ));
         }
@@ -380,7 +383,7 @@ mod tests {
             tokens,
             vec![
                 Token {
-                    data: StringLiteral("hello world"),
+                    data: Str("hello world"),
                     lexeme: "\"hello world\"",
                     line: 1,
                 },
