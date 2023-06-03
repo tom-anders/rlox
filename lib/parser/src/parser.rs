@@ -12,9 +12,11 @@ pub struct Parser<'a> {
 
 use TokenData::*;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error<'a> {
+    #[error("error (l. {}): Missing closing `)` after `{}`", .0.line, .0.lexeme)]
     MissingRightParen(&'a Token<'a>),
+    #[error("error (l. {}): Expected primary expression, found: `{}`", .0.line, .0.lexeme)]
     ExpectedPrimaryExpression(&'a Token<'a>),
 }
 
@@ -118,7 +120,7 @@ impl<'a> Parser<'a> {
                 if self.consume(RightParen) {
                     Ok(Box::new(Expr::Grouping(expr)))
                 } else {
-                    Err(Error::MissingRightParen(self.peek_token().unwrap()))
+                    Err(Error::MissingRightParen(self.previous()))
                 }
             }
             _ => Err(Error::ExpectedPrimaryExpression(self.peek_token().unwrap())),

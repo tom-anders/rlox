@@ -31,7 +31,7 @@ fn run(source: String) -> anyhow::Result<()> {
         Ok(expr) => println!("Expr: {}", expr),
         Err(errors) => {
             for error in errors.iter() {
-                println!("error: {:?}", error);
+                println!("error: {}", error);
             }
         }
     }
