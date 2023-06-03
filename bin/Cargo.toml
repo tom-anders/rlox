@@ -12,3 +12,4 @@ clap = { version = "4.3.0", features = ["derive"] }
 
 scanner.path = "../lib/scanner"
 parser.path = "../lib/parser"
+interpreter.path = "../lib/interpreter"

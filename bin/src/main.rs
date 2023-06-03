@@ -1,11 +1,14 @@
 use std::{path::PathBuf, println, io::{stdin, stdout, Write}};
 
 use clap::Parser;
+use interpreter::Interpreter;
 
 #[derive(clap::Parser)]
 struct Args {
     file: Option<PathBuf>,
 }
+
+static INTERPRETER: Interpreter = Interpreter {};
 
 fn run_file(path: PathBuf) -> anyhow::Result<()> {
     run(std::fs::read_to_string(path)?)
@@ -17,7 +20,10 @@ fn run_prompt() -> anyhow::Result<()> {
         stdout().flush()?;
         let mut line = String::new();
         stdin().read_line(&mut line)?;
-        run(line)?
+        match run(line) {
+            Ok(_) => (),
+            Err(e) => println!("error: {}", e),
+        }
     }
 }
 
@@ -28,7 +34,7 @@ fn run(source: String) -> anyhow::Result<()> {
     let parser = parser::Parser::new(&tokens);
 
     match parser.parse() {
-        Ok(expr) => println!("Expr: {}", expr),
+        Ok(expr) => println!("{}", INTERPRETER.interpret(&expr)?),
         Err(errors) => {
             for error in errors.iter() {
                 println!("error: {}", error);
