@@ -248,6 +248,7 @@ dependencies = [
  "anyhow",
  "clap",
  "interpreter",
+ "itertools",
  "parser",
  "scanner",
  "thiserror",
