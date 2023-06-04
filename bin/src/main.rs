@@ -35,19 +35,17 @@ fn run(source: String) -> anyhow::Result<()> {
 
     let parser = parser::Parser::new(&tokens);
 
-    let mut errors = Vec::new();
-    let statements = parser.parse()
-        .filter_map(|r| r.map_err(|e| errors.push(e)).ok()).collect_vec();
-
-    if errors.is_empty() {
-        INTERPRETER.interpret(&statements)?;
-    } else {
-        for error in &errors {
-            println!("{}", error);
+    match parser.parse() {
+        Ok(stmts) => {
+            INTERPRETER.interpret(&stmts)?;
         }
-        bail!("{} error(s) in parsing", errors.len());
+        Err(errors) => {
+            for error in &errors {
+                println!("{}", error);
+            }
+            bail!("{} error(s) in parsing", errors.len());
+        }
     }
-
     Ok(())
 }
 
