@@ -1,6 +1,6 @@
 use std::unreachable;
 
-use parser::{Expr, LiteralValue};
+use parser::{Expr, LiteralValue, Stmt};
 
 mod value;
 use scanner::{token::TokenData, Token};
@@ -20,8 +20,26 @@ pub enum Error {
 pub struct Interpreter {}
 
 impl Interpreter {
-    pub fn interpret(&self, expr: &Expr) -> Result<Value, Error> {
-        self.evaluate(expr)
+    pub fn interpret(&self, stmts: &[Stmt]) -> Result<(), Error> {
+        for s in stmts {
+            self.execute(s)?;
+        }
+        Ok(())
+    }
+
+    fn execute(&self, stmt: &Stmt) -> Result<(), Error> {
+        use Stmt::*;
+        match stmt {
+            Print(expr) => {
+                let value = self.evaluate(expr)?;
+                println!("{}", value);
+                Ok(())
+            }
+            Expression(expr) => {
+                self.evaluate(expr)?;
+                Ok(())
+            }
+        }
     }
 
     fn evaluate(&self, expr: &Expr) -> Result<Value, Error> {

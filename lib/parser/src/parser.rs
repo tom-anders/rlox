@@ -1,4 +1,6 @@
 mod expr;
+mod stmt;
+pub use stmt::Stmt;
 use std::{mem::discriminant, cell::RefCell};
 
 pub use expr::{Expr, LiteralValue};
@@ -18,6 +20,8 @@ pub enum Error<'a> {
     MissingRightParen(&'a Token<'a>),
     #[error("error (l. {}): Expected primary expression, found: `{}`", .0.line, .0.lexeme)]
     ExpectedPrimaryExpression(&'a Token<'a>),
+    #[error("error (l. {}): Expected semicolon after {}", .0.line, .0.lexeme)]
+    ExpectedSemicolon(&'a Token<'a>),
 }
 
 impl<'a> Parser<'a> {
@@ -25,8 +29,40 @@ impl<'a> Parser<'a> {
         Self { tokens, current: 0.into() }
     }
 
-    pub fn parse(&self) -> Result<Box<Expr>, Vec<Error>> {
-        self.expression().map_err(|e| vec![e])
+    pub fn parse(&self) -> impl Iterator<Item = Result<Stmt, Error>> {
+        std::iter::from_fn(|| {
+            if self.is_at_end() {
+                None
+            } else {
+                Some(self.statement())
+            }
+        })
+    }
+
+    fn statement(&self) -> Result<Stmt, Error> {
+        match self.peek() {
+            Some(Print) => self.print_statement(),
+            _ => self.expression_statement(),
+        }
+    }
+    
+    fn print_statement(&self) -> Result<Stmt, Error> {
+        self.advance();
+        let value = self.expression()?;
+        if self.consume(Semicolon) {
+            Ok(Stmt::Print ( value ))
+        } else {
+            Err(Error::ExpectedSemicolon(self.previous()))
+        }
+    }
+
+    fn expression_statement(&self) -> Result<Stmt, Error> {
+        let value = self.expression()?;
+        if self.consume(Semicolon) {
+            Ok(Stmt::Expression ( value ))
+        } else {
+            Err(Error::ExpectedSemicolon(self.previous()))
+        }
     }
 
     fn expression(&self) -> Result<Box<Expr>, Error> {

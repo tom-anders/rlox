@@ -9,6 +9,7 @@ edition = "2021"
 anyhow = "1.0"
 thiserror = { workspace = true }
 clap = { version = "4.3.0", features = ["derive"] }
+itertools.workspace = true
 
 scanner.path = "../lib/scanner"
 parser.path = "../lib/parser"

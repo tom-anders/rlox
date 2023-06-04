@@ -1,7 +1,9 @@
 use std::{path::PathBuf, println, io::{stdin, stdout, Write}};
 
+use anyhow::{anyhow, bail};
 use clap::Parser;
 use interpreter::Interpreter;
+use itertools::Itertools;
 
 #[derive(clap::Parser)]
 struct Args {
@@ -33,13 +35,17 @@ fn run(source: String) -> anyhow::Result<()> {
 
     let parser = parser::Parser::new(&tokens);
 
-    match parser.parse() {
-        Ok(expr) => println!("{}", INTERPRETER.interpret(&expr)?),
-        Err(errors) => {
-            for error in errors.iter() {
-                println!("error: {}", error);
-            }
+    let mut errors = Vec::new();
+    let statements = parser.parse()
+        .filter_map(|r| r.map_err(|e| errors.push(e)).ok()).collect_vec();
+
+    if errors.is_empty() {
+        INTERPRETER.interpret(&statements)?;
+    } else {
+        for error in &errors {
+            println!("{}", error);
         }
+        bail!("{} error(s) in parsing", errors.len());
     }
 
     Ok(())
