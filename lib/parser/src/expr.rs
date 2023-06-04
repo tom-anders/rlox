@@ -8,6 +8,7 @@ pub enum Expr<'a> {
     Grouping(Box<Expr<'a>>),
     Unary { operator: Token<'a>, right: Box<Expr<'a>> },
     Literal(LiteralValue<'a>),
+    Variable(&'a Token<'a>),
 }
 
 impl Display for Expr<'_> {
@@ -24,6 +25,9 @@ impl Display for Expr<'_> {
             }
             Expr::Literal(value) => {
                 write!(f, "{}", value)
+            }
+            Expr::Variable(token) => {
+                write!(f, "{}", token.lexeme)
             }
         }
     }
