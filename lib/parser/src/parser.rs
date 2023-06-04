@@ -1,7 +1,7 @@
 mod expr;
 mod stmt;
 pub use stmt::Stmt;
-use std::{mem::discriminant, cell::RefCell};
+use std::{mem::discriminant, cell::RefCell, println};
 
 pub use expr::{Expr, LiteralValue};
 use scanner::{token::TokenData, Token};
@@ -29,14 +29,33 @@ impl<'a> Parser<'a> {
         Self { tokens, current: 0.into() }
     }
 
-    pub fn parse(&self) -> impl Iterator<Item = Result<Stmt, Error>> {
-        std::iter::from_fn(|| {
-            if self.is_at_end() {
-                None
-            } else {
-                Some(self.statement())
+    pub fn parse(&self) -> Result<Vec<Stmt>, Vec<Error>> {
+        let mut errors = Vec::new();
+        let mut stmts = Vec::new();
+        while !self.is_at_end() {
+            match self.declaration() {
+                Ok(stmt) => stmts.push(stmt),
+                Err(e) => errors.push(e),
             }
-        })
+        }
+
+        if errors.is_empty() {
+            Ok(stmts)
+        } else {
+            Err(errors)
+        }
+    }
+
+    fn declaration(&self) -> Result<Stmt, Error> {
+        if self.consume(Var) {
+            // self.var_declaration()
+            todo!()
+        } else {
+            self.statement().map_err(|e| {
+                self.synchronize();
+                e
+            })
+        }
     }
 
     fn statement(&self) -> Result<Stmt, Error> {
@@ -176,6 +195,10 @@ impl<'a> Parser<'a> {
 
     fn synchronize(&self) {
         loop {
+            if self.is_at_end() {
+                return;
+            }
+
             match self.advance().data {
                 Semicolon => return,
                 Class | Fun | Var | For | If | While | Print | Return => return,
@@ -197,9 +220,9 @@ impl<'a> Parser<'a> {
     }
 
     fn advance(&self) -> &Token<'a> {
-        if !self.is_at_end() {
-            *self.current.borrow_mut() += 1;
-        }
+        assert!(!self.is_at_end());
+
+        *self.current.borrow_mut() += 1;
 
         self.previous()
     }
