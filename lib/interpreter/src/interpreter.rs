@@ -6,6 +6,9 @@ mod value;
 use scanner::{token::TokenData, Token};
 use value::*;
 
+mod environment;
+use environment::Environment;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Tried to apply unary minus on non-number value: {0}")]
@@ -14,20 +17,24 @@ pub enum Error {
     BinaryOpOnUnsupportedValue(Value, Value),
     #[error("Tried to divide by zero")]
     DivisionByZero,
+    #[error("Undefined variable: {0}")]
+    UndefinedVariable(String),
 }
 
-#[derive(Debug)]
-pub struct Interpreter {}
+#[derive(Debug, Default)]
+pub struct Interpreter {
+    environment: Environment,
+}
 
 impl Interpreter {
-    pub fn interpret(&self, stmts: &[Stmt]) -> Result<(), Error> {
+    pub fn interpret(&mut self, stmts: &[Stmt]) -> Result<(), Error> {
         for s in stmts {
             self.execute(s)?;
         }
         Ok(())
     }
 
-    fn execute(&self, stmt: &Stmt) -> Result<(), Error> {
+    fn execute(&mut self, stmt: &Stmt) -> Result<(), Error> {
         use Stmt::*;
         match stmt {
             Print(expr) => {
@@ -40,7 +47,12 @@ impl Interpreter {
                 Ok(())
             }
             Var{name, initializer} => {
-                todo!()
+                let value = match initializer {
+                    Some(init) => self.evaluate(init)?,
+                    None => Value::Nil,
+                };
+                self.environment.define(name.lexeme, value);
+                Ok(())
             }
         }
     }
@@ -66,7 +78,7 @@ impl Interpreter {
             }
 
             Variable(token) => {
-                todo!()
+                self.environment.get(token).cloned().ok_or(Error::UndefinedVariable(token.lexeme.to_string()))
             }
 
             Binary { left, operator, right } => {
