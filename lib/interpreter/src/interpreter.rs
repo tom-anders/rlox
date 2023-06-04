@@ -39,6 +39,9 @@ impl Interpreter {
                 self.evaluate(expr)?;
                 Ok(())
             }
+            Var{name, initializer} => {
+                todo!()
+            }
         }
     }
 
@@ -60,6 +63,10 @@ impl Interpreter {
                     (TokenData::Bang, v) => Ok((!v.is_truthy()).into()),
                     _ => unreachable!(),
                 }
+            }
+
+            Variable(token) => {
+                todo!()
             }
 
             Binary { left, operator, right } => {

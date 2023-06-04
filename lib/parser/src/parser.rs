@@ -22,6 +22,8 @@ pub enum Error<'a> {
     ExpectedPrimaryExpression(&'a Token<'a>),
     #[error("error (l. {}): Expected semicolon after {}", .0.line, .0.lexeme)]
     ExpectedSemicolon(&'a Token<'a>),
+    #[error("error (l. {}): Expected identifier after {}", .0.line, .0.lexeme)]
+    ExpectedIdentifier(&'a Token<'a>),
 }
 
 impl<'a> Parser<'a> {
@@ -47,14 +49,31 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&self) -> Result<Stmt, Error> {
-        if self.consume(Var) {
-            // self.var_declaration()
-            todo!()
+        if self.consume(Var).is_some() {
+            self.var_declaration()
         } else {
             self.statement().map_err(|e| {
                 self.synchronize();
                 e
             })
+        }
+    }
+
+    fn var_declaration(&self) -> Result<Stmt, Error> {
+        let Some(name) = self.consume(Identifier) else {
+            return Err(Error::ExpectedIdentifier(self.previous()));
+        };
+
+        let initializer = if self.consume(Equal).is_some() {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+
+        if self.consume(Semicolon).is_some() {
+            Ok(Stmt::Var { name, initializer })
+        } else {
+            Err(Error::ExpectedSemicolon(self.previous()))
         }
     }
 
@@ -68,7 +87,7 @@ impl<'a> Parser<'a> {
     fn print_statement(&self) -> Result<Stmt, Error> {
         self.advance();
         let value = self.expression()?;
-        if self.consume(Semicolon) {
+        if self.consume(Semicolon).is_some() {
             Ok(Stmt::Print ( value ))
         } else {
             Err(Error::ExpectedSemicolon(self.previous()))
@@ -77,7 +96,7 @@ impl<'a> Parser<'a> {
 
     fn expression_statement(&self) -> Result<Stmt, Error> {
         let value = self.expression()?;
-        if self.consume(Semicolon) {
+        if self.consume(Semicolon).is_some() {
             Ok(Stmt::Expression ( value ))
         } else {
             Err(Error::ExpectedSemicolon(self.previous()))
@@ -172,24 +191,27 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let expr = self.expression()?;
 
-                if self.consume(RightParen) {
+                if self.consume(RightParen).is_some() {
                     Ok(Box::new(Expr::Grouping(expr)))
                 } else {
                     Err(Error::MissingRightParen(self.previous()))
                 }
             }
+            Some(Identifier) => {
+                self.advance();
+                Ok(Box::new(Expr::Variable(self.previous())))
+            }
             _ => Err(Error::ExpectedPrimaryExpression(self.peek_token().unwrap())),
         }
     }
 
-    fn consume(&self, token: TokenData) -> bool {
+    fn consume(&self, token: TokenData) -> Option<&Token> {
         assert!(!matches!(token, Number(_) | Str(_)));
         match self.peek() {
             Some(t) if t == &token => {
-                self.advance();
-                true
+                Some(self.advance())
             }
-            _ => false,
+            _ => None,
         }
     }
 
