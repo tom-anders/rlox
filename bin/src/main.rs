@@ -3,33 +3,30 @@ use std::{path::PathBuf, println, io::{stdin, stdout, Write}};
 use anyhow::{anyhow, bail};
 use clap::Parser;
 use interpreter::Interpreter;
-use itertools::Itertools;
 
 #[derive(clap::Parser)]
 struct Args {
     file: Option<PathBuf>,
 }
 
-static INTERPRETER: Interpreter = Interpreter {};
-
-fn run_file(path: PathBuf) -> anyhow::Result<()> {
-    run(std::fs::read_to_string(path)?)
+fn run_file(path: PathBuf, interpreter: &mut Interpreter) -> anyhow::Result<()> {
+    run(std::fs::read_to_string(path)?, interpreter)
 }
 
-fn run_prompt() -> anyhow::Result<()> {
+fn run_prompt(interpreter: &mut Interpreter) -> anyhow::Result<()> {
     loop {
         print!("> ");
         stdout().flush()?;
         let mut line = String::new();
         stdin().read_line(&mut line)?;
-        match run(line) {
+        match run(line, interpreter) {
             Ok(_) => (),
             Err(e) => println!("error: {}", e),
         }
     }
 }
 
-fn run(source: String) -> anyhow::Result<()> {
+fn run(source: String, interpreter: &mut Interpreter) -> anyhow::Result<()> {
     let scanner = scanner::Scanner::new(&source);
     let tokens = scanner.scan_tokens()?;
 
@@ -37,7 +34,7 @@ fn run(source: String) -> anyhow::Result<()> {
 
     match parser.parse() {
         Ok(stmts) => {
-            INTERPRETER.interpret(&stmts)?;
+            interpreter.interpret(&stmts)?;
         }
         Err(errors) => {
             for error in &errors {
@@ -52,8 +49,10 @@ fn run(source: String) -> anyhow::Result<()> {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
+    let mut interpreter = Interpreter::default();
+
     match args.file {
-        Some(file) => run_file(file),
-        None => run_prompt(),
+        Some(file) => run_file(file, &mut interpreter),
+        None => run_prompt(&mut interpreter),
     }
 }
