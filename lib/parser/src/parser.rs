@@ -24,6 +24,8 @@ pub enum Error<'a> {
     ExpectedSemicolon(&'a Token<'a>),
     #[error("error (l. {}): Expected identifier after {}", .0.line, .0.lexeme)]
     ExpectedIdentifier(&'a Token<'a>),
+    #[error("error (l. {}): Invalid assignment target {}", .0.line, .0.lexeme)]
+    InvalidAssignmentTarget(&'a Token<'a>),
 }
 
 impl<'a> Parser<'a> {
@@ -104,7 +106,23 @@ impl<'a> Parser<'a> {
     }
 
     fn expression(&self) -> Result<Box<Expr>, Error> {
-        self.equality()
+        self.assignment()
+    }
+
+    fn assignment(&self) -> Result<Box<Expr>, Error> {
+        let expr = self.equality()?;
+
+        if self.consume(Equal).is_some() {
+            let value = self.assignment()?;
+
+            if let Expr::Variable ( name ) = *expr {
+                return Ok(Box::new(Expr::Assign { name, value }));
+            }
+
+            return Err(Error::InvalidAssignmentTarget(self.previous()));
+        }
+
+        Ok(expr)
     }
 
     fn equality(&self) -> Result<Box<Expr>, Error> {

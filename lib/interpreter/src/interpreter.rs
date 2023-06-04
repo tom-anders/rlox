@@ -57,7 +57,7 @@ impl Interpreter {
         }
     }
 
-    fn evaluate(&self, expr: &Expr) -> Result<Value, Error> {
+    fn evaluate(&mut self, expr: &Expr) -> Result<Value, Error> {
         use Expr::*;
         match expr {
             Literal(LiteralValue::Number(n)) => Ok((*n).into()),
@@ -79,6 +79,15 @@ impl Interpreter {
 
             Variable(token) => {
                 self.environment.get(token).cloned().ok_or(Error::UndefinedVariable(token.lexeme.to_string()))
+            }
+
+            Assign { name, value } => {
+                let value = self.evaluate(value)?;
+                if self.environment.assign(name, value.clone()) {
+                    Ok(value)
+                } else {
+                    Err(Error::UndefinedVariable(name.lexeme.to_string()))
+                }
             }
 
             Binary { left, operator, right } => {
