@@ -11,6 +11,9 @@ path = "src/scanner.rs"
 [dependencies]
 thiserror.workspace = true
 itertools.workspace = true
+pretty_assertions.workspace = true
 
 strum = { version = "0.24.1", features = ["derive"] }
 strum_macros = "0.24.3"
+
+errors = { path = "../errors" }
