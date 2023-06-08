@@ -1,7 +1,8 @@
 mod expr;
 mod stmt;
+use errors::{RloxError, RloxErrors};
+use std::{cell::RefCell, println};
 pub use stmt::Stmt;
-use std::{mem::discriminant, cell::RefCell, println};
 
 pub use expr::{Expr, LiteralValue};
 use scanner::{token::TokenData, Token};
@@ -15,17 +16,59 @@ pub struct Parser<'a> {
 use TokenData::*;
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error<'a> {
-    #[error("error (l. {}): Missing closing `)` after `{}`", .0.line, .0.lexeme)]
-    MissingRightParen(&'a Token<'a>),
-    #[error("error (l. {}): Expected primary expression, found: `{}`", .0.line, .0.lexeme)]
-    ExpectedPrimaryExpression(&'a Token<'a>),
-    #[error("error (l. {}): Expected semicolon after {}", .0.line, .0.lexeme)]
-    ExpectedSemicolon(&'a Token<'a>),
-    #[error("error (l. {}): Expected identifier after {}", .0.line, .0.lexeme)]
-    ExpectedIdentifier(&'a Token<'a>),
-    #[error("error (l. {}): Invalid assignment target {}", .0.line, .0.lexeme)]
-    InvalidAssignmentTarget(&'a Token<'a>),
+pub struct ParserError<'a> {
+    error: ParserErrorType,
+    token: &'a Token<'a>,
+}
+
+impl<'a> From<ParserError<'a>> for RloxError {
+    fn from(error: ParserError<'a>) -> Self {
+        RloxError { line: error.token.line, col: error.token.col_start, message: error.to_string() }
+    }
+}
+
+impl<'a> ParserError<'a> {
+    fn new(error: ParserErrorType, token: &'a Token<'a>) -> Self {
+        Self { token, error }
+    }
+}
+
+impl std::fmt::Display for ParserError<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self.error {
+                ParserErrorType::MissingRightParen =>
+                    format!("Missing closing `)` after `{}`", self.token.lexeme),
+                ParserErrorType::ExpectedPrimaryExpression =>
+                    format!("Expected primary expression, found: `{}`", self.token.lexeme),
+                ParserErrorType::ExpectedSemicolon =>
+                    format!("Expected semicolon after {}", self.token.lexeme),
+                ParserErrorType::ExpectedIdentifier =>
+                    format!("Expected identifier after {}", self.token.lexeme),
+                ParserErrorType::InvalidAssignmentTarget =>
+                    format!("Invalid assignment target {}", self.token.lexeme),
+            }
+        )
+    }
+}
+
+struct ParserErrors<'a>(Vec<ParserError<'a>>);
+
+impl<'a> From<ParserErrors<'a>> for RloxErrors {
+    fn from(errors: ParserErrors<'a>) -> Self {
+        Self(errors.0.into_iter().map(|e| e.into()).collect())
+    }
+}
+
+#[derive(Debug)]
+pub enum ParserErrorType {
+    MissingRightParen,
+    ExpectedPrimaryExpression,
+    ExpectedSemicolon,
+    ExpectedIdentifier,
+    InvalidAssignmentTarget,
 }
 
 impl<'a> Parser<'a> {
@@ -33,24 +76,24 @@ impl<'a> Parser<'a> {
         Self { tokens, current: 0.into() }
     }
 
-    pub fn parse(&self) -> Result<Vec<Stmt>, Vec<Error>> {
-        let mut errors = Vec::new();
+    pub fn parse(&self) -> Result<Vec<Stmt>, RloxErrors> {
+        let mut errors = ParserErrors(Vec::new());
         let mut stmts = Vec::new();
         while !self.is_at_end() {
             match self.declaration() {
                 Ok(stmt) => stmts.push(stmt),
-                Err(e) => errors.push(e),
+                Err(e) => errors.0.push(e),
             }
         }
 
-        if errors.is_empty() {
+        if errors.0.is_empty() {
             Ok(stmts)
         } else {
-            Err(errors)
+            Err(errors.into())
         }
     }
 
-    fn declaration(&self) -> Result<Stmt, Error> {
+    fn declaration(&self) -> Result<Stmt, ParserError> {
         if self.consume(Var).is_some() {
             self.var_declaration()
         } else {
@@ -61,71 +104,71 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn var_declaration(&self) -> Result<Stmt, Error> {
+    fn var_declaration(&self) -> Result<Stmt, ParserError> {
         let Some(name) = self.consume(Identifier) else {
-            return Err(Error::ExpectedIdentifier(self.previous()));
+            return Err(ParserError::new(ParserErrorType::ExpectedIdentifier, self.previous()));
         };
 
-        let initializer = if self.consume(Equal).is_some() {
-            Some(self.expression()?)
-        } else {
-            None
-        };
+        let initializer =
+            if self.consume(Equal).is_some() { Some(self.expression()?) } else { None };
 
         if self.consume(Semicolon).is_some() {
             Ok(Stmt::Var { name, initializer })
         } else {
-            Err(Error::ExpectedSemicolon(self.previous()))
+            Err(ParserError::new(ParserErrorType::ExpectedSemicolon, self.previous()))
         }
     }
 
-    fn statement(&self) -> Result<Stmt, Error> {
+    fn statement(&self) -> Result<Stmt, ParserError> {
         match self.peek() {
             Some(Print) => self.print_statement(),
             _ => self.expression_statement(),
         }
     }
-    
-    fn print_statement(&self) -> Result<Stmt, Error> {
+
+    fn print_statement(&self) -> Result<Stmt, ParserError> {
         self.advance();
         let value = self.expression()?;
         if self.consume(Semicolon).is_some() {
-            Ok(Stmt::Print ( value ))
+            Ok(Stmt::Print(value))
         } else {
-            Err(Error::ExpectedSemicolon(self.previous()))
+            Err(ParserError::new(ParserErrorType::ExpectedSemicolon, self.previous()))
         }
     }
 
-    fn expression_statement(&self) -> Result<Stmt, Error> {
+    fn expression_statement(&self) -> Result<Stmt, ParserError> {
         let value = self.expression()?;
         if self.consume(Semicolon).is_some() {
-            Ok(Stmt::Expression ( value ))
+            Ok(Stmt::Expression(value))
         } else {
-            Err(Error::ExpectedSemicolon(self.previous()))
+            Err(ParserError::new(ParserErrorType::ExpectedSemicolon, self.previous()))
         }
     }
 
-    fn expression(&self) -> Result<Box<Expr>, Error> {
+    fn expression(&self) -> Result<Box<Expr>, ParserError> {
         self.assignment()
     }
 
-    fn assignment(&self) -> Result<Box<Expr>, Error> {
+    fn assignment(&self) -> Result<Box<Expr>, ParserError> {
         let expr = self.equality()?;
 
         if self.consume(Equal).is_some() {
             let value = self.assignment()?;
 
-            if let Expr::Variable ( name ) = *expr {
+            if let Expr::Variable(name) = *expr {
                 return Ok(Box::new(Expr::Assign { name, value }));
             }
 
-            return Err(Error::InvalidAssignmentTarget(self.previous()));
+            return Err(ParserError::new(
+                ParserErrorType::InvalidAssignmentTarget,
+                self.previous(),
+            ));
         }
 
         Ok(expr)
     }
 
-    fn equality(&self) -> Result<Box<Expr>, Error> {
+    fn equality(&self) -> Result<Box<Expr>, ParserError> {
         let mut expr = self.comparison()?;
 
         while let Some(BangEqual) | Some(EqualEqual) = self.peek() {
@@ -137,7 +180,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn comparison(&self) -> Result<Box<Expr>, Error> {
+    fn comparison(&self) -> Result<Box<Expr>, ParserError> {
         let mut expr = self.term()?;
 
         while let Some(Greater) | Some(GreaterEqual) | Some(Less) | Some(LessEqual) = self.peek() {
@@ -149,7 +192,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn term(&self) -> Result<Box<Expr>, Error> {
+    fn term(&self) -> Result<Box<Expr>, ParserError> {
         let mut expr = self.factor()?;
 
         while let Some(Plus) | Some(Minus) = self.peek() {
@@ -161,7 +204,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn factor(&self) -> Result<Box<Expr>, Error> {
+    fn factor(&self) -> Result<Box<Expr>, ParserError> {
         let mut expr = self.unary()?;
 
         while let Some(Star) | Some(Slash) = self.peek() {
@@ -173,7 +216,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn unary(&self) -> Result<Box<Expr>, Error> {
+    fn unary(&self) -> Result<Box<Expr>, ParserError> {
         if let Some(Minus) | Some(Bang) = self.peek() {
             self.advance();
             let operator = self.previous().clone();
@@ -183,7 +226,7 @@ impl<'a> Parser<'a> {
         self.primary()
     }
 
-    fn primary(&self) -> Result<Box<Expr>, Error> {
+    fn primary(&self) -> Result<Box<Expr>, ParserError> {
         match self.peek() {
             Some(False) => {
                 self.advance();
@@ -212,23 +255,24 @@ impl<'a> Parser<'a> {
                 if self.consume(RightParen).is_some() {
                     Ok(Box::new(Expr::Grouping(expr)))
                 } else {
-                    Err(Error::MissingRightParen(self.previous()))
+                    Err(ParserError::new(ParserErrorType::MissingRightParen, self.previous()))
                 }
             }
             Some(Identifier) => {
                 self.advance();
                 Ok(Box::new(Expr::Variable(self.previous())))
             }
-            _ => Err(Error::ExpectedPrimaryExpression(self.peek_token().unwrap())),
+            _ => Err(ParserError::new(
+                ParserErrorType::ExpectedPrimaryExpression,
+                self.peek_token().unwrap(),
+            )),
         }
     }
 
     fn consume(&self, token: TokenData) -> Option<&Token> {
         assert!(!matches!(token, Number(_) | Str(_)));
         match self.peek() {
-            Some(t) if t == &token => {
-                Some(self.advance())
-            }
+            Some(t) if t == &token => Some(self.advance()),
             _ => None,
         }
     }
@@ -246,7 +290,6 @@ impl<'a> Parser<'a> {
             };
         }
     }
-
 }
 
 // Helpers
@@ -273,5 +316,43 @@ impl<'a> Parser<'a> {
 
     fn is_at_end(&self) -> bool {
         self.peek() == Some(&Eof)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use scanner::Scanner;
+
+    use super::*;
+
+    #[test]
+    fn missing_semicolon() {
+        let scanner = Scanner::new("var a = 1");
+        let tokens = scanner.scan_tokens().unwrap();
+        let parser = Parser::new(&tokens);
+        let result = parser.parse();
+        assert_eq!(
+            result.unwrap_err(),
+            RloxErrors(vec![RloxError {
+                line: 1,
+                col: 9,
+                message: "Expected semicolon after 1".to_string()
+            }])
+        );
+    }
+
+    #[test]
+    fn synchronize_after_error() {
+        let scanner = Scanner::new("var a = 1 var b = 2;\nvar c = 3");
+        let tokens = scanner.scan_tokens().unwrap();
+        let parser = Parser::new(&tokens);
+        let result = parser.parse();
+        assert_eq!(
+            result.unwrap_err(),
+            RloxErrors(vec![
+                RloxError { line: 1, col: 9, message: "Expected semicolon after 1".to_string() },
+                RloxError { line: 2, col: 9, message: "Expected semicolon after 3".to_string() }
+            ])
+        );
     }
 }

@@ -14,3 +14,4 @@ itertools.workspace = true
 scanner.path = "../lib/scanner"
 parser.path = "../lib/parser"
 interpreter.path = "../lib/interpreter"
+errors.path = "../lib/errors"

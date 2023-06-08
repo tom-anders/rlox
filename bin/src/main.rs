@@ -2,6 +2,7 @@ use std::{path::PathBuf, println, io::{stdin, stdout, Write}};
 
 use anyhow::{anyhow, bail};
 use clap::Parser;
+use errors::RloxErrors;
 use interpreter::Interpreter;
 
 #[derive(clap::Parser)]
@@ -21,7 +22,7 @@ fn run_prompt(interpreter: &mut Interpreter) -> anyhow::Result<()> {
         stdin().read_line(&mut line)?;
         match run(line, interpreter) {
             Ok(_) => (),
-            Err(e) => println!("error: {}", e),
+            Err(e) => println!("{}", e),
         }
     }
 }
@@ -37,10 +38,8 @@ fn run(source: String, interpreter: &mut Interpreter) -> anyhow::Result<()> {
             interpreter.interpret(&stmts)?;
         }
         Err(errors) => {
-            for error in &errors {
-                println!("{}", error);
-            }
-            bail!("{} error(s) in parsing", errors.len());
+            println!("{}", errors);
+            bail!("{} error(s) in parsing", errors.0.len());
         }
     }
     Ok(())

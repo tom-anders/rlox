@@ -7,3 +7,4 @@ members = [
 [workspace.dependencies]
 thiserror = { version = "1.0" }
 itertools = "0.10"
+pretty_assertions = "1.2"

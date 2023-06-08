@@ -5,6 +5,7 @@ pub struct Token<'a> {
     pub data: TokenData<'a>,
     pub lexeme: &'a str,
     pub line: usize,
+    pub col_start: usize,
 }
 
 impl Display for Token<'_> {
