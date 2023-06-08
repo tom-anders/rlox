@@ -1,81 +1,44 @@
 #[derive(thiserror::Error, Debug, PartialEq)]
-pub enum ScanError {
+pub enum ScanError<'a> {
     #[error("Unexpected character: {0}")]
     UnexpectedCharacted(char),
     #[error("Unterminated string: {0}")]
-    UnterminatedString(String),
+    UnterminatedString(&'a str),
 }
 
 pub mod token;
-use std::println;
 
-use errors::RloxErrors;
+use std::{
+    borrow::Borrow,
+    cell::{Ref, RefCell},
+    convert::Infallible,
+    println,
+};
+
+use errors::{RloxError, RloxErrors};
+use source::Cursor;
 use token::TokenData::{self, *};
 pub use token::*;
 
+#[derive(Debug)]
 pub struct Scanner<'a> {
-    start: std::str::Chars<'a>, // start of current lexeme
-    col_start: usize, // start column of current lexeme
-    line: usize,
-    col: usize,
-    iter: std::str::Chars<'a>,
-    tokens: Vec<Token<'a>>,
-    errors: errors::RloxErrors,
+    start: Cursor<'a>,
+    cursor: Cursor<'a>,
 }
 
 impl<'a> Scanner<'a> {
-    pub fn new(source: &'a str) -> Self {
-        Self {
-            start: source.chars(),
-            col_start: 1,
-            line: 1,
-            col: 1,
-            iter: source.chars(),
-            tokens: Vec::new(),
-            errors: RloxErrors(Vec::new()),
-        }
-    }
-
-    fn add_error(&mut self, error: ScanError) {
-        self.errors.push(errors::RloxError {
-            line: self.line,
-            col: self.col - 1,
-            message: error.to_string(),
-        });
-    }
-
-    fn add_token(&mut self, data: TokenData<'a>) {
-        let start = self.start.as_str();
-        self.tokens.push(Token {
-            data,
-            // https://wduquette.github.io/parsing-strings-into-slices/
-            // TODO factor out into helper
-            lexeme: &start[..start.len() - self.iter.as_str().len()],
-            line: self.line,
-            col_start: self.col_start,
-        })
-    }
-
-    fn peek_next(&self) -> Option<char> {
-        let mut tmp = self.iter.clone();
-        match tmp.next() {
-            Some(_) => tmp.next(),
-            None => None,
-        }
+    fn new(source: &'a str) -> Self {
+        let start = Cursor::new(source);
+        let cursor = start.clone();
+        Self { start, cursor }
     }
 
     fn peek(&self) -> Option<char> {
-        self.iter.clone().next()
+        self.cursor.peek()
     }
 
     fn consume(&mut self) -> Option<char> {
-        let c = self.iter.next();
-        self.col += 1;
-        if c == Some('\n') {
-            self.line += 1;
-            self.col = 1;
-        }
-        c
+        self.cursor.next()
     }
 
     fn try_consume(&mut self, c: char) -> bool {
@@ -98,53 +61,65 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn scan_tokens(mut self) -> Result<Vec<Token<'a>>, errors::RloxErrors> {
+    fn token(&self, data: TokenData<'a>) -> Result<Token<'a>, RloxError> {
+        Ok(Token::new(data, self.start.clone(), self.cursor.clone()))
+    }
+
+    fn error(&self, error: ScanError) -> Result<Token<'a>, RloxError> {
+        let prev = self.cursor.prev().unwrap();
+        Err(RloxError { line: prev.line(), col: prev.col(), message: error.to_string() })
+    }
+
+    pub fn scan_token(&mut self) -> Option<Result<Token<'a>, RloxError>> {
         loop {
-            self.start = self.iter.clone();
-            self.col_start = self.col;
+            self.start = self.cursor.clone();
             if let Some(c) = self.consume() {
                 match c {
-                    '(' => self.add_token(LeftParen),
-                    ')' => self.add_token(RightParen),
-                    '{' => self.add_token(LeftBrace),
-                    '}' => self.add_token(RightBrace),
-                    ',' => self.add_token(Comma),
-                    '.' => self.add_token(Dot),
-                    '-' => self.add_token(Minus),
-                    '+' => self.add_token(Plus),
-                    ';' => self.add_token(Semicolon),
-                    '*' => self.add_token(Star),
+                    '(' => return self.token(LeftParen).into(),
+                    ')' => return self.token(RightParen).into(),
+                    '{' => return self.token(LeftBrace).into(),
+                    '}' => return self.token(RightBrace).into(),
+                    ',' => return self.token(Comma).into(),
+                    '.' => return self.token(Dot).into(),
+                    '-' => return self.token(Minus).into(),
+                    '+' => return self.token(Plus).into(),
+                    ';' => return self.token(Semicolon).into(),
+                    '*' => return self.token(Star).into(),
 
                     '!' => {
-                        if self.try_consume('=') {
-                            self.add_token(BangEqual)
+                        return if self.try_consume('=') {
+                            self.token(BangEqual)
                         } else {
-                            self.add_token(Bang)
+                            self.token(Bang)
                         }
+                        .into()
                     }
 
                     '=' => {
-                        if self.try_consume('=') {
-                            self.add_token(EqualEqual)
+                        return if self.try_consume('=') {
+                            self.token(EqualEqual)
                         } else {
-                            self.add_token(Equal)
+                            self.token(Equal)
                         }
+                        .into();
                     }
 
                     '<' => {
-                        if self.try_consume('=') {
-                            self.add_token(LessEqual)
+                        return if self.try_consume('=') {
+                            self.token(LessEqual)
                         } else {
-                            self.add_token(Less)
+                            self.token(Less)
                         }
+                        .into();
                     }
 
                     '>' => {
-                        if self.try_consume('=') {
-                            self.add_token(GreaterEqual)
+                        return if self.try_consume('=') {
+                            self.token(GreaterEqual)
                         } else {
-                            self.add_token(Greater)
+                            self.token(Greater)
                         }
+                        .into();
                     }
 
                     '/' => {
@@ -154,28 +129,24 @@ impl<'a> Scanner<'a> {
                         } else if self.try_consume('*') {
                             self.block_comment();
                         } else {
-                            self.add_token(Slash)
+                            return self.token(Slash).into();
                         }
                     }
 
-                    d if d.is_ascii_digit() => self.number(),
+                    d if d.is_ascii_digit() => return self.number().into(),
 
-                    '"' => self.string(),
+                    '"' => return self.string().into(),
 
-                    a if Self::is_alpha_or_underscore(a) => self.identifier(),
+                    a if Self::is_alpha_or_underscore(a) => return self.identifier().into(),
 
                     ' ' | '\r' | '\t' | '\n' => (),
 
-                    c => self.add_error(ScanError::UnexpectedCharacted(c)),
+                    c => return self.error(ScanError::UnexpectedCharacted(c)).into(),
                 }
             } else {
-                break;
+                return None;
             }
         }
-        self.col -= 1;
-        self.add_token(TokenData::Eof);
-
-        self.errors.is_empty().then_some(self.tokens).ok_or(self.errors)
     }
 
     fn is_alpha_or_underscore(c: char) -> bool {
@@ -186,6 +157,7 @@ impl<'a> Scanner<'a> {
         c.is_ascii_alphanumeric() || c == '_'
     }
 
+    // TODO: infinite loop?
     fn block_comment(&mut self) {
         let mut nest_level = 1;
 
@@ -208,14 +180,16 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn string(&mut self) {
-        let start = self.start.as_str();
+    fn lexeme(&self) -> &'a str {
+        self.start.slice_until(&self.cursor)
+    }
+
+    fn string(&mut self) -> Result<Token<'a>, RloxError> {
         if !self.consume_until('"') {
-            self.add_error(ScanError::UnterminatedString(
-                start[1..start.len() - self.iter.as_str().len()].to_string(),
-            ));
+            self.error(ScanError::UnterminatedString(&self.lexeme()[1..]))
         } else {
-            self.add_token(Str(&start[1..start.len() - self.iter.as_str().len() - 1]));
+            let s = self.lexeme();
+            self.token(TokenData::Str(&s[1..s.len() - 1]))
         }
     }
 
@@ -225,46 +199,52 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn number(&mut self) {
+    fn number(&mut self) -> Result<Token<'a>, RloxError> {
         self.consume_digits();
 
-        if self.peek() == Some('.') && self.peek_next().map(|c| c.is_ascii_digit()) == Some(true) {
+        if self.peek() == Some('.')
+            && self.cursor.peek_next().map(|c| c.is_ascii_digit()) == Some(true)
+        {
             self.consume();
 
             self.consume_digits();
         }
 
-        let start = self.start.as_str();
-        self.add_token(Number(start[..start.len() - self.iter.as_str().len()].parse().unwrap()));
+        self.token(Number(self.lexeme().parse().unwrap()))
     }
 
-    fn identifier(&mut self) {
+    fn identifier(&mut self) -> Result<Token<'a>, RloxError> {
         while self.peek().map(Self::is_alphanumeric_or_underscore).unwrap_or(false) {
             self.consume();
         }
 
-        let start = self.start.as_str();
-        let text: String = start[..start.len() - self.iter.as_str().len()].to_string();
-
-        match text.as_str() {
-            "and" => self.add_token(And),
-            "class" => self.add_token(Class),
-            "else" => self.add_token(Else),
-            "false" => self.add_token(False),
-            "for" => self.add_token(For),
-            "fun" => self.add_token(Fun),
-            "if" => self.add_token(If),
-            "nil" => self.add_token(Nil),
-            "or" => self.add_token(Or),
-            "print" => self.add_token(Print),
-            "return" => self.add_token(Return),
-            "super" => self.add_token(Super),
-            "this" => self.add_token(This),
-            "true" => self.add_token(True),
-            "var" => self.add_token(Var),
-            "while" => self.add_token(While),
-            _ => self.add_token(Identifier),
+        match self.lexeme() {
+            "and" => self.token(And),
+            "class" => self.token(Class),
+            "else" => self.token(Else),
+            "false" => self.token(False),
+            "for" => self.token(For),
+            "fun" => self.token(Fun),
+            "if" => self.token(If),
+            "nil" => self.token(Nil),
+            "or" => self.token(Or),
+            "print" => self.token(Print),
+            "return" => self.token(Return),
+            "super" => self.token(Super),
+            "this" => self.token(This),
+            "true" => self.token(True),
+            "var" => self.token(Var),
+            "while" => self.token(While),
+            _ => self.token(Identifier),
         }
+    }
+}
+
+impl<'a> Iterator for Scanner<'a> {
+    type Item = Result<Token<'a>, RloxError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.scan_token()
     }
 }
 
@@ -276,238 +256,334 @@ mod tests {
 
     use super::*;
 
-    fn eof(line: usize, col_start: usize) -> Token<'static> {
-        Token { data: Eof, lexeme: "", line, col_start }
+    #[derive(Debug, PartialEq)]
+    struct ExpectedToken<'a> {
+        data: TokenData<'a>,
+        line: usize,
+        col: usize,
+        lexeme: String,
+    }
+
+    impl<'a> From<Token<'a>> for ExpectedToken<'a> {
+        fn from(token: Token<'a>) -> Self {
+            ExpectedToken {
+                data: token.data.clone(),
+                line: token.line(),
+                col: token.col(),
+                lexeme: token.lexeme().to_string(),
+            }
+        }
+    }
+
+    fn scan_tokens(source: &str) -> Vec<Result<ExpectedToken, RloxError>> {
+        Scanner::new(source).map(|t| t.map(ExpectedToken::from)).collect()
     }
 
     #[test]
     fn unexpected_char() {
-        let errors = Scanner::new("var x = 3;\n  @").scan_tokens().unwrap_err();
         assert_eq!(
-            errors,
-            RloxErrors(vec![RloxError {
-                line: 2,
-                col: 3,
-                message: ScanError::UnexpectedCharacted('@').to_string()
-            }])
+            scan_tokens("var x = 3;\n  @"),
+            vec![
+                Ok(ExpectedToken { data: Var, line: 1, col: 1, lexeme: "var".to_string() }),
+                Ok(ExpectedToken { data: Identifier, line: 1, col: 5, lexeme: "x".to_string() }),
+                Ok(ExpectedToken { data: Equal, line: 1, col: 7, lexeme: "=".to_string() }),
+                Ok(ExpectedToken { data: Number(3.0), line: 1, col: 9, lexeme: "3".to_string() }),
+                Ok(ExpectedToken { data: Semicolon, line: 1, col: 10, lexeme: ";".to_string() }),
+                Err(RloxError {
+                    line: 2,
+                    col: 3,
+                    message: ScanError::UnexpectedCharacted('@').to_string()
+                })
+            ]
         );
     }
 
     #[test]
     fn test_block_comments() {
-        let source = "/* hello world */";
-        let scanner = Scanner::new(source);
-        let tokens = scanner.scan_tokens().unwrap();
-        assert_eq!(tokens, vec![eof(1, 18)]);
+        assert!(scan_tokens("/* hello world */").is_empty());
 
-        let source = "/* hello world */ 123";
-        let scanner = Scanner::new(source);
-        let tokens = scanner.scan_tokens().unwrap();
         assert_eq!(
-            tokens,
-            vec![Token { data: Number(123.0), lexeme: "123", line: 1, col_start: 19 }, eof(1, 22),]
+            scan_tokens("/* hello world */ 123"),
+            vec![Ok(ExpectedToken {
+                data: Number(123.0),
+                line: 1,
+                col: 19,
+                lexeme: "123".to_string()
+            }),]
         );
 
-        let source = "/* hello world \n */ 123";
-        let scanner = Scanner::new(source);
-        let tokens = scanner.scan_tokens().unwrap();
         assert_eq!(
-            tokens,
-            vec![Token { data: Number(123.0), lexeme: "123", line: 2, col_start: 5 }, eof(2, 8),]
+            scan_tokens("/* hello world \n */ 123"),
+            vec![Ok(ExpectedToken {
+                data: Number(123.0),
+                line: 2,
+                col: 5,
+                lexeme: "123".to_string()
+            }),]
         );
 
         // test nested block comments
-        let source = "/* hello /* world */ */ 123";
-        let scanner = Scanner::new(source);
-        let tokens = scanner.scan_tokens().unwrap();
         assert_eq!(
-            tokens,
-            vec![Token { data: Number(123.0), lexeme: "123", line: 1, col_start: 25 }, eof(1, 28),]
+            scan_tokens("/* hello /* world */ */ 123"),
+            vec![Ok(ExpectedToken {
+                data: Number(123.0),
+                line: 1,
+                col: 25,
+                lexeme: "123".to_string()
+            }),]
         );
     }
 
     #[test]
     fn test_number_literals() {
-        let source = "123 1.23 1";
-        let scanner = Scanner::new(source);
-        let tokens = scanner.scan_tokens().unwrap();
         assert_eq!(
-            tokens,
+            scan_tokens("123 1.23 1"),
             vec![
-                Token { data: Number(123.0), lexeme: "123", line: 1, col_start: 1 },
-                Token { data: Number(1.23), lexeme: "1.23", line: 1, col_start: 5 },
-                Token { data: Number(1.0), lexeme: "1", line: 1, col_start: 10 },
-                eof(1, 11),
+                Ok(ExpectedToken {
+                    data: Number(123.0),
+                    line: 1,
+                    col: 1,
+                    lexeme: "123".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: Number(1.23),
+                    line: 1,
+                    col: 5,
+                    lexeme: "1.23".to_string()
+                }),
+                Ok(ExpectedToken { data: Number(1.0), line: 1, col: 10, lexeme: "1".to_string() }),
             ]
         );
     }
 
     #[test]
     fn string_literals() {
-        let source = "\"hello world\"";
-        let scanner = Scanner::new(source);
-        let tokens = scanner.scan_tokens().unwrap();
         assert_eq!(
-            tokens,
-            vec![
-                Token {
-                    data: Str("hello world"),
-                    lexeme: "\"hello world\"",
-                    line: 1,
-                    col_start: 1
-                },
-                eof(1, 14),
-            ]
+            scan_tokens("\"hello world\""),
+            vec![Ok(ExpectedToken {
+                data: Str("hello world"),
+                line: 1,
+                col: 1,
+                lexeme: "\"hello world\"".to_string()
+            }),]
         );
 
-        let source = "     \n\n \"hello world";
-        let scanner = Scanner::new(source);
-        let errors = scanner.scan_tokens().unwrap_err();
         assert_eq!(
-            errors,
-            RloxErrors(vec![errors::RloxError {
+            scan_tokens("     \n\n \"hello world"),
+            vec![Err(RloxError {
                 line: 3,
-                col: 14,
-                message: ScanError::UnterminatedString("hello world".to_string()).to_string(),
-            }])
+                col: 13,
+                message: ScanError::UnterminatedString("hello world").to_string()
+            }),]
         );
 
-        let source = "\"hello world\n";
-        let scanner = Scanner::new(source);
-        let errors = scanner.scan_tokens().unwrap_err();
         assert_eq!(
-            errors,
-            RloxErrors(vec![errors::RloxError {
-                line: 2,
-                col: 0,
-                message: ScanError::UnterminatedString("hello world\n".to_string()).to_string(),
-            }])
+            scan_tokens("\"hello world\n"),
+            vec![Err(RloxError {
+                line: 1,
+                col: 13,
+                message: ScanError::UnterminatedString("hello world\n").to_string()
+            }),]
         );
     }
-
     #[test]
     fn two_char_tokens() {
-        let source = "! != = == < <= > >=";
-        let scanner = Scanner::new(source);
-        let tokens = scanner.scan_tokens().unwrap();
         assert_eq!(
-            tokens,
+            scan_tokens("! != = == < <= > >="),
             vec![
-                Token { data: Bang, lexeme: "!", line: 1, col_start: 1 },
-                Token { data: BangEqual, lexeme: "!=", line: 1, col_start: 3 },
-                Token { data: Equal, lexeme: "=", line: 1, col_start: 6 },
-                Token { data: EqualEqual, lexeme: "==", line: 1, col_start: 8 },
-                Token { data: Less, lexeme: "<", line: 1, col_start: 11 },
-                Token { data: LessEqual, lexeme: "<=", line: 1, col_start: 13 },
-                Token { data: Greater, lexeme: ">", line: 1, col_start: 16 },
-                Token { data: GreaterEqual, lexeme: ">=", line: 1, col_start: 18 },
-                eof(1, 20),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_single_char_tokens() {
-        let source = "=(){},.-+;*/!<>";
-        let scanner = Scanner::new(source);
-        let tokens = scanner.scan_tokens().unwrap();
-        assert_eq!(
-            tokens,
-            vec![
-                Token { data: Equal, lexeme: "=", line: 1, col_start: 1 },
-                Token { data: LeftParen, lexeme: "(", line: 1, col_start: 2 },
-                Token { data: RightParen, lexeme: ")", line: 1, col_start: 3 },
-                Token { data: LeftBrace, lexeme: "{", line: 1, col_start: 4 },
-                Token { data: RightBrace, lexeme: "}", line: 1, col_start: 5 },
-                Token { data: Comma, lexeme: ",", line: 1, col_start: 6 },
-                Token { data: Dot, lexeme: ".", line: 1, col_start: 7 },
-                Token { data: Minus, lexeme: "-", line: 1, col_start: 8 },
-                Token { data: Plus, lexeme: "+", line: 1, col_start: 9 },
-                Token { data: Semicolon, lexeme: ";", line: 1, col_start: 10 },
-                Token { data: Star, lexeme: "*", line: 1, col_start: 11 },
-                Token { data: Slash, lexeme: "/", line: 1, col_start: 12 },
-                Token { data: Bang, lexeme: "!", line: 1, col_start: 13 },
-                Token { data: Less, lexeme: "<", line: 1, col_start: 14 },
-                Token { data: Greater, lexeme: ">", line: 1, col_start: 15 },
-                eof(1, 16),
+                Ok(ExpectedToken {
+                    data: TokenData::Bang,
+                    line: 1,
+                    col: 1,
+                    lexeme: "!".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::BangEqual,
+                    line: 1,
+                    col: 3,
+                    lexeme: "!=".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::Equal,
+                    line: 1,
+                    col: 6,
+                    lexeme: "=".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::EqualEqual,
+                    line: 1,
+                    col: 8,
+                    lexeme: "==".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::Less,
+                    line: 1,
+                    col: 11,
+                    lexeme: "<".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::LessEqual,
+                    line: 1,
+                    col: 13,
+                    lexeme: "<=".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::Greater,
+                    line: 1,
+                    col: 16,
+                    lexeme: ">".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::GreaterEqual,
+                    line: 1,
+                    col: 18,
+                    lexeme: ">=".to_string()
+                }),
             ]
         );
     }
 
     #[test]
     fn test_line_comment() {
-        let source = "// this is a comment\n";
-        let scanner = Scanner::new(source);
-        let tokens = scanner.scan_tokens().unwrap();
-        assert_eq!(tokens, vec![eof(2, 1)]);
-    }
+        assert_eq!(scan_tokens("// hello world"), vec![]);
 
-    #[test]
-    fn test_comments() {
-        let source = "a // comment\nb";
-        let scanner = Scanner::new(source);
-        let tokens = scanner.scan_tokens().unwrap();
         assert_eq!(
-            tokens,
-            vec![
-                Token { data: Identifier, lexeme: "a", line: 1, col_start: 1 },
-                Token { data: Identifier, lexeme: "b", line: 2, col_start: 1 },
-                eof(2, 2),
-            ]
+            scan_tokens("// hello world\n123"),
+            vec![Ok(ExpectedToken {
+                data: Number(123.0),
+                line: 2,
+                col: 1,
+                lexeme: "123".to_string()
+            }),]
         );
     }
 
     #[test]
     fn test_whitespace() {
-        let source = " \t\r\n";
-        let scanner = Scanner::new(source);
-        let tokens = scanner.scan_tokens().unwrap();
-        assert_eq!(tokens, vec![eof(2, 1)]);
+        assert_eq!(scan_tokens(" \t\r\n"), vec![]);
     }
 
     #[test]
     fn test_identifiers() {
-        let source = "a a_c _abc _abc123";
-        let scanner = Scanner::new(source);
-        let tokens = scanner.scan_tokens().unwrap();
         assert_eq!(
-            tokens,
+            scan_tokens("a a_c _abc _abc123"),
             vec![
-                Token { data: Identifier, lexeme: "a", line: 1, col_start: 1 },
-                Token { data: Identifier, lexeme: "a_c", line: 1, col_start: 3 },
-                Token { data: Identifier, lexeme: "_abc", line: 1, col_start: 7 },
-                Token { data: Identifier, lexeme: "_abc123", line: 1, col_start: 12 },
-                eof(1, 19),
+                Ok(ExpectedToken { data: Identifier, line: 1, col: 1, lexeme: "a".to_string() }),
+                Ok(ExpectedToken { data: Identifier, line: 1, col: 3, lexeme: "a_c".to_string() }),
+                Ok(ExpectedToken { data: Identifier, line: 1, col: 7, lexeme: "_abc".to_string() }),
+                Ok(ExpectedToken {
+                    data: Identifier,
+                    line: 1,
+                    col: 12,
+                    lexeme: "_abc123".to_string()
+                }),
             ]
         );
     }
 
     #[test]
     fn test_keywords() {
-        let source =
-            "and class else false for fun if nil or print return super this true var while";
-        let scanner = Scanner::new(source);
-        let tokens = scanner.scan_tokens().unwrap();
         assert_eq!(
-            tokens,
+            scan_tokens(
+                "and class else false for fun if nil or print return super this true var while"
+            ),
             vec![
-                Token { data: And, lexeme: "and", line: 1, col_start: 1 },
-                Token { data: Class, lexeme: "class", line: 1, col_start: 5 },
-                Token { data: Else, lexeme: "else", line: 1, col_start: 11 },
-                Token { data: False, lexeme: "false", line: 1, col_start: 16 },
-                Token { data: For, lexeme: "for", line: 1, col_start: 22 },
-                Token { data: Fun, lexeme: "fun", line: 1, col_start: 26 },
-                Token { data: If, lexeme: "if", line: 1, col_start: 30 },
-                Token { data: Nil, lexeme: "nil", line: 1, col_start: 33 },
-                Token { data: Or, lexeme: "or", line: 1, col_start: 37 },
-                Token { data: Print, lexeme: "print", line: 1, col_start: 40 },
-                Token { data: Return, lexeme: "return", line: 1, col_start: 46 },
-                Token { data: Super, lexeme: "super", line: 1, col_start: 53 },
-                Token { data: This, lexeme: "this", line: 1, col_start: 59 },
-                Token { data: True, lexeme: "true", line: 1, col_start: 64 },
-                Token { data: Var, lexeme: "var", line: 1, col_start: 69 },
-                Token { data: While, lexeme: "while", line: 1, col_start: 73 },
-                eof(1, 78),
+                Ok(ExpectedToken {
+                    data: TokenData::And,
+                    line: 1,
+                    col: 1,
+                    lexeme: "and".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::Class,
+                    line: 1,
+                    col: 5,
+                    lexeme: "class".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::Else,
+                    line: 1,
+                    col: 11,
+                    lexeme: "else".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::False,
+                    line: 1,
+                    col: 16,
+                    lexeme: "false".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::For,
+                    line: 1,
+                    col: 22,
+                    lexeme: "for".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::Fun,
+                    line: 1,
+                    col: 26,
+                    lexeme: "fun".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::If,
+                    line: 1,
+                    col: 30,
+                    lexeme: "if".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::Nil,
+                    line: 1,
+                    col: 33,
+                    lexeme: "nil".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::Or,
+                    line: 1,
+                    col: 37,
+                    lexeme: "or".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::Print,
+                    line: 1,
+                    col: 40,
+                    lexeme: "print".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::Return,
+                    line: 1,
+                    col: 46,
+                    lexeme: "return".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::Super,
+                    line: 1,
+                    col: 53,
+                    lexeme: "super".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::This,
+                    line: 1,
+                    col: 59,
+                    lexeme: "this".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::True,
+                    line: 1,
+                    col: 64,
+                    lexeme: "true".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::Var,
+                    line: 1,
+                    col: 69,
+                    lexeme: "var".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: TokenData::While,
+                    line: 1,
+                    col: 73,
+                    lexeme: "while".to_string()
+                }),
             ]
         );
     }

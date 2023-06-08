@@ -327,9 +327,17 @@ dependencies = [
  "errors",
  "itertools",
  "pretty_assertions",
+ "source",
  "strum",
  "strum_macros",
  "thiserror",
+]
+
+[[package]]
+name = "source"
+version = "0.1.0"
+dependencies = [
+ "itertools",
 ]
 
 [[package]]
