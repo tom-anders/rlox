@@ -51,7 +51,7 @@ impl Interpreter {
                     Some(init) => self.evaluate(init)?,
                     None => Value::Nil,
                 };
-                self.environment.define(name.lexeme, value);
+                self.environment.define(name.lexeme(), value);
                 Ok(())
             }
         }
@@ -78,7 +78,7 @@ impl Interpreter {
             }
 
             Variable(token) => {
-                self.environment.get(token).cloned().ok_or(Error::UndefinedVariable(token.lexeme.to_string()))
+                self.environment.get(token).cloned().ok_or(Error::UndefinedVariable(token.lexeme().to_string()))
             }
 
             Assign { name, value } => {
@@ -86,7 +86,7 @@ impl Interpreter {
                 if self.environment.assign(name, value.clone()) {
                     Ok(value)
                 } else {
-                    Err(Error::UndefinedVariable(name.lexeme.to_string()))
+                    Err(Error::UndefinedVariable(name.lexeme().to_string()))
                 }
             }
 

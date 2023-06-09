@@ -15,12 +15,12 @@ impl Environment {
     }
 
     pub fn get<'a>(&'a self, token: &Token) -> Option<&'a Value> {
-        self.values.get(token.lexeme)
+        self.values.get(token.lexeme())
     }
 
     pub fn assign(&mut self, token: &Token, value: Value) -> bool {
-        if self.values.contains_key(token.lexeme) {
-            self.values.insert(token.lexeme.to_string(), value);
+        if self.values.contains_key(token.lexeme()) {
+            self.values.insert(token.lexeme().to_string(), value);
             true
         } else {
             false

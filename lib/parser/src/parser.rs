@@ -23,7 +23,7 @@ pub struct ParserError<'a> {
 
 impl<'a> From<ParserError<'a>> for RloxError {
     fn from(error: ParserError<'a>) -> Self {
-        RloxError { line: error.token.line, col: error.token.col_start, message: error.to_string() }
+        RloxError { line: error.token.line(), col: error.token.col(), message: error.to_string() }
     }
 }
 
@@ -40,15 +40,15 @@ impl std::fmt::Display for ParserError<'_> {
             "{}",
             match self.error {
                 ParserErrorType::MissingRightParen =>
-                    format!("Missing closing `)` after `{}`", self.token.lexeme),
+                    format!("Missing closing `)` after `{}`", self.token.lexeme()),
                 ParserErrorType::ExpectedPrimaryExpression =>
-                    format!("Expected primary expression, found: `{}`", self.token.lexeme),
+                    format!("Expected primary expression, found: `{}`", self.token.lexeme()),
                 ParserErrorType::ExpectedSemicolon =>
-                    format!("Expected semicolon after {}", self.token.lexeme),
+                    format!("Expected semicolon after {}", self.token.lexeme()),
                 ParserErrorType::ExpectedIdentifier =>
-                    format!("Expected identifier after {}", self.token.lexeme),
+                    format!("Expected identifier after {}", self.token.lexeme()),
                 ParserErrorType::InvalidAssignmentTarget =>
-                    format!("Invalid assignment target {}", self.token.lexeme),
+                    format!("Invalid assignment target {}", self.token.lexeme()),
             }
         )
     }
@@ -321,14 +321,11 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use scanner::Scanner;
-
     use super::*;
 
     #[test]
     fn missing_semicolon() {
-        let scanner = Scanner::new("var a = 1");
-        let tokens = scanner.scan_tokens().unwrap();
+        let tokens = scanner::scan_tokens("var a = 1").unwrap();
         let parser = Parser::new(&tokens);
         let result = parser.parse();
         assert_eq!(
@@ -343,8 +340,7 @@ mod tests {
 
     #[test]
     fn synchronize_after_error() {
-        let scanner = Scanner::new("var a = 1 var b = 2;\nvar c = 3");
-        let tokens = scanner.scan_tokens().unwrap();
+        let tokens = scanner::scan_tokens("var a = 1 var b = 2;\nvar c = 3").unwrap();
         let parser = Parser::new(&tokens);
         let result = parser.parse();
         assert_eq!(

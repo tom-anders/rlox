@@ -4,6 +4,7 @@ use anyhow::{anyhow, bail};
 use clap::Parser;
 use errors::RloxErrors;
 use interpreter::Interpreter;
+use itertools::Itertools;
 
 #[derive(clap::Parser)]
 struct Args {
@@ -28,8 +29,7 @@ fn run_prompt(interpreter: &mut Interpreter) -> anyhow::Result<()> {
 }
 
 fn run(source: String, interpreter: &mut Interpreter) -> anyhow::Result<()> {
-    let scanner = scanner::Scanner::new(&source);
-    let tokens = scanner.scan_tokens()?;
+    let tokens = scanner::scan_tokens(&source)?;
 
     let parser = parser::Parser::new(&tokens);
 
