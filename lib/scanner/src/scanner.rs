@@ -10,12 +10,7 @@ pub enum ScanError<'a> {
 
 pub mod token;
 
-use std::{
-    borrow::Borrow,
-    cell::{Ref, RefCell},
-    convert::Infallible,
-    println, unreachable,
-};
+
 
 use errors::{RloxError, RloxErrors};
 use source::Cursor;
@@ -280,7 +275,7 @@ pub fn scan_tokens(source: &str) -> Result<Vec<Token>, RloxErrors> {
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::{assert_eq, assert_ne};
+    use pretty_assertions::{assert_eq};
 
     use errors::RloxError;
 

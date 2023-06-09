@@ -3,7 +3,7 @@ use std::unreachable;
 use parser::{Expr, LiteralValue, Stmt};
 
 mod value;
-use scanner::{token::TokenData, Token};
+use scanner::{token::TokenData};
 use value::*;
 
 mod environment;

@@ -1,7 +1,7 @@
 mod expr;
 mod stmt;
 use errors::{RloxError, RloxErrors};
-use std::{cell::RefCell, println};
+use std::{cell::RefCell};
 pub use stmt::Stmt;
 
 pub use expr::{Expr, LiteralValue};
