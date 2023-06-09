@@ -4,6 +4,7 @@ use anyhow::{bail};
 use clap::Parser;
 
 use interpreter::Interpreter;
+use scanner::TokenStream;
 
 
 #[derive(clap::Parser)]
@@ -29,9 +30,9 @@ fn run_prompt(interpreter: &mut Interpreter) -> anyhow::Result<()> {
 }
 
 fn run(source: String, interpreter: &mut Interpreter) -> anyhow::Result<()> {
-    let tokens = scanner::scan_tokens(&source)?;
+    let token_stream = TokenStream::new(&source);
 
-    let parser = parser::Parser::new(&tokens);
+    let parser = parser::Parser::new(token_stream);
 
     match parser.parse() {
         Ok(stmts) => {

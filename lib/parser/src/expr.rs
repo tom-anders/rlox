@@ -8,8 +8,8 @@ pub enum Expr<'a> {
     Grouping(Box<Expr<'a>>),
     Unary { operator: Token<'a>, right: Box<Expr<'a>> },
     Literal(LiteralValue<'a>),
-    Variable(&'a Token<'a>),
-    Assign{name: &'a Token<'a>, value: Box<Expr<'a>>},
+    Variable(Token<'a>),
+    Assign{name: Token<'a>, value: Box<Expr<'a>>},
 }
 
 impl Display for Expr<'_> {

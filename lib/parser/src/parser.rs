@@ -1,64 +1,36 @@
 mod expr;
 mod stmt;
 use errors::{RloxError, RloxErrors};
-use std::{cell::RefCell};
+use std::{
+    cell::{RefCell},
+    iter::Peekable, unreachable,
+};
 pub use stmt::Stmt;
 
 pub use expr::{Expr, LiteralValue};
-use scanner::{token::TokenData, Token};
-
-#[derive(Debug)]
-pub struct Parser<'a> {
-    tokens: &'a [Token<'a>],
-    current: RefCell<usize>,
-}
+use scanner::{token::TokenData, Token, TokenStream};
 
 use TokenData::*;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub struct ParserError<'a> {
     error: ParserErrorType,
-    token: &'a Token<'a>,
+    token: Token<'a>,
 }
 
 impl<'a> From<ParserError<'a>> for RloxError {
     fn from(error: ParserError<'a>) -> Self {
-        RloxError { line: error.token.line(), col: error.token.col(), message: error.to_string() }
+        RloxError {
+            line: error.token.line(),
+            col: error.token.col(),
+            message: error.error.to_string(),
+        }
     }
 }
 
 impl<'a> ParserError<'a> {
-    fn new(error: ParserErrorType, token: &'a Token<'a>) -> Self {
+    fn new(error: ParserErrorType, token: Token<'a>) -> Self {
         Self { token, error }
-    }
-}
-
-impl std::fmt::Display for ParserError<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self.error {
-                ParserErrorType::MissingRightParen =>
-                    format!("Missing closing `)` after `{}`", self.token.lexeme()),
-                ParserErrorType::ExpectedPrimaryExpression =>
-                    format!("Expected primary expression, found: `{}`", self.token.lexeme()),
-                ParserErrorType::ExpectedSemicolon =>
-                    format!("Expected semicolon after {}", self.token.lexeme()),
-                ParserErrorType::ExpectedIdentifier =>
-                    format!("Expected identifier after {}", self.token.lexeme()),
-                ParserErrorType::InvalidAssignmentTarget =>
-                    format!("Invalid assignment target {}", self.token.lexeme()),
-            }
-        )
-    }
-}
-
-struct ParserErrors<'a>(Vec<ParserError<'a>>);
-
-impl<'a> From<ParserErrors<'a>> for RloxErrors {
-    fn from(errors: ParserErrors<'a>) -> Self {
-        Self(errors.0.into_iter().map(|e| e.into()).collect())
     }
 }
 
@@ -71,283 +43,339 @@ pub enum ParserErrorType {
     InvalidAssignmentTarget,
 }
 
+impl std::fmt::Display for ParserErrorType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ParserErrorType::MissingRightParen => "Missing closing `)` after expression",
+                ParserErrorType::ExpectedPrimaryExpression => "Expected primary expression",
+                ParserErrorType::ExpectedSemicolon => "Expected semicolon after expression",
+                ParserErrorType::ExpectedIdentifier => "Expected identifier after expression",
+                ParserErrorType::InvalidAssignmentTarget => "Invalid assignment target",
+            }
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct Parser<'a> {
+    token_stream: RefCell<Peekable<TokenStream<'a>>>,
+}
+
 impl<'a> Parser<'a> {
-    pub fn new(tokens: &'a [Token<'a>]) -> Self {
-        Self { tokens, current: 0.into() }
+    pub fn new(token_stream: TokenStream<'a>) -> Self {
+        Self { token_stream: RefCell::new(token_stream.peekable()) }
     }
 
     pub fn parse(&self) -> Result<Vec<Stmt>, RloxErrors> {
-        let mut errors = ParserErrors(Vec::new());
+        let mut errors = RloxErrors(Vec::new());
         let mut stmts = Vec::new();
         while !self.is_at_end() {
             match self.declaration() {
                 Ok(stmt) => stmts.push(stmt),
-                Err(e) => errors.0.push(e),
+                Err(e) => {
+                    self.synchronize();
+                    errors.0.push(e)
+                }
             }
         }
 
         if errors.0.is_empty() {
             Ok(stmts)
         } else {
-            Err(errors.into())
+            Err(errors)
         }
     }
 
-    fn declaration(&self) -> Result<Stmt, ParserError> {
-        if self.consume(Var).is_some() {
+    fn declaration(&self) -> Result<Stmt, RloxError> {
+        if self.consume(Var)?.is_ok() {
             self.var_declaration()
         } else {
-            self.statement().map_err(|e| {
-                self.synchronize();
-                e
-            })
+            self.statement()
         }
     }
 
-    fn var_declaration(&self) -> Result<Stmt, ParserError> {
-        let Some(name) = self.consume(Identifier) else {
-            return Err(ParserError::new(ParserErrorType::ExpectedIdentifier, self.previous()));
+    fn var_declaration(&self) -> Result<Stmt, RloxError> {
+        let name = match self.consume(Identifier)? {
+            Ok(name) => name,
+            Err(token) => {
+                return Err(ParserError::new(ParserErrorType::ExpectedIdentifier, token).into())
+            }
         };
 
-        let initializer =
-            if self.consume(Equal).is_some() { Some(self.expression()?) } else { None };
+        let initializer = match self.consume(Equal)? {
+            Ok(_) => Some(self.expression()?),
+            Err(_) => None,
+        };
 
-        if self.consume(Semicolon).is_some() {
-            Ok(Stmt::Var { name, initializer })
-        } else {
-            Err(ParserError::new(ParserErrorType::ExpectedSemicolon, self.previous()))
+        match self.consume(Semicolon)? {
+            Ok(_) => Ok(Stmt::Var { name, initializer }),
+            Err(token) => Err(ParserError::new(ParserErrorType::ExpectedSemicolon, token).into()),
         }
     }
 
-    fn statement(&self) -> Result<Stmt, ParserError> {
+    fn statement(&self) -> Result<Stmt, RloxError> {
         match self.peek() {
-            Some(Print) => self.print_statement(),
+            Some(Err(_)) => {
+                unreachable!("ScanError should already have been caught in declaration()")
+            }
+            Some(Ok(Print)) => self.print_statement(),
             _ => self.expression_statement(),
         }
     }
 
-    fn print_statement(&self) -> Result<Stmt, ParserError> {
-        self.advance();
+    fn print_statement(&self) -> Result<Stmt, RloxError> {
+        self.advance()?;
         let value = self.expression()?;
-        if self.consume(Semicolon).is_some() {
-            Ok(Stmt::Print(value))
-        } else {
-            Err(ParserError::new(ParserErrorType::ExpectedSemicolon, self.previous()))
+        match self.consume(Semicolon)? {
+            Ok(_) => Ok(Stmt::Print(value)),
+            Err(token) => Err(ParserError::new(ParserErrorType::ExpectedSemicolon, token).into()),
         }
     }
 
-    fn expression_statement(&self) -> Result<Stmt, ParserError> {
+    fn expression_statement(&self) -> Result<Stmt, RloxError> {
         let value = self.expression()?;
-        if self.consume(Semicolon).is_some() {
-            Ok(Stmt::Expression(value))
-        } else {
-            Err(ParserError::new(ParserErrorType::ExpectedSemicolon, self.previous()))
+        match self.consume(Semicolon)? {
+            Ok(_) => Ok(Stmt::Expression(value)),
+            Err(token) => Err(ParserError::new(ParserErrorType::ExpectedSemicolon, token).into()),
         }
     }
 
-    fn expression(&self) -> Result<Box<Expr>, ParserError> {
+    fn expression(&self) -> Result<Box<Expr>, RloxError> {
         self.assignment()
     }
 
-    fn assignment(&self) -> Result<Box<Expr>, ParserError> {
+    fn assignment(&self) -> Result<Box<Expr>, RloxError> {
         let expr = self.equality()?;
 
-        if self.consume(Equal).is_some() {
+        if let Ok(equal) = self.consume(Equal)? {
             let value = self.assignment()?;
 
             if let Expr::Variable(name) = *expr {
                 return Ok(Box::new(Expr::Assign { name, value }));
             }
 
-            return Err(ParserError::new(
-                ParserErrorType::InvalidAssignmentTarget,
-                self.previous(),
-            ));
+            return Err(ParserError::new(ParserErrorType::InvalidAssignmentTarget, equal).into());
         }
 
         Ok(expr)
     }
 
-    fn equality(&self) -> Result<Box<Expr>, ParserError> {
+    fn equality(&self) -> Result<Box<Expr>, RloxError> {
         let mut expr = self.comparison()?;
 
-        while let Some(BangEqual) | Some(EqualEqual) = self.peek() {
-            self.advance();
-            let operator = self.previous().clone();
+        while let Some(Ok(BangEqual)) | Some(Ok(EqualEqual)) = self.peek() {
+            let operator = self.advance()?;
             let right = self.comparison()?;
             expr = Box::new(Expr::Binary { left: expr, operator, right })
         }
         Ok(expr)
     }
 
-    fn comparison(&self) -> Result<Box<Expr>, ParserError> {
+    fn comparison(&self) -> Result<Box<Expr>, RloxError> {
         let mut expr = self.term()?;
 
-        while let Some(Greater) | Some(GreaterEqual) | Some(Less) | Some(LessEqual) = self.peek() {
-            self.advance();
-            let operator = self.previous().clone();
+        while let Some(Ok(Greater))
+        | Some(Ok(GreaterEqual))
+        | Some(Ok(Less))
+        | Some(Ok(LessEqual)) = self.peek()
+        {
+            let operator = self.advance()?;
             let right = self.term()?;
             expr = Box::new(Expr::Binary { left: expr, operator, right })
         }
         Ok(expr)
     }
 
-    fn term(&self) -> Result<Box<Expr>, ParserError> {
+    fn term(&self) -> Result<Box<Expr>, RloxError> {
         let mut expr = self.factor()?;
 
-        while let Some(Plus) | Some(Minus) = self.peek() {
-            self.advance();
-            let operator = self.previous().clone();
+        while let Some(Ok(Plus)) | Some(Ok(Minus)) = self.peek() {
+            let operator = self.advance()?;
             let right = self.factor()?;
             expr = Box::new(Expr::Binary { left: expr, operator, right })
         }
         Ok(expr)
     }
 
-    fn factor(&self) -> Result<Box<Expr>, ParserError> {
+    fn factor(&self) -> Result<Box<Expr>, RloxError> {
         let mut expr = self.unary()?;
 
-        while let Some(Star) | Some(Slash) = self.peek() {
-            self.advance();
-            let operator = self.previous().clone();
+        while let Some(Ok(Star)) | Some(Ok(Slash)) = self.peek() {
+            let operator = self.advance()?;
             let right = self.unary()?;
             expr = Box::new(Expr::Binary { left: expr, operator, right })
         }
         Ok(expr)
     }
 
-    fn unary(&self) -> Result<Box<Expr>, ParserError> {
-        if let Some(Minus) | Some(Bang) = self.peek() {
-            self.advance();
-            let operator = self.previous().clone();
+    fn unary(&self) -> Result<Box<Expr>, RloxError> {
+        if let Some(Ok(Minus)) | Some(Ok(Bang)) = self.peek() {
+            let operator = self.advance()?;
             let right = self.unary()?;
             return Ok(Box::new(Expr::Unary { operator, right }));
         }
         self.primary()
     }
 
-    fn primary(&self) -> Result<Box<Expr>, ParserError> {
-        match self.peek() {
-            Some(False) => {
-                self.advance();
-                Ok(Box::new(Expr::Literal(LiteralValue::Boolean(false))))
-            }
-            Some(True) => {
-                self.advance();
-                Ok(Box::new(Expr::Literal(LiteralValue::Boolean(true))))
-            }
-            Some(Str(s)) => {
-                self.advance();
-                Ok(Box::new(Expr::Literal(LiteralValue::Str(s))))
-            }
-            Some(Number(n)) => {
-                self.advance();
-                Ok(Box::new(Expr::Literal(LiteralValue::Number(*n))))
-            }
-            Some(Nil) => {
-                self.advance();
-                Ok(Box::new(Expr::Literal(LiteralValue::Nil)))
-            }
-            Some(LeftParen) => {
-                self.advance();
+    fn primary(&self) -> Result<Box<Expr>, RloxError> {
+        let token = self.advance()?;
+        match token.data {
+            False => Ok(Box::new(Expr::Literal(LiteralValue::Boolean(false)))),
+            True => Ok(Box::new(Expr::Literal(LiteralValue::Boolean(true)))),
+            Str(s) => Ok(Box::new(Expr::Literal(LiteralValue::Str(s)))),
+            Number(n) => Ok(Box::new(Expr::Literal(LiteralValue::Number(n)))),
+            Nil => Ok(Box::new(Expr::Literal(LiteralValue::Nil))),
+            LeftParen => {
                 let expr = self.expression()?;
 
-                if self.consume(RightParen).is_some() {
-                    Ok(Box::new(Expr::Grouping(expr)))
-                } else {
-                    Err(ParserError::new(ParserErrorType::MissingRightParen, self.previous()))
+                match self.consume(RightParen)? {
+                    Ok(_) => Ok(Box::new(Expr::Grouping(expr))),
+                    Err(token) => {
+                        Err(ParserError::new(ParserErrorType::MissingRightParen, token).into())
+                    }
                 }
             }
-            Some(Identifier) => {
-                self.advance();
-                Ok(Box::new(Expr::Variable(self.previous())))
-            }
-            _ => Err(ParserError::new(
-                ParserErrorType::ExpectedPrimaryExpression,
-                self.peek_token().unwrap(),
-            )),
+            Identifier => Ok(Box::new(Expr::Variable(token))),
+
+            _ => Err(ParserError::new(ParserErrorType::ExpectedPrimaryExpression, token).into()),
         }
     }
 
-    fn consume(&self, token: TokenData) -> Option<&Token> {
+    fn consume(&self, token: TokenData) -> Result<Result<Token, Token>, RloxError> {
         assert!(!matches!(token, Number(_) | Str(_)));
-        match self.peek() {
-            Some(t) if t == &token => Some(self.advance()),
-            _ => None,
+        match self.peek_token() {
+            Some(Ok(t)) if t.data == token => Ok(Ok(self.advance().unwrap())),
+            Some(Ok(t)) => Ok(Err(t)),
+            Some(Err(err)) => Err(err),
+            None => unreachable!("Should have hit Eof"),
         }
     }
 
     fn synchronize(&self) {
         loop {
-            if self.is_at_end() {
-                return;
+            if let Ok(t) = self.advance() {
+                match t.data {
+                    Semicolon => return,
+                    Class | Fun | Var | For | If | While | Print | Return | Eof => return,
+                    _ => {}
+                }
             }
-
-            match self.advance().data {
-                Semicolon => return,
-                Class | Fun | Var | For | If | While | Print | Return => return,
-                _ => {}
-            };
         }
     }
 }
 
 // Helpers
 impl<'a> Parser<'a> {
-    fn peek(&self) -> Option<&TokenData> {
-        self.peek_token().map(|t| &t.data)
+    fn peek_token(&self) -> Option<Result<Token, RloxError>> {
+        self.token_stream.borrow_mut().peek().cloned()
     }
 
-    fn peek_token(&self) -> Option<&Token> {
-        self.tokens.get(*self.current.borrow())
+    fn peek(&self) -> Option<Result<TokenData, RloxError>> {
+        self.peek_token().map(|t| t.map(|t| t.data))
     }
 
-    fn advance(&self) -> &Token<'a> {
-        assert!(!self.is_at_end());
-
-        *self.current.borrow_mut() += 1;
-
-        self.previous()
-    }
-
-    fn previous(&self) -> &Token<'a> {
-        &self.tokens[*self.current.borrow() - 1]
+    fn advance(&self) -> Result<Token<'a>, RloxError> {
+        self.token_stream.borrow_mut().next().unwrap()
     }
 
     fn is_at_end(&self) -> bool {
-        self.peek() == Some(&Eof)
+        match self.peek() {
+            Some(Ok(Eof)) => true,
+            Some(_) => false,
+            None => true,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use scanner::ScanError;
+
     use super::*;
 
     #[test]
-    fn missing_semicolon() {
-        let tokens = scanner::scan_tokens("var a = 1").unwrap();
-        let parser = Parser::new(&tokens);
+    fn invalid_ident() {
+        let parser = Parser::new(TokenStream::new("var @ = 3;\nprint $<4;"));
+        let result = parser.parse();
+        assert_eq!(
+            result.unwrap_err(),
+            RloxErrors(vec![
+                RloxError {
+                    line: 1,
+                    col: 5,
+                    message: ScanError::UnexpectedCharacter('@').to_string(),
+                },
+                RloxError {
+                    line: 2,
+                    col: 7,
+                    message: ScanError::UnexpectedCharacter('$').to_string(),
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn print_without_semicolon() {
+        let parser = Parser::new(TokenStream::new("print 1"));
         let result = parser.parse();
         assert_eq!(
             result.unwrap_err(),
             RloxErrors(vec![RloxError {
                 line: 1,
-                col: 9,
-                message: "Expected semicolon after 1".to_string()
+                col: 8,
+                message: ParserErrorType::ExpectedSemicolon.to_string(),
+            }])
+        );
+    }
+
+    #[test]
+    fn print_invalid_identifier() {
+        let parser = Parser::new(TokenStream::new("print @;"));
+        let result = parser.parse();
+        assert_eq!(
+            result.unwrap_err(),
+            RloxErrors(vec![RloxError {
+                line: 1,
+                col: 7,
+                message: scanner::ScanError::UnexpectedCharacter('@').to_string(),
+            }])
+        );
+    }
+
+    #[test]
+    fn missing_semicolon() {
+        let parser = Parser::new(TokenStream::new("var a = 1"));
+        let result = parser.parse();
+        assert_eq!(
+            result.unwrap_err(),
+            RloxErrors(vec![RloxError {
+                line: 1,
+                col: 10,
+                message: ParserErrorType::ExpectedSemicolon.to_string(),
             }])
         );
     }
 
     #[test]
     fn synchronize_after_error() {
-        let tokens = scanner::scan_tokens("var a = 1 var b = 2;\nvar c = 3").unwrap();
-        let parser = Parser::new(&tokens);
+        let parser = Parser::new(TokenStream::new("var a = 1 var b = 2;\nvar c = 3"));
         let result = parser.parse();
         assert_eq!(
             result.unwrap_err(),
             RloxErrors(vec![
-                RloxError { line: 1, col: 9, message: "Expected semicolon after 1".to_string() },
-                RloxError { line: 2, col: 9, message: "Expected semicolon after 3".to_string() }
+                RloxError {
+                    line: 1,
+                    col: 11,
+                    message: ParserErrorType::ExpectedSemicolon.to_string()
+                },
+                RloxError {
+                    line: 2,
+                    col: 10,
+                    message: ParserErrorType::ExpectedSemicolon.to_string()
+                },
             ])
         );
     }
