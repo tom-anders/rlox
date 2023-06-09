@@ -1,10 +1,10 @@
 use std::{path::PathBuf, println, io::{stdin, stdout, Write}};
 
-use anyhow::{anyhow, bail};
+use anyhow::{bail};
 use clap::Parser;
-use errors::RloxErrors;
+
 use interpreter::Interpreter;
-use itertools::Itertools;
+
 
 #[derive(clap::Parser)]
 struct Args {
