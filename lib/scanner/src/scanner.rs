@@ -1,7 +1,7 @@
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum ScanError<'a> {
     #[error("Unexpected character: {0}")]
-    UnexpectedCharacted(char),
+    UnexpectedCharacter(char),
     #[error("Unterminated string: {0}")]
     UnterminatedString(&'a str),
     #[error("Unterminated block comment: {0}")]
@@ -12,7 +12,7 @@ pub mod token;
 
 
 
-use errors::{RloxError, RloxErrors};
+use errors::{RloxError};
 use source::Cursor;
 use token::TokenData::{self, *};
 pub use token::*;
@@ -136,7 +136,7 @@ impl<'a> Scanner<'a> {
 
             ' ' | '\r' | '\t' | '\n' => self.scan_token()?,
 
-            c => self.error(ScanError::UnexpectedCharacted(c)),
+            c => self.error(ScanError::UnexpectedCharacter(c)),
         }
         .into()
     }
@@ -236,13 +236,14 @@ impl<'a> Scanner<'a> {
     }
 }
 
-struct TokenStream<'a> {
+#[derive(Debug)]
+pub struct TokenStream<'a> {
     scanner: Scanner<'a>,
     eof: bool,
 }
 
 impl<'a> TokenStream<'a> {
-    fn new(source: &'a str) -> Self {
+    pub fn new(source: &'a str) -> Self {
         Self { scanner: Scanner::new(source), eof: false }
     }
 }
@@ -260,16 +261,6 @@ impl<'a> Iterator for TokenStream<'a> {
             }
             _ => next,
         }
-    }
-}
-
-// TODO: Pass tokens to parser on demand instead of collecting them all ahead of time
-pub fn scan_tokens(source: &str) -> Result<Vec<Token>, RloxErrors> {
-    let (tokens, errors): (Vec<_>, Vec<_>) = TokenStream::new(source).partition(Result::is_ok);
-    if errors.is_empty() {
-        Ok(tokens.into_iter().map(Result::unwrap).collect())
-    } else {
-        Err(RloxErrors(errors.into_iter().map(Result::unwrap_err).collect()))
     }
 }
 
@@ -317,7 +308,7 @@ mod tests {
                 Err(RloxError {
                     line: 2,
                     col: 3,
-                    message: ScanError::UnexpectedCharacted('@').to_string()
+                    message: ScanError::UnexpectedCharacter('@').to_string()
                 }),
                 Ok(ExpectedToken { data: Eof, line: 2, col: 4, lexeme: "".to_string() })
             ]

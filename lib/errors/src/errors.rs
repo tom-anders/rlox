@@ -1,6 +1,6 @@
 use std::{ops::{Deref, DerefMut}, fmt::Display};
 
-#[derive(thiserror::Error, Debug, PartialEq)]
+#[derive(thiserror::Error, Clone, Debug, PartialEq)]
 #[error("error (l. {line}, c. {col}): {message}")]
 pub struct RloxError {
     pub line: usize,
