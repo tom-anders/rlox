@@ -28,10 +28,10 @@ impl Display for Expr<'_> {
                 write!(f, "{}", value)
             }
             Expr::Variable(token) => {
-                write!(f, "{}", token.lexeme)
+                write!(f, "{}", token.lexeme())
             }
             Expr::Assign{name, value} => {
-                write!(f, "(assign {} {})", name.lexeme, value)
+                write!(f, "(assign {} {})", name.lexeme(), value)
             }
         }
     }
