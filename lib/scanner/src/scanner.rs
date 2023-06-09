@@ -4,6 +4,8 @@ pub enum ScanError<'a> {
     UnexpectedCharacted(char),
     #[error("Unterminated string: {0}")]
     UnterminatedString(&'a str),
+    #[error("Unterminated block comment: {0}")]
+    UnterminatedBlockComment(&'a str),
 }
 
 pub mod token;
@@ -127,7 +129,10 @@ impl<'a> Scanner<'a> {
                             // Comment
                             self.consume_until('\n');
                         } else if self.try_consume('*') {
-                            self.block_comment();
+                            match self.block_comment() {
+                                Ok(_) => (),
+                                Err(e) => return Some(Err(e)),
+                            }
                         } else {
                             return self.token(Slash).into();
                         }
@@ -157,8 +162,7 @@ impl<'a> Scanner<'a> {
         c.is_ascii_alphanumeric() || c == '_'
     }
 
-    // TODO: infinite loop?
-    fn block_comment(&mut self) {
+    fn block_comment(&mut self) -> Result<(), RloxError> {
         let mut nest_level = 1;
 
         loop {
@@ -166,7 +170,7 @@ impl<'a> Scanner<'a> {
                 Some('*') if self.peek() == Some('/') => {
                     if nest_level == 1 {
                         self.consume();
-                        return;
+                        return Ok(());
                     } else {
                         nest_level -= 1;
                     }
@@ -174,6 +178,9 @@ impl<'a> Scanner<'a> {
                 Some('/') if self.peek() == Some('*') => {
                     self.consume();
                     nest_level += 1;
+                }
+                None => {
+                    return self.error(ScanError::UnterminatedBlockComment(&self.lexeme()[2..])).map(|_| ())
                 }
                 _ => (),
             }
@@ -295,6 +302,27 @@ mod tests {
                     message: ScanError::UnexpectedCharacted('@').to_string()
                 })
             ]
+        );
+    }
+
+    #[test]
+    fn unterminated_block_comment() {
+        assert_eq!(
+            scan_tokens("/* hello world"),
+            vec![Err(RloxError {
+                line: 1,
+                col: 14,
+                message: ScanError::UnterminatedBlockComment(" hello world").to_string()
+            })]
+        );
+
+        assert_eq!(
+            scan_tokens("/* hello\nworld"),
+            vec![Err(RloxError {
+                line: 2,
+                col: 5,
+                message: ScanError::UnterminatedBlockComment(" hello\nworld").to_string()
+            })]
         );
     }
 
