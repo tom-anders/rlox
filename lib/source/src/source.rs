@@ -6,28 +6,46 @@ use std::{str::Chars};
 pub struct Cursor<'a> {
     source: &'a str,
     chars: Chars<'a>,
-    line: usize, // TODO calculate these on demand?
-    col: usize,
 }
 
 // impl PartialEq for Cursor
 impl <'a> PartialEq for Cursor<'a> {
     fn eq(&self, other: &Self) -> bool {
-        (self.source, self.line, self.chars.as_str(), self.col) == (other.source, other.line, other.chars.as_str(), other.col)
+        (self.source, self.chars.as_str()) == (other.source, other.chars.as_str())
     }
 }
 
 impl<'a> Cursor<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self { source, chars: source.chars(), line: 1, col: 1 }
+        Self { source, chars: source.chars(), }
     }
 
     pub fn line(&self) -> usize {
-        self.line
+        let mut line = 1;
+        let mut chars = self.source.chars();
+
+        while chars.as_str() != self.chars.as_str() {
+            if chars.next() == Some('\n') {
+                line += 1;
+            }
+        }
+
+        line
     }
 
     pub fn col(&self) -> usize {
-        self.col
+        let mut col = 1;
+        let mut chars = self.source.chars();
+
+        while chars.as_str() != self.chars.as_str() {
+            if chars.next() == Some('\n') {
+                col = 1;
+            } else {
+                col += 1;
+            }
+        }
+
+        col
     }
 }
 
@@ -41,16 +59,7 @@ impl<'a> Iterator for Cursor<'a> {
     type Item = char;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let c = self.chars.next()?;
-
-        if c == '\n' {
-            self.line += 1;
-            self.col = 1;
-        } else {
-            self.col += 1;
-        }
-
-        Some(c)
+        self.chars.next()
     }
 }
 
@@ -77,18 +86,9 @@ impl<'a> Cursor<'a> {
 
         let chars = self.source[self.source.len() - self.chars.as_str().len() - 1..].chars();
 
-        let c = chars.clone().next().unwrap();
-        let (line, col) = if c == '\n' {
-            (self.line - 1, self.source.lines().nth(self.line - 2).map(str::len).unwrap_or(0) + 1)
-        } else {
-            (self.line, self.col - 1)
-        };
-
         Some(Cursor {
             source: self.source,
             chars,
-            line,
-            col,
         })
     }
 }
