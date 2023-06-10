@@ -41,6 +41,7 @@ pub enum ParserErrorType {
     ExpectedSemicolon,
     ExpectedIdentifier,
     InvalidAssignmentTarget,
+    ExpectedRightBrace,
 }
 
 impl std::fmt::Display for ParserErrorType {
@@ -54,6 +55,7 @@ impl std::fmt::Display for ParserErrorType {
                 ParserErrorType::ExpectedSemicolon => "Expected semicolon after expression",
                 ParserErrorType::ExpectedIdentifier => "Expected identifier after expression",
                 ParserErrorType::InvalidAssignmentTarget => "Invalid assignment target",
+                ParserErrorType::ExpectedRightBrace => "Expected '}' after block",
             }
         )
     }
@@ -122,8 +124,27 @@ impl<'a> Parser<'a> {
                 unreachable!("ScanError should already have been caught in declaration()")
             }
             Some(Ok(Print)) => self.print_statement(),
+            Some(Ok(LeftBrace)) => self.block(),
             _ => self.expression_statement(),
         }
+    }
+
+    fn block(&self) -> Result<Stmt, RloxError> {
+        self.advance()?;
+        let mut stmts = Vec::new();
+
+        loop {
+            if self.peek() == Some(Ok(RightBrace)) {
+                break;
+            }
+            stmts.push(self.declaration()?);
+        }
+
+        match self.consume(RightBrace)? {
+            Ok(_) => Ok(Stmt::Block(stmts)),
+            Err(token) => Err(ParserError::new(ParserErrorType::ExpectedRightBrace, token).into())
+        }
+
     }
 
     fn print_statement(&self) -> Result<Stmt, RloxError> {

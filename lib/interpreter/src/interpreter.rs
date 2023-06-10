@@ -1,4 +1,4 @@
-use std::unreachable;
+use std::{unreachable, cell::RefCell, rc::Rc};
 
 use parser::{Expr, LiteralValue, Stmt};
 
@@ -23,7 +23,7 @@ pub enum Error {
 
 #[derive(Debug, Default)]
 pub struct Interpreter {
-    environment: Environment,
+    environment: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
@@ -51,7 +51,16 @@ impl Interpreter {
                     Some(init) => self.evaluate(init)?,
                     None => Value::Nil,
                 };
-                self.environment.define(name.lexeme(), value);
+                self.environment.borrow_mut().define(name.lexeme(), value);
+                Ok(())
+            }
+            Block(stmts) => {
+                let _scope = environment::Scope::new(self.environment.clone());
+    
+                for stmt in stmts {
+                    self.execute(stmt)?;
+                }
+
                 Ok(())
             }
         }
@@ -78,12 +87,12 @@ impl Interpreter {
             }
 
             Variable(token) => {
-                self.environment.get(token).cloned().ok_or(Error::UndefinedVariable(token.lexeme().to_string()))
+                self.environment.borrow().get(token).cloned().ok_or(Error::UndefinedVariable(token.lexeme().to_string()))
             }
 
             Assign { name, value } => {
                 let value = self.evaluate(value)?;
-                if self.environment.assign(name, value.clone()) {
+                if self.environment.borrow_mut().assign(name, value.clone()) {
                     Ok(value)
                 } else {
                     Err(Error::UndefinedVariable(name.lexeme().to_string()))
