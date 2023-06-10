@@ -12,3 +12,6 @@ path = "src/parser.rs"
 scanner = { path = "../scanner" }
 errors = { path = "../errors" }
 thiserror.workspace = true
+
+[dev-dependencies]
+cursor = { path = "../cursor" }

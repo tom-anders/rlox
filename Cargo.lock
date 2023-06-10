@@ -171,6 +171,7 @@ dependencies = [
 name = "errors"
 version = "0.1.0"
 dependencies = [
+ "cursor",
  "thiserror",
 ]
 
@@ -258,6 +259,7 @@ dependencies = [
 name = "parser"
 version = "0.1.0"
 dependencies = [
+ "cursor",
  "errors",
  "scanner",
  "thiserror",

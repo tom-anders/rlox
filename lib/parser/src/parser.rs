@@ -314,6 +314,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use scanner::ScanError;
+    use cursor::{Col, Line};
 
     use super::*;
 
@@ -325,13 +326,13 @@ mod tests {
             result.unwrap_err(),
             RloxErrors(vec![
                 RloxError {
-                    line: 1,
-                    col: 5,
+                    line: Line(1),
+                    col: Col(5),
                     message: ScanError::UnexpectedCharacter('@').to_string(),
                 },
                 RloxError {
-                    line: 2,
-                    col: 7,
+                    line: Line(2),
+                    col: Col(7),
                     message: ScanError::UnexpectedCharacter('$').to_string(),
                 }
             ])
@@ -345,8 +346,8 @@ mod tests {
         assert_eq!(
             result.unwrap_err(),
             RloxErrors(vec![RloxError {
-                line: 1,
-                col: 8,
+                line: Line(1),
+                col: Col(8),
                 message: ParserErrorType::ExpectedSemicolon.to_string(),
             }])
         );
@@ -359,8 +360,8 @@ mod tests {
         assert_eq!(
             result.unwrap_err(),
             RloxErrors(vec![RloxError {
-                line: 1,
-                col: 7,
+                line: Line(1),
+                col: Col(7),
                 message: scanner::ScanError::UnexpectedCharacter('@').to_string(),
             }])
         );
@@ -373,8 +374,8 @@ mod tests {
         assert_eq!(
             result.unwrap_err(),
             RloxErrors(vec![RloxError {
-                line: 1,
-                col: 10,
+                line: Line(1),
+                col: Col(10),
                 message: ParserErrorType::ExpectedSemicolon.to_string(),
             }])
         );
@@ -388,13 +389,13 @@ mod tests {
             result.unwrap_err(),
             RloxErrors(vec![
                 RloxError {
-                    line: 1,
-                    col: 11,
+                    line: Line(1),
+                    col: Col(11),
                     message: ParserErrorType::ExpectedSemicolon.to_string()
                 },
                 RloxError {
-                    line: 2,
-                    col: 10,
+                    line: Line(2),
+                    col: Col(10),
                     message: ParserErrorType::ExpectedSemicolon.to_string()
                 },
             ])

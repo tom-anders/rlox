@@ -1,10 +1,12 @@
 use std::{ops::{Deref, DerefMut}, fmt::Display};
 
+use cursor::{Line, Col};
+
 #[derive(thiserror::Error, Clone, Debug, PartialEq)]
 #[error("error (l. {line}, c. {col}): {message}")]
 pub struct RloxError {
-    pub line: usize,
-    pub col: usize,
+    pub line: Line,
+    pub col: Col,
     pub message: String,
 }
 

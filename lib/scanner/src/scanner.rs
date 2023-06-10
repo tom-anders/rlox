@@ -59,7 +59,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn token(&self, data: TokenData<'a>) -> Result<Token<'a>, RloxError> {
-        Ok(Token::new(data, self.start.clone(), self.cursor.clone()))
+        Ok(Token::new(data, (self.start.clone(), self.cursor.clone())))
     }
 
     fn error(&self, error: ScanError) -> Result<Token<'a>, RloxError> {
@@ -257,7 +257,7 @@ impl<'a> Iterator for TokenStream<'a> {
         match next {
             None if !self.eof => {
                 self.eof = true;
-                Some(Ok(Token::new(Eof, self.scanner.cursor.clone(), self.scanner.cursor.clone())))
+                Some(Ok(Token::new(Eof, (self.scanner.cursor.clone(), self.scanner.cursor.clone()))))
             }
             _ => next,
         }
@@ -266,6 +266,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
 #[cfg(test)]
 mod tests {
+    use cursor::{Line, Col};
     use pretty_assertions::{assert_eq};
 
     use errors::RloxError;
@@ -275,8 +276,8 @@ mod tests {
     #[derive(Debug, PartialEq)]
     struct ExpectedToken<'a> {
         data: TokenData<'a>,
-        line: usize,
-        col: usize,
+        line: Line,
+        col: Col,
         lexeme: String,
     }
 
@@ -300,17 +301,17 @@ mod tests {
         assert_eq!(
             scan_expected_tokens("var x = 3;\n  @"),
             vec![
-                Ok(ExpectedToken { data: Var, line: 1, col: 1, lexeme: "var".to_string() }),
-                Ok(ExpectedToken { data: Identifier, line: 1, col: 5, lexeme: "x".to_string() }),
-                Ok(ExpectedToken { data: Equal, line: 1, col: 7, lexeme: "=".to_string() }),
-                Ok(ExpectedToken { data: Number(3.0), line: 1, col: 9, lexeme: "3".to_string() }),
-                Ok(ExpectedToken { data: Semicolon, line: 1, col: 10, lexeme: ";".to_string() }),
+                Ok(ExpectedToken { data: Var, line: Line(1), col: Col(1), lexeme: "var".to_string() }),
+                Ok(ExpectedToken { data: Identifier, line: Line(1), col: Col(5), lexeme: "x".to_string() }),
+                Ok(ExpectedToken { data: Equal, line: Line(1), col: Col(7), lexeme: "=".to_string() }),
+                Ok(ExpectedToken { data: Number(3.0), line: Line(1), col: Col(9), lexeme: "3".to_string() }),
+                Ok(ExpectedToken { data: Semicolon, line: Line(1), col: Col(10), lexeme: ";".to_string() }),
                 Err(RloxError {
-                    line: 2,
-                    col: 3,
+                    line: Line(2),
+                    col: Col(3),
                     message: ScanError::UnexpectedCharacter('@').to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: 2, col: 4, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Eof, line: Line(2), col: Col(4), lexeme: "".to_string() })
             ]
         );
     }
@@ -321,11 +322,11 @@ mod tests {
             scan_expected_tokens("/* hello world"),
             vec![
                 Err(RloxError {
-                    line: 1,
-                    col: 14,
+                    line: Line(1),
+                    col: Col(14),
                     message: ScanError::UnterminatedBlockComment(" hello world").to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: 1, col: 15, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(15), lexeme: "".to_string() })
             ]
         );
 
@@ -333,11 +334,11 @@ mod tests {
             scan_expected_tokens("/* hello\nworld"),
             vec![
                 Err(RloxError {
-                    line: 2,
-                    col: 5,
+                    line: Line(2),
+                    col: Col(5),
                     message: ScanError::UnterminatedBlockComment(" hello\nworld").to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: 2, col: 6, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Eof, line: Line(2), col: Col(6), lexeme: "".to_string() })
             ]
         );
     }
@@ -345,7 +346,7 @@ mod tests {
     #[test]
     fn test_block_comments() {
         assert_eq!(scan_expected_tokens("/* hello world */"), vec![
-            Ok(ExpectedToken { data: Eof, line: 1, col: 18, lexeme: "".to_string() })
+            Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(18), lexeme: "".to_string() })
         ]);
 
         assert_eq!(
@@ -353,11 +354,11 @@ mod tests {
             vec![
                 Ok(ExpectedToken {
                     data: Number(123.0),
-                    line: 1,
-                    col: 19,
+                    line: Line(1),
+                    col: Col(19),
                     lexeme: "123".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: 1, col: 22, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(22), lexeme: "".to_string() })
             ]
         );
 
@@ -366,11 +367,11 @@ mod tests {
             vec![
                 Ok(ExpectedToken {
                     data: Number(123.0),
-                    line: 2,
-                    col: 5,
+                    line: Line(2),
+                    col: Col(5),
                     lexeme: "123".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: 2, col: 8, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Eof, line: Line(2), col: Col(8), lexeme: "".to_string() })
             ]
         );
 
@@ -380,11 +381,11 @@ mod tests {
             vec![
                 Ok(ExpectedToken {
                     data: Number(123.0),
-                    line: 1,
-                    col: 25,
+                    line: Line(1),
+                    col: Col(25),
                     lexeme: "123".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: 1, col: 57, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(57), lexeme: "".to_string() })
             ]
         );
     }
@@ -396,18 +397,18 @@ mod tests {
             vec![
                 Ok(ExpectedToken {
                     data: Number(123.0),
-                    line: 1,
-                    col: 1,
+                    line: Line(1),
+                    col: Col(1),
                     lexeme: "123".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: Number(1.23),
-                    line: 1,
-                    col: 5,
+                    line: Line(1),
+                    col: Col(5),
                     lexeme: "1.23".to_string()
                 }),
-                Ok(ExpectedToken { data: Number(1.0), line: 1, col: 10, lexeme: "1".to_string() }),
-                Ok(ExpectedToken { data: Eof, line: 1, col: 11, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Number(1.0), line: Line(1), col: Col(10), lexeme: "1".to_string() }),
+                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(11), lexeme: "".to_string() })
             ]
         );
     }
@@ -419,11 +420,11 @@ mod tests {
             vec![
                 Ok(ExpectedToken {
                     data: Str("hello world"),
-                    line: 1,
-                    col: 1,
+                    line: Line(1),
+                    col: Col(1),
                     lexeme: "\"hello world\"".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: 1, col: 14, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(14), lexeme: "".to_string() })
             ]
         );
 
@@ -431,11 +432,11 @@ mod tests {
             scan_expected_tokens("     \n\n \"hello world"),
             vec![
                 Err(RloxError {
-                    line: 3,
-                    col: 13,
+                    line: Line(3),
+                    col: Col(13),
                     message: ScanError::UnterminatedString("hello world").to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: 3, col: 14, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Eof, line: Line(3), col: Col(14), lexeme: "".to_string() })
             ]
         );
 
@@ -443,11 +444,11 @@ mod tests {
             scan_expected_tokens("\"hello world\n"),
             vec![
                 Err(RloxError {
-                    line: 1,
-                    col: 13,
+                    line: Line(1),
+                    col: Col(13),
                     message: ScanError::UnterminatedString("hello world\n").to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: 2, col: 1, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Eof, line: Line(2), col: Col(1), lexeme: "".to_string() })
             ]
         );
     }
@@ -458,53 +459,53 @@ mod tests {
             vec![
                 Ok(ExpectedToken {
                     data: TokenData::Bang,
-                    line: 1,
-                    col: 1,
+                    line: Line(1),
+                    col: Col(1),
                     lexeme: "!".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::BangEqual,
-                    line: 1,
-                    col: 3,
+                    line: Line(1),
+                    col: Col(3),
                     lexeme: "!=".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::Equal,
-                    line: 1,
-                    col: 6,
+                    line: Line(1),
+                    col: Col(6),
                     lexeme: "=".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::EqualEqual,
-                    line: 1,
-                    col: 8,
+                    line: Line(1),
+                    col: Col(8),
                     lexeme: "==".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::Less,
-                    line: 1,
-                    col: 11,
+                    line: Line(1),
+                    col: Col(11),
                     lexeme: "<".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::LessEqual,
-                    line: 1,
-                    col: 13,
+                    line: Line(1),
+                    col: Col(13),
                     lexeme: "<=".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::Greater,
-                    line: 1,
-                    col: 16,
+                    line: Line(1),
+                    col: Col(16),
                     lexeme: ">".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::GreaterEqual,
-                    line: 1,
-                    col: 18,
+                    line: Line(1),
+                    col: Col(18),
                     lexeme: ">=".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: 1, col: 20, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(20), lexeme: "".to_string() })
             ]
         );
     }
@@ -513,7 +514,7 @@ mod tests {
     fn test_line_comment() {
         assert_eq!(
             scan_expected_tokens("// hello world"),
-            vec![Ok(ExpectedToken { data: Eof, line: 1, col: 15, lexeme: "".to_string() })]
+            vec![Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(15), lexeme: "".to_string() })]
         );
 
         assert_eq!(
@@ -521,11 +522,11 @@ mod tests {
             vec![
                 Ok(ExpectedToken {
                     data: Number(123.0),
-                    line: 2,
-                    col: 1,
+                    line: Line(2),
+                    col: Col(1),
                     lexeme: "123".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: 2, col: 4, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Eof, line: Line(2), col: Col(4), lexeme: "".to_string() })
             ]
         );
     }
@@ -534,7 +535,7 @@ mod tests {
     fn test_whitespace() {
         assert_eq!(
             scan_expected_tokens(" \t\r\n"),
-            vec![Ok(ExpectedToken { data: Eof, line: 2, col: 1, lexeme: "".to_string() })]
+            vec![Ok(ExpectedToken { data: Eof, line: Line(2), col: Col(1), lexeme: "".to_string() })]
         );
     }
 
@@ -543,16 +544,16 @@ mod tests {
         assert_eq!(
             scan_expected_tokens("a a_c _abc _abc123"),
             vec![
-                Ok(ExpectedToken { data: Identifier, line: 1, col: 1, lexeme: "a".to_string() }),
-                Ok(ExpectedToken { data: Identifier, line: 1, col: 3, lexeme: "a_c".to_string() }),
-                Ok(ExpectedToken { data: Identifier, line: 1, col: 7, lexeme: "_abc".to_string() }),
+                Ok(ExpectedToken { data: Identifier, line: Line(1), col: Col(1), lexeme: "a".to_string() }),
+                Ok(ExpectedToken { data: Identifier, line: Line(1), col: Col(3), lexeme: "a_c".to_string() }),
+                Ok(ExpectedToken { data: Identifier, line: Line(1), col: Col(7), lexeme: "_abc".to_string() }),
                 Ok(ExpectedToken {
                     data: Identifier,
-                    line: 1,
-                    col: 12,
+                    line: Line(1),
+                    col: Col(12),
                     lexeme: "_abc123".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: 1, col: 19, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(19), lexeme: "".to_string() })
             ]
         );
     }
@@ -566,101 +567,101 @@ mod tests {
             vec![
                 Ok(ExpectedToken {
                     data: TokenData::And,
-                    line: 1,
-                    col: 1,
+                    line: Line(1),
+                    col: Col(1),
                     lexeme: "and".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::Class,
-                    line: 1,
-                    col: 5,
+                    line: Line(1),
+                    col: Col(5),
                     lexeme: "class".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::Else,
-                    line: 1,
-                    col: 11,
+                    line: Line(1),
+                    col: Col(11),
                     lexeme: "else".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::False,
-                    line: 1,
-                    col: 16,
+                    line: Line(1),
+                    col: Col(16),
                     lexeme: "false".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::For,
-                    line: 1,
-                    col: 22,
+                    line: Line(1),
+                    col: Col(22),
                     lexeme: "for".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::Fun,
-                    line: 1,
-                    col: 26,
+                    line: Line(1),
+                    col: Col(26),
                     lexeme: "fun".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::If,
-                    line: 1,
-                    col: 30,
+                    line: Line(1),
+                    col: Col(30),
                     lexeme: "if".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::Nil,
-                    line: 1,
-                    col: 33,
+                    line: Line(1),
+                    col: Col(33),
                     lexeme: "nil".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::Or,
-                    line: 1,
-                    col: 37,
+                    line: Line(1),
+                    col: Col(37),
                     lexeme: "or".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::Print,
-                    line: 1,
-                    col: 40,
+                    line: Line(1),
+                    col: Col(40),
                     lexeme: "print".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::Return,
-                    line: 1,
-                    col: 46,
+                    line: Line(1),
+                    col: Col(46),
                     lexeme: "return".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::Super,
-                    line: 1,
-                    col: 53,
+                    line: Line(1),
+                    col: Col(53),
                     lexeme: "super".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::This,
-                    line: 1,
-                    col: 59,
+                    line: Line(1),
+                    col: Col(59),
                     lexeme: "this".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::True,
-                    line: 1,
-                    col: 64,
+                    line: Line(1),
+                    col: Col(64),
                     lexeme: "true".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::Var,
-                    line: 1,
-                    col: 69,
+                    line: Line(1),
+                    col: Col(69),
                     lexeme: "var".to_string()
                 }),
                 Ok(ExpectedToken {
                     data: TokenData::While,
-                    line: 1,
-                    col: 73,
+                    line: Line(1),
+                    col: Col(73),
                     lexeme: "while".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: 1, col: 78, lexeme: "".to_string() })
+                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(78), lexeme: "".to_string() })
             ]
         );
     }
