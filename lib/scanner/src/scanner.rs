@@ -13,7 +13,7 @@ pub mod token;
 
 
 use errors::{RloxError};
-use source::Cursor;
+use cursor::Cursor;
 use token::TokenData::{self, *};
 pub use token::*;
 

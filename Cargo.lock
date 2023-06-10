@@ -128,6 +128,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cursor"
+version = "0.1.0"
+dependencies = [
+ "itertools",
+]
+
+[[package]]
 name = "diff"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -324,20 +331,13 @@ checksum = "4f3208ce4d8448b3f3e7d168a73f5e0c43a61e32930de3bceeccedb388b6bf06"
 name = "scanner"
 version = "0.1.0"
 dependencies = [
+ "cursor",
  "errors",
  "itertools",
  "pretty_assertions",
- "source",
  "strum",
  "strum_macros",
  "thiserror",
-]
-
-[[package]]
-name = "source"
-version = "0.1.0"
-dependencies = [
- "itertools",
 ]
 
 [[package]]
