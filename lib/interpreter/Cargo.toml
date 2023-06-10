@@ -11,4 +11,5 @@ path = "src/interpreter.rs"
 [dependencies]
 parser.path = "../parser"
 scanner.path = "../scanner"
+errors.path = "../errors"
 thiserror.workspace = true

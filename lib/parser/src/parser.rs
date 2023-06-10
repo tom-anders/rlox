@@ -7,6 +7,8 @@ pub use stmt::Stmt;
 pub use expr::{Expr, LiteralValue};
 use scanner::{token::TokenData, Token, TokenStream};
 
+use errors::Result;
+
 use TokenData::*;
 
 #[derive(Debug)]
@@ -70,7 +72,7 @@ impl<'a> Parser<'a> {
         Self { token_stream: RefCell::new(token_stream.peekable()) }
     }
 
-    pub fn parse(&self) -> Result<Vec<Stmt>, RloxErrors> {
+    pub fn parse(&self) -> std::result::Result<Vec<Stmt>, RloxErrors> {
         let mut errors = RloxErrors(Vec::new());
         let mut stmts = Vec::new();
         while !self.is_at_end() {
@@ -90,7 +92,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn declaration(&self) -> Result<Stmt, RloxError> {
+    fn declaration(&self) -> Result<Stmt> {
         if self.consume(Var)?.is_ok() {
             self.var_declaration()
         } else {
@@ -98,7 +100,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn var_declaration(&self) -> Result<Stmt, RloxError> {
+    fn var_declaration(&self) -> Result<Stmt> {
         let name = self.consume_or_error(Identifier, ParserErrorType::ExpectedIdentifier)?;
 
         let initializer = match self.consume(Equal)? {
@@ -111,7 +113,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::Var { name, initializer })
     }
 
-    fn statement(&self) -> Result<Stmt, RloxError> {
+    fn statement(&self) -> Result<Stmt> {
         if self.consume(Print)?.is_ok() {
             return self.print_statement();
         }
@@ -135,7 +137,7 @@ impl<'a> Parser<'a> {
         self.expression_statement()
     }
 
-    fn for_statement(&self) -> Result<Stmt, RloxError> {
+    fn for_statement(&self) -> Result<Stmt> {
         self.consume_or_error(LeftParen, ParserErrorType::MissingLeftParen)?;
 
         let initializer = if self.consume(Semicolon)?.is_ok() {
@@ -169,7 +171,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::Block([initializer, Some(while_smt)].into_iter().flatten().collect()))
     }
 
-    fn while_statement(&self) -> Result<Stmt, RloxError> {
+    fn while_statement(&self) -> Result<Stmt> {
         self.consume_or_error(LeftParen, ParserErrorType::MissingLeftParen)?;
         let condition = self.expression()?;
         self.consume_or_error(RightParen, ParserErrorType::MissingRightParen)?;
@@ -179,7 +181,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::While { condition, body })
     }
 
-    fn if_statement(&self) -> Result<Stmt, RloxError> {
+    fn if_statement(&self) -> Result<Stmt> {
         self.consume_or_error(LeftParen, ParserErrorType::MissingLeftParen)?;
         let condition = self.expression()?;
         self.consume_or_error(RightParen, ParserErrorType::MissingRightParen)?;
@@ -195,7 +197,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::If { condition, then_branch, else_branch })
     }
 
-    fn block(&self) -> Result<Stmt, RloxError> {
+    fn block(&self) -> Result<Stmt> {
         let mut stmts = Vec::new();
 
         loop {
@@ -209,7 +211,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::Block(stmts))
     }
 
-    fn print_statement(&self) -> Result<Stmt, RloxError> {
+    fn print_statement(&self) -> Result<Stmt> {
         let value = self.expression()?;
 
         self.consume_or_error(Semicolon, ParserErrorType::ExpectedSemicolon)?;
@@ -217,7 +219,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::Print(value))
     }
 
-    fn expression_statement(&self) -> Result<Stmt, RloxError> {
+    fn expression_statement(&self) -> Result<Stmt> {
         let value = self.expression()?;
 
         self.consume_or_error(Semicolon, ParserErrorType::ExpectedSemicolon)?;
@@ -225,11 +227,11 @@ impl<'a> Parser<'a> {
         Ok(Stmt::Expression(value))
     }
 
-    fn expression(&self) -> Result<Box<Expr>, RloxError> {
+    fn expression(&self) -> Result<Box<Expr>> {
         self.assignment()
     }
 
-    fn assignment(&self) -> Result<Box<Expr>, RloxError> {
+    fn assignment(&self) -> Result<Box<Expr>> {
         let expr = self.or()?;
 
         if let Ok(equal) = self.consume(Equal)? {
@@ -245,7 +247,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn or(&self) -> Result<Box<Expr>, RloxError> {
+    fn or(&self) -> Result<Box<Expr>> {
         let mut expr = self.and()?;
 
         while let Ok(operator) = self.consume(Or)? {
@@ -256,7 +258,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn and(&self) -> Result<Box<Expr>, RloxError> {
+    fn and(&self) -> Result<Box<Expr>> {
         let mut expr = self.equality()?;
 
         while let Ok(operator) = self.consume(And)? {
@@ -267,7 +269,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn equality(&self) -> Result<Box<Expr>, RloxError> {
+    fn equality(&self) -> Result<Box<Expr>> {
         let mut expr = self.comparison()?;
 
         while let Some(Ok(BangEqual)) | Some(Ok(EqualEqual)) = self.peek() {
@@ -278,7 +280,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn comparison(&self) -> Result<Box<Expr>, RloxError> {
+    fn comparison(&self) -> Result<Box<Expr>> {
         let mut expr = self.term()?;
 
         while let Some(Ok(Greater))
@@ -293,7 +295,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn term(&self) -> Result<Box<Expr>, RloxError> {
+    fn term(&self) -> Result<Box<Expr>> {
         let mut expr = self.factor()?;
 
         while let Some(Ok(Plus)) | Some(Ok(Minus)) = self.peek() {
@@ -304,7 +306,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn factor(&self) -> Result<Box<Expr>, RloxError> {
+    fn factor(&self) -> Result<Box<Expr>> {
         let mut expr = self.unary()?;
 
         while let Some(Ok(Star)) | Some(Ok(Slash)) = self.peek() {
@@ -315,7 +317,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn unary(&self) -> Result<Box<Expr>, RloxError> {
+    fn unary(&self) -> Result<Box<Expr>> {
         if let Some(Ok(Minus)) | Some(Ok(Bang)) = self.peek() {
             let operator = self.advance()?;
             let right = self.unary()?;
@@ -324,7 +326,7 @@ impl<'a> Parser<'a> {
         self.primary()
     }
 
-    fn primary(&self) -> Result<Box<Expr>, RloxError> {
+    fn primary(&self) -> Result<Box<Expr>> {
         let token = self.advance()?;
         match token.data {
             False => Ok(Box::new(Expr::Literal(LiteralValue::Boolean(false)))),
@@ -345,7 +347,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn consume(&self, token: TokenData) -> Result<Result<Token, Token>, RloxError> {
+    fn consume(&self, token: TokenData) -> Result<std::result::Result<Token, Token>> {
         assert!(!matches!(token, Number(_) | Str(_)));
         match self.peek_token() {
             Some(Ok(t)) if t.data == token => Ok(Ok(self.advance().unwrap())),
@@ -359,7 +361,7 @@ impl<'a> Parser<'a> {
         &self,
         token: TokenData,
         error_type: ParserErrorType,
-    ) -> Result<Token, RloxError> {
+    ) -> Result<Token> {
         match self.consume(token)? {
             Ok(token) => Ok(token),
             Err(token) => Err(ParserError::new(error_type, token).into()),
@@ -381,15 +383,15 @@ impl<'a> Parser<'a> {
 
 // Helpers
 impl<'a> Parser<'a> {
-    fn peek_token(&self) -> Option<Result<Token, RloxError>> {
+    fn peek_token(&self) -> Option<Result<Token>> {
         self.token_stream.borrow_mut().peek().cloned()
     }
 
-    fn peek(&self) -> Option<Result<TokenData, RloxError>> {
+    fn peek(&self) -> Option<Result<TokenData>> {
         self.peek_token().map(|t| t.map(|t| t.data))
     }
 
-    fn advance(&self) -> Result<Token<'a>, RloxError> {
+    fn advance(&self) -> Result<Token<'a>> {
         self.token_stream.borrow_mut().next().unwrap()
     }
 

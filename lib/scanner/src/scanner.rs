@@ -10,9 +10,7 @@ pub enum ScanError<'a> {
 
 pub mod token;
 
-
-
-use errors::{RloxError};
+use errors::{RloxError, Result};
 use cursor::Cursor;
 use token::TokenData::{self, *};
 pub use token::*;
@@ -58,16 +56,16 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn token(&self, data: TokenData<'a>) -> Result<Token<'a>, RloxError> {
+    fn token(&self, data: TokenData<'a>) -> Result<Token<'a>> {
         Ok(Token::new(data, (self.start.clone(), self.cursor.clone())))
     }
 
-    fn error(&self, error: ScanError) -> Result<Token<'a>, RloxError> {
+    fn error(&self, error: ScanError) -> Result<Token<'a>> {
         let prev = self.cursor.prev().unwrap();
         Err(RloxError { line: prev.line(), col: prev.col(), message: error.to_string() })
     }
 
-    pub fn scan_token(&mut self) -> Option<Result<Token<'a>, RloxError>> {
+    pub fn scan_token(&mut self) -> Option<Result<Token<'a>>> {
         self.start = self.cursor.clone();
         match self.consume()? {
             '(' => self.token(LeftParen),
@@ -149,7 +147,7 @@ impl<'a> Scanner<'a> {
         c.is_ascii_alphanumeric() || c == '_'
     }
 
-    fn block_comment(&mut self) -> Result<(), RloxError> {
+    fn block_comment(&mut self) -> Result<()> {
         let mut nest_level = 1;
 
         loop {
@@ -180,7 +178,7 @@ impl<'a> Scanner<'a> {
         self.start.slice_until(&self.cursor)
     }
 
-    fn string(&mut self) -> Result<Token<'a>, RloxError> {
+    fn string(&mut self) -> Result<Token<'a>> {
         if !self.consume_until('"') {
             self.error(ScanError::UnterminatedString(&self.lexeme()[1..]))
         } else {
@@ -195,7 +193,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn number(&mut self) -> Result<Token<'a>, RloxError> {
+    fn number(&mut self) -> Result<Token<'a>> {
         self.consume_digits();
 
         if self.peek() == Some('.')
@@ -209,7 +207,7 @@ impl<'a> Scanner<'a> {
         self.token(Number(self.lexeme().parse().unwrap()))
     }
 
-    fn identifier(&mut self) -> Result<Token<'a>, RloxError> {
+    fn identifier(&mut self) -> Result<Token<'a>> {
         while self.peek().map(Self::is_alphanumeric_or_underscore).unwrap_or(false) {
             self.consume();
         }
@@ -249,7 +247,7 @@ impl<'a> TokenStream<'a> {
 }
 
 impl<'a> Iterator for TokenStream<'a> {
-    type Item = Result<Token<'a>, RloxError>;
+    type Item = Result<Token<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.scanner.scan_token();
@@ -292,7 +290,7 @@ mod tests {
         }
     }
 
-    fn scan_expected_tokens(source: &str) -> Vec<Result<ExpectedToken, RloxError>> {
+    fn scan_expected_tokens(source: &str) -> Vec<Result<ExpectedToken>> {
         TokenStream::new(source).map(|t| t.map(ExpectedToken::from)).collect()
     }
 
