@@ -1,7 +1,5 @@
 use std::{str::Chars};
 
-// TODO source -> cursor
-
 #[derive(Debug, Clone)]
 pub struct Cursor<'a> {
     source: &'a str,
