@@ -5,6 +5,7 @@ use scanner::Token;
 #[derive(Debug)]
 pub enum Expr<'a> {
     Binary { left: Box<Expr<'a>>, operator: Token<'a>, right: Box<Expr<'a>> },
+    Logical { left: Box<Expr<'a>>, operator: Token<'a>, right: Box<Expr<'a>> },
     Grouping(Box<Expr<'a>>),
     Unary { operator: Token<'a>, right: Box<Expr<'a>> },
     Literal(LiteralValue<'a>),
@@ -16,6 +17,9 @@ impl Display for Expr<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Expr::Binary { left, operator, right } => {
+                write!(f, "({} {} {})", operator, left, right)
+            }
+            Expr::Logical { left, operator, right } => {
                 write!(f, "({} {} {})", operator, left, right)
             }
             Expr::Grouping(expression) => {

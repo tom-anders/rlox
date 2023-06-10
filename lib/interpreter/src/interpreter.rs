@@ -143,6 +143,17 @@ impl Interpreter {
                     _ => unreachable!(),
                 }
             }
+
+            Logical { left, operator, right } => {
+                let left = self.evaluate(left)?;
+                match (&operator.data, left.is_truthy()) {
+                    (TokenData::Or, true) => Ok(left),
+                    (TokenData::Or, false) => self.evaluate(right),
+                    (TokenData::And, false) => Ok(left),
+                    (TokenData::And, true) => self.evaluate(right),
+                    _ => unreachable!("Invalid logical operator: {:?}", operator.data),
+                }
+            }
         }
     }
 }
