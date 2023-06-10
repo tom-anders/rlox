@@ -99,22 +99,16 @@ impl<'a> Parser<'a> {
     }
 
     fn var_declaration(&self) -> Result<Stmt, RloxError> {
-        let name = match self.consume(Identifier)? {
-            Ok(name) => name,
-            Err(token) => {
-                return Err(ParserError::new(ParserErrorType::ExpectedIdentifier, token).into())
-            }
-        };
+        let name = self.consume_or_error(Identifier, ParserErrorType::ExpectedIdentifier)?;
 
         let initializer = match self.consume(Equal)? {
             Ok(_) => Some(self.expression()?),
             Err(_) => None,
         };
 
-        match self.consume(Semicolon)? {
-            Ok(_) => Ok(Stmt::Var { name, initializer }),
-            Err(token) => Err(ParserError::new(ParserErrorType::ExpectedSemicolon, token).into()),
-        }
+        self.consume_or_error(Semicolon, ParserErrorType::ExpectedSemicolon)?;
+
+        Ok(Stmt::Var { name, initializer })
     }
 
     fn statement(&self) -> Result<Stmt, RloxError> {
@@ -134,16 +128,12 @@ impl<'a> Parser<'a> {
     }
 
     fn if_statement(&self) -> Result<Stmt, RloxError> {
-        match self.consume(LeftParen)? {
-            Ok(_) => (),
-            Err(token) => return Err(ParserError::new(ParserErrorType::MissingLeftParen, token).into()),
-        }
+        self.consume_or_error(LeftParen, ParserErrorType::MissingLeftParen)?;
         let condition = self.expression()?;
-        match self.consume(RightParen)? {
-            Ok(_) => (),
-            Err(token) => return Err(ParserError::new(ParserErrorType::MissingRightParen, token).into()),
-        }
+        self.consume_or_error(RightParen, ParserErrorType::MissingRightParen)?;
+
         let then_branch = Box::new(self.statement()?);
+
         let else_branch = match self.consume(Else)? {
             Ok(_) => Some(self.statement()?),
             Err(_) => None,
@@ -163,26 +153,24 @@ impl<'a> Parser<'a> {
             stmts.push(self.declaration()?);
         }
 
-        match self.consume(RightBrace)? {
-            Ok(_) => Ok(Stmt::Block(stmts)),
-            Err(token) => Err(ParserError::new(ParserErrorType::ExpectedRightBrace, token).into()),
-        }
+        self.consume_or_error(RightBrace, ParserErrorType::ExpectedRightBrace)?;
+        Ok(Stmt::Block(stmts))
     }
 
     fn print_statement(&self) -> Result<Stmt, RloxError> {
         let value = self.expression()?;
-        match self.consume(Semicolon)? {
-            Ok(_) => Ok(Stmt::Print(value)),
-            Err(token) => Err(ParserError::new(ParserErrorType::ExpectedSemicolon, token).into()),
-        }
+
+        self.consume_or_error(Semicolon, ParserErrorType::ExpectedSemicolon)?;
+
+        Ok(Stmt::Print(value))
     }
 
     fn expression_statement(&self) -> Result<Stmt, RloxError> {
         let value = self.expression()?;
-        match self.consume(Semicolon)? {
-            Ok(_) => Ok(Stmt::Expression(value)),
-            Err(token) => Err(ParserError::new(ParserErrorType::ExpectedSemicolon, token).into()),
-        }
+
+        self.consume_or_error(Semicolon, ParserErrorType::ExpectedSemicolon)?;
+
+        Ok(Stmt::Expression(value))
     }
 
     fn expression(&self) -> Result<Box<Expr>, RloxError> {
@@ -273,12 +261,9 @@ impl<'a> Parser<'a> {
             LeftParen => {
                 let expr = self.expression()?;
 
-                match self.consume(RightParen)? {
-                    Ok(_) => Ok(Box::new(Expr::Grouping(expr))),
-                    Err(token) => {
-                        Err(ParserError::new(ParserErrorType::MissingRightParen, token).into())
-                    }
-                }
+                self.consume_or_error(RightParen, ParserErrorType::MissingRightParen)?; 
+
+                Ok(Box::new(Expr::Grouping(expr)))
             }
             Identifier => Ok(Box::new(Expr::Variable(token))),
 
@@ -293,6 +278,13 @@ impl<'a> Parser<'a> {
             Some(Ok(t)) => Ok(Err(t)),
             Some(Err(err)) => Err(err),
             None => unreachable!("Should have hit Eof"),
+        }
+    }
+
+    fn consume_or_error(&self, token: TokenData, error_type: ParserErrorType) -> Result<Token, RloxError> {
+        match self.consume(token)? {
+            Ok(token) => Ok(token),
+            Err(token) => Err(ParserError::new(error_type, token).into()),
         }
     }
 
