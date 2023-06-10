@@ -32,3 +32,6 @@ impl Display for RloxErrors {
         write!(f, "{}", self.0.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n"))
     }
 }
+
+pub type Result<T> = std::result::Result<T, RloxError>;
+
