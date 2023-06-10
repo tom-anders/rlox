@@ -178,7 +178,7 @@ impl<'a> Parser<'a> {
     }
 
     fn assignment(&self) -> Result<Box<Expr>, RloxError> {
-        let expr = self.equality()?;
+        let expr = self.or()?;
 
         if let Ok(equal) = self.consume(Equal)? {
             let value = self.assignment()?;
@@ -188,6 +188,28 @@ impl<'a> Parser<'a> {
             }
 
             return Err(ParserError::new(ParserErrorType::InvalidAssignmentTarget, equal).into());
+        }
+
+        Ok(expr)
+    }
+
+    fn or(&self) -> Result<Box<Expr>, RloxError> {
+        let mut expr = self.and()?;
+
+        while let Ok(operator) = self.consume(Or)? {
+            let right = self.and()?;
+            expr = Box::new(Expr::Logical { left: expr, operator, right });
+        }
+
+        Ok(expr)
+    }
+
+    fn and(&self) -> Result<Box<Expr>, RloxError> {
+        let mut expr = self.equality()?;
+
+        while let Ok(operator) = self.consume(And)? {
+            let right = self.equality()?;
+            expr = Box::new(Expr::Logical { left: expr, operator, right });
         }
 
         Ok(expr)
