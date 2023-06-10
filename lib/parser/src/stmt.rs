@@ -7,5 +7,6 @@ pub enum Stmt<'a> {
     Expression(Box<Expr<'a>>),
     Print(Box<Expr<'a>>),
     Var{name: Token<'a>, initializer: Option<Box<Expr<'a>>>},
+    Block(Vec<Stmt<'a>>),
 }
 
