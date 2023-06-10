@@ -1,4 +1,7 @@
-use std::{str::Chars};
+use std::{str::Chars, fmt::{Display, Formatter}};
+
+mod source_range;
+pub use source_range::*;
 
 #[derive(Debug, Clone)]
 pub struct Cursor<'a> {
@@ -6,10 +9,27 @@ pub struct Cursor<'a> {
     chars: Chars<'a>,
 }
 
-// impl PartialEq for Cursor
 impl <'a> PartialEq for Cursor<'a> {
     fn eq(&self, other: &Self) -> bool {
         (self.source, self.chars.as_str()) == (other.source, other.chars.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Line(pub usize);
+
+impl Display for Line {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Col(pub usize);
+
+impl Display for Col {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -18,7 +38,30 @@ impl<'a> Cursor<'a> {
         Self { source, chars: source.chars(), }
     }
 
-    pub fn line(&self) -> usize {
+    pub fn from_line_col(source: &'a str, line: Line, col: Col) -> Self {
+        let mut chars = source.chars();
+        let mut line_count = 1;
+        let mut col_count = 1;
+
+        while line_count != line.0 || col_count != col.0 {
+            match chars.next() {
+                Some('\n') => {
+                    line_count += 1;
+                    col_count = 1;
+                }
+                Some(_) => {
+                    col_count += 1;
+                }
+                None => {
+                    panic!("Line {:?} and column {:?} is out of bounds for source", line, col);
+                }
+            }
+        }
+
+        Self { source, chars }
+    }
+
+    pub fn line(&self) -> Line {
         let mut line = 1;
         let mut chars = self.source.chars();
 
@@ -28,10 +71,10 @@ impl<'a> Cursor<'a> {
             }
         }
 
-        line
+        Line(line)
     }
 
-    pub fn col(&self) -> usize {
+    pub fn col(&self) -> Col {
         let mut col = 1;
         let mut chars = self.source.chars();
 
@@ -43,7 +86,7 @@ impl<'a> Cursor<'a> {
             }
         }
 
-        col
+        Col(col)
     }
 }
 
@@ -121,69 +164,69 @@ mod tests {
         assert_eq!(cursor.peek_next(), Some('b'));
         assert_eq!(cursor.next(), Some('a'));
 
-        assert_eq!((cursor.line(), cursor.col()), (1, 2));
+        assert_eq!((cursor.line(), cursor.col()), (Line(1), Col(2)));
 
         let mut prev = cursor.prev().unwrap();
-        assert_eq!((prev.line(), prev.col()), (1, 1));
+        assert_eq!((prev.line(), prev.col()), (Line(1), Col(1)));
         assert_eq!(prev.next(), Some('a'));
 
         assert_eq!(cursor.next(), Some('b'));
-        assert_eq!((cursor.line(), cursor.col()), (1, 3));
+        assert_eq!((cursor.line(), cursor.col()), (Line(1), Col(3)));
 
         assert_eq!(cursor.next(), Some('\n'));
-        assert_eq!((cursor.line(), cursor.col()), (2, 1));
+        assert_eq!((cursor.line(), cursor.col()), (Line(2), Col(1)));
 
         let mut prev = cursor.prev().unwrap();
-        assert_eq!((prev.line(), prev.col()), (1, 3));
+        assert_eq!((prev.line(), prev.col()), (Line(1), Col(3)));
         assert_eq!(prev.next(), Some('\n'));
 
         cursor.next(); // 'c'
         cursor.next(); // 'd'
 
         assert_eq!(cursor.next(), Some('\n'));
-        assert_eq!((cursor.line(), cursor.col()), (3, 1));
+        assert_eq!((cursor.line(), cursor.col()), (Line(3), Col(1)));
 
         assert_eq!(cursor.next(), Some('\n'));
-        assert_eq!((cursor.line(), cursor.col()), (4, 1));
+        assert_eq!((cursor.line(), cursor.col()), (Line(4), Col(1)));
 
         let mut prev = cursor.prev().unwrap();
-        assert_eq!((prev.line(), prev.col()), (3, 1));
+        assert_eq!((prev.line(), prev.col()), (Line(3), Col(1)));
         assert_eq!(prev.next(), Some('\n'));
 
         assert_eq!(cursor.peek(), None);
         assert_eq!(cursor.next(), None);
-        assert_eq!((cursor.line(), cursor.col()), (4, 1));
+        assert_eq!((cursor.line(), cursor.col()), (Line(4), Col(1)));
 
         let mut prev = cursor.prev().unwrap();
-        assert_eq!((prev.line(), prev.col()), (3, 1));
+        assert_eq!((prev.line(), prev.col()), (Line(3), Col(1)));
         assert_eq!(prev.next(), Some('\n'));
 
         cursor = "".into();
         assert_eq!(cursor.peek(), None);
         assert_eq!(cursor.peek_next(), None);
         assert_eq!(cursor.next(), None);
-        assert_eq!((cursor.line(), cursor.col()), (1, 1));
+        assert_eq!((cursor.line(), cursor.col()), (Line(1), Col(1)));
 
         cursor = "a".into();
         assert_eq!(cursor.peek(), Some('a'));
         assert_eq!(cursor.next(), Some('a'));
-        assert_eq!((cursor.line(), cursor.col()), (1, 2));
+        assert_eq!((cursor.line(), cursor.col()), (Line(1), Col(2)));
 
         let mut prev = cursor.prev().unwrap();
-        assert_eq!((prev.line(), prev.col()), (1, 1));
+        assert_eq!((prev.line(), prev.col()), (Line(1), Col(1)));
         assert_eq!(prev.next(), Some('a'));
 
         cursor = "\n".into();
         assert_eq!(cursor.peek(), Some('\n'));
         assert_eq!(cursor.peek_next(), None);
         assert_eq!(cursor.next(), Some('\n'));
-        assert_eq!((cursor.line(), cursor.col()), (2, 1));
+        assert_eq!((cursor.line(), cursor.col()), (Line(2), Col(1)));
 
         cursor = "\n\n".into();
         assert_eq!(cursor.next(), Some('\n'));
-        assert_eq!((cursor.line(), cursor.col()), (2, 1));
+        assert_eq!((cursor.line(), cursor.col()), (Line(2), Col(1)));
         assert_eq!(cursor.next(), Some('\n'));
-        assert_eq!((cursor.line(), cursor.col()), (3, 1));
+        assert_eq!((cursor.line(), cursor.col()), (Line(3), Col(1)));
 
         assert_eq!(cursor.prev().unwrap().next(), Some('\n'));
         assert_eq!(cursor.prev().unwrap().prev().unwrap().next(), Some('\n'));

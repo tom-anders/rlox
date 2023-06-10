@@ -1,37 +1,31 @@
 use std::{fmt::Display};
 
-use cursor::Cursor;
+use cursor::{Cursor, SourceRange, Line, Col};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token<'a> {
     pub data: TokenData<'a>,
-    pub start: Cursor<'a>,
-    pub end: Cursor<'a>,
-    // pub lexeme: &'a str,
-    // pub line: usize,
-    // pub col_start: usize,
+    pub range: SourceRange<'a>,
 }
 
 impl<'a> Token<'a> {
-    // TODO store the cursors/range instead?
-    pub fn new(data: TokenData<'a>, start: Cursor<'a>, end: Cursor<'a>) -> Token<'a> {
+    pub fn new(data: TokenData<'a>, range: impl Into<SourceRange<'a>>) -> Token<'a> {
         Self {
             data,
-            start,
-            end,
+            range: range.into(),
         }
     }
 
     pub fn lexeme(&self) -> &str {
-        self.start.slice_until(&self.end)
+        self.range.lexeme()
     }
 
-    pub fn line(&self) -> usize {
-        self.start.line()
+    pub fn line(&self) -> Line {
+        self.range.line()
     }
 
-    pub fn col(&self) -> usize {
-        self.start.col()
+    pub fn col(&self) -> Col {
+        self.range.col()
     }
 }
 

@@ -10,3 +10,5 @@ path = 'src/errors.rs'
 
 [dependencies]
 thiserror.workspace = true
+
+cursor = { path = "../cursor" }
