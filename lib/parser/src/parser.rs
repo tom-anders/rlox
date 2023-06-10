@@ -1,10 +1,7 @@
 mod expr;
 mod stmt;
 use errors::{RloxError, RloxErrors};
-use std::{
-    cell::{RefCell},
-    iter::Peekable, unreachable,
-};
+use std::{cell::RefCell, iter::Peekable, unreachable};
 pub use stmt::Stmt;
 
 pub use expr::{Expr, LiteralValue};
@@ -36,6 +33,7 @@ impl<'a> ParserError<'a> {
 
 #[derive(Debug)]
 pub enum ParserErrorType {
+    MissingLeftParen,
     MissingRightParen,
     ExpectedPrimaryExpression,
     ExpectedSemicolon,
@@ -50,6 +48,7 @@ impl std::fmt::Display for ParserErrorType {
             f,
             "{}",
             match self {
+                ParserErrorType::MissingLeftParen => "Missing opening `(` before expression",
                 ParserErrorType::MissingRightParen => "Missing closing `)` after expression",
                 ParserErrorType::ExpectedPrimaryExpression => "Expected primary expression",
                 ParserErrorType::ExpectedSemicolon => "Expected semicolon after expression",
@@ -127,7 +126,31 @@ impl<'a> Parser<'a> {
             return self.block();
         }
 
+        if self.consume(If)?.is_ok() {
+            return self.if_statement();
+        }
+
         self.expression_statement()
+    }
+
+    fn if_statement(&self) -> Result<Stmt, RloxError> {
+        match self.consume(LeftParen)? {
+            Ok(_) => (),
+            Err(token) => return Err(ParserError::new(ParserErrorType::MissingLeftParen, token).into()),
+        }
+        let condition = self.expression()?;
+        match self.consume(RightParen)? {
+            Ok(_) => (),
+            Err(token) => return Err(ParserError::new(ParserErrorType::MissingRightParen, token).into()),
+        }
+        let then_branch = Box::new(self.statement()?);
+        let else_branch = match self.consume(Else)? {
+            Ok(_) => Some(self.statement()?),
+            Err(_) => None,
+        }
+        .map(Box::new);
+
+        Ok(Stmt::If { condition, then_branch, else_branch })
     }
 
     fn block(&self) -> Result<Stmt, RloxError> {
@@ -142,9 +165,8 @@ impl<'a> Parser<'a> {
 
         match self.consume(RightBrace)? {
             Ok(_) => Ok(Stmt::Block(stmts)),
-            Err(token) => Err(ParserError::new(ParserErrorType::ExpectedRightBrace, token).into())
+            Err(token) => Err(ParserError::new(ParserErrorType::ExpectedRightBrace, token).into()),
         }
-
     }
 
     fn print_statement(&self) -> Result<Stmt, RloxError> {
@@ -312,8 +334,8 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use scanner::ScanError;
     use cursor::{Col, Line};
+    use scanner::ScanError;
 
     use super::*;
 

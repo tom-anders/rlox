@@ -63,6 +63,9 @@ impl Interpreter {
 
                 Ok(())
             }
+            If { condition, then_branch, else_branch } => {
+                todo!()
+            }
         }
     }
 
