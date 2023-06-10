@@ -124,7 +124,59 @@ impl<'a> Parser<'a> {
             return self.if_statement();
         }
 
+        if self.consume(While)?.is_ok() {
+            return self.while_statement();
+        }
+
+        if self.consume(For)?.is_ok() {
+            return self.for_statement();
+        }
+
         self.expression_statement()
+    }
+
+    fn for_statement(&self) -> Result<Stmt, RloxError> {
+        self.consume_or_error(LeftParen, ParserErrorType::MissingLeftParen)?;
+
+        let initializer = if self.consume(Semicolon)?.is_ok() {
+            None
+        } else if self.consume(Var).is_ok() {
+            Some(self.var_declaration()?)
+        } else {
+            Some(self.expression_statement()?)
+        };
+
+        let condition = if self.peek() == Some(Ok(Semicolon)) {
+            Box::new(Expr::Literal(LiteralValue::Boolean(true)))
+        } else {
+            self.expression()?
+        };
+        self.consume_or_error(Semicolon, ParserErrorType::ExpectedSemicolon)?;
+
+        let increment =
+            if self.peek() == Some(Ok(RightParen)) { None } else { Some(self.expression()?) };
+        self.consume_or_error(RightParen, ParserErrorType::MissingRightParen)?;
+
+        let body = self.statement()?;
+
+        let while_smt = Stmt::While {
+            condition,
+            body: Box::new(Stmt::Block(
+                [Some(body), increment.map(Stmt::Expression)].into_iter().flatten().collect(),
+            )),
+        };
+
+        Ok(Stmt::Block([initializer, Some(while_smt)].into_iter().flatten().collect()))
+    }
+
+    fn while_statement(&self) -> Result<Stmt, RloxError> {
+        self.consume_or_error(LeftParen, ParserErrorType::MissingLeftParen)?;
+        let condition = self.expression()?;
+        self.consume_or_error(RightParen, ParserErrorType::MissingRightParen)?;
+
+        let body = Box::new(self.statement()?);
+
+        Ok(Stmt::While { condition, body })
     }
 
     fn if_statement(&self) -> Result<Stmt, RloxError> {
@@ -283,7 +335,7 @@ impl<'a> Parser<'a> {
             LeftParen => {
                 let expr = self.expression()?;
 
-                self.consume_or_error(RightParen, ParserErrorType::MissingRightParen)?; 
+                self.consume_or_error(RightParen, ParserErrorType::MissingRightParen)?;
 
                 Ok(Box::new(Expr::Grouping(expr)))
             }
@@ -303,7 +355,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn consume_or_error(&self, token: TokenData, error_type: ParserErrorType) -> Result<Token, RloxError> {
+    fn consume_or_error(
+        &self,
+        token: TokenData,
+        error_type: ParserErrorType,
+    ) -> Result<Token, RloxError> {
         match self.consume(token)? {
             Ok(token) => Ok(token),
             Err(token) => Err(ParserError::new(error_type, token).into()),
