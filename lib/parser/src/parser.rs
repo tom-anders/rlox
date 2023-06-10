@@ -42,6 +42,7 @@ pub enum ParserErrorType {
     ExpectedIdentifier,
     InvalidAssignmentTarget,
     ExpectedRightBrace,
+    TooManyArguments,
 }
 
 impl std::fmt::Display for ParserErrorType {
@@ -57,6 +58,7 @@ impl std::fmt::Display for ParserErrorType {
                 ParserErrorType::ExpectedIdentifier => "Expected identifier after expression",
                 ParserErrorType::InvalidAssignmentTarget => "Invalid assignment target",
                 ParserErrorType::ExpectedRightBrace => "Expected '}' after block",
+                ParserErrorType::TooManyArguments => "Can't have more than 255 arguments",
             }
         )
     }
@@ -72,7 +74,7 @@ impl<'a> Parser<'a> {
         Self { token_stream: RefCell::new(token_stream.peekable()) }
     }
 
-    pub fn parse(&self) -> std::result::Result<Vec<Stmt>, RloxErrors> {
+    pub fn parse(&'a self) -> std::result::Result<Vec<Stmt<'a>>, RloxErrors> {
         let mut errors = RloxErrors(Vec::new());
         let mut stmts = Vec::new();
         while !self.is_at_end() {
@@ -92,7 +94,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn declaration(&self) -> Result<Stmt> {
+    fn declaration(&'a self) -> Result<Stmt<'a>> {
         if self.consume(Var)?.is_ok() {
             self.var_declaration()
         } else {
@@ -100,7 +102,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn var_declaration(&self) -> Result<Stmt> {
+    fn var_declaration(&'a self) -> Result<Stmt<'a>> {
         let name = self.consume_or_error(Identifier, ParserErrorType::ExpectedIdentifier)?;
 
         let initializer = match self.consume(Equal)? {
@@ -113,7 +115,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::Var { name, initializer })
     }
 
-    fn statement(&self) -> Result<Stmt> {
+    fn statement(&'a self) -> Result<Stmt<'a>> {
         if self.consume(Print)?.is_ok() {
             return self.print_statement();
         }
@@ -137,7 +139,7 @@ impl<'a> Parser<'a> {
         self.expression_statement()
     }
 
-    fn for_statement(&self) -> Result<Stmt> {
+    fn for_statement(&'a self) -> Result<Stmt<'a>> {
         self.consume_or_error(LeftParen, ParserErrorType::MissingLeftParen)?;
 
         let initializer = if self.consume(Semicolon)?.is_ok() {
@@ -149,7 +151,7 @@ impl<'a> Parser<'a> {
         };
 
         let condition = if self.peek() == Some(Ok(Semicolon)) {
-            Box::new(Expr::Literal(LiteralValue::Boolean(true)))
+            Expr::Literal(LiteralValue::Boolean(true))
         } else {
             self.expression()?
         };
@@ -171,7 +173,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::Block([initializer, Some(while_smt)].into_iter().flatten().collect()))
     }
 
-    fn while_statement(&self) -> Result<Stmt> {
+    fn while_statement(&'a self) -> Result<Stmt<'a>> {
         self.consume_or_error(LeftParen, ParserErrorType::MissingLeftParen)?;
         let condition = self.expression()?;
         self.consume_or_error(RightParen, ParserErrorType::MissingRightParen)?;
@@ -181,7 +183,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::While { condition, body })
     }
 
-    fn if_statement(&self) -> Result<Stmt> {
+    fn if_statement(&'a self) -> Result<Stmt<'a>> {
         self.consume_or_error(LeftParen, ParserErrorType::MissingLeftParen)?;
         let condition = self.expression()?;
         self.consume_or_error(RightParen, ParserErrorType::MissingRightParen)?;
@@ -197,7 +199,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::If { condition, then_branch, else_branch })
     }
 
-    fn block(&self) -> Result<Stmt> {
+    fn block(&'a self) -> Result<Stmt<'a>> {
         let mut stmts = Vec::new();
 
         loop {
@@ -211,7 +213,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::Block(stmts))
     }
 
-    fn print_statement(&self) -> Result<Stmt> {
+    fn print_statement(&'a self) -> Result<Stmt<'a>> {
         let value = self.expression()?;
 
         self.consume_or_error(Semicolon, ParserErrorType::ExpectedSemicolon)?;
@@ -219,7 +221,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::Print(value))
     }
 
-    fn expression_statement(&self) -> Result<Stmt> {
+    fn expression_statement(&'a self) -> Result<Stmt<'a>> {
         let value = self.expression()?;
 
         self.consume_or_error(Semicolon, ParserErrorType::ExpectedSemicolon)?;
@@ -227,18 +229,18 @@ impl<'a> Parser<'a> {
         Ok(Stmt::Expression(value))
     }
 
-    fn expression(&self) -> Result<Box<Expr>> {
+    fn expression(&'a self) -> Result<Expr<'a>> {
         self.assignment()
     }
 
-    fn assignment(&self) -> Result<Box<Expr>> {
+    fn assignment(&'a self) -> Result<Expr<'a>> {
         let expr = self.or()?;
 
         if let Ok(equal) = self.consume(Equal)? {
-            let value = self.assignment()?;
+            let value = Box::new(self.assignment()?);
 
-            if let Expr::Variable(name) = *expr {
-                return Ok(Box::new(Expr::Assign { name, value }));
+            if let Expr::Variable(name) = expr {
+                return Ok(Expr::Assign { name, value });
             }
 
             return Err(ParserError::new(ParserErrorType::InvalidAssignmentTarget, equal).into());
@@ -247,40 +249,40 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn or(&self) -> Result<Box<Expr>> {
+    fn or(&'a self) -> Result<Expr<'a>> {
         let mut expr = self.and()?;
 
         while let Ok(operator) = self.consume(Or)? {
-            let right = self.and()?;
-            expr = Box::new(Expr::Logical { left: expr, operator, right });
+            let right = Box::new(self.and()?);
+            expr = Expr::Logical { left: Box::new(expr), operator, right };
         }
 
         Ok(expr)
     }
 
-    fn and(&self) -> Result<Box<Expr>> {
+    fn and(&'a self) -> Result<Expr<'a>> {
         let mut expr = self.equality()?;
 
         while let Ok(operator) = self.consume(And)? {
-            let right = self.equality()?;
-            expr = Box::new(Expr::Logical { left: expr, operator, right });
+            let right = Box::new(self.equality()?);
+            expr = Expr::Logical { left: Box::new(expr), operator, right };
         }
 
         Ok(expr)
     }
 
-    fn equality(&self) -> Result<Box<Expr>> {
+    fn equality(&'a self) -> Result<Expr<'a>> {
         let mut expr = self.comparison()?;
 
         while let Some(Ok(BangEqual)) | Some(Ok(EqualEqual)) = self.peek() {
             let operator = self.advance()?;
-            let right = self.comparison()?;
-            expr = Box::new(Expr::Binary { left: expr, operator, right })
+            let right = Box::new(self.comparison()?);
+            expr = Expr::Binary { left: Box::new(expr), operator, right }
         }
         Ok(expr)
     }
 
-    fn comparison(&self) -> Result<Box<Expr>> {
+    fn comparison(&'a self) -> Result<Expr<'a>> {
         let mut expr = self.term()?;
 
         while let Some(Ok(Greater))
@@ -289,59 +291,102 @@ impl<'a> Parser<'a> {
         | Some(Ok(LessEqual)) = self.peek()
         {
             let operator = self.advance()?;
-            let right = self.term()?;
-            expr = Box::new(Expr::Binary { left: expr, operator, right })
+            let right = Box::new(self.term()?);
+            expr = Expr::Binary { left: Box::new(expr), operator, right }
         }
         Ok(expr)
     }
 
-    fn term(&self) -> Result<Box<Expr>> {
+    fn term(&'a self) -> Result<Expr<'a>> {
         let mut expr = self.factor()?;
 
         while let Some(Ok(Plus)) | Some(Ok(Minus)) = self.peek() {
             let operator = self.advance()?;
-            let right = self.factor()?;
-            expr = Box::new(Expr::Binary { left: expr, operator, right })
+            let right = Box::new(self.factor()?);
+            expr = Expr::Binary { left: Box::new(expr), operator, right }
         }
         Ok(expr)
     }
 
-    fn factor(&self) -> Result<Box<Expr>> {
+    fn factor(&'a self) -> Result<Expr<'a>> {
         let mut expr = self.unary()?;
 
         while let Some(Ok(Star)) | Some(Ok(Slash)) = self.peek() {
             let operator = self.advance()?;
-            let right = self.unary()?;
-            expr = Box::new(Expr::Binary { left: expr, operator, right })
+            let right = Box::new(self.unary()?);
+            expr = Expr::Binary { left: Box::new(expr), operator, right }
         }
         Ok(expr)
     }
 
-    fn unary(&self) -> Result<Box<Expr>> {
+    fn unary(&'a self) -> Result<Expr<'a>> {
         if let Some(Ok(Minus)) | Some(Ok(Bang)) = self.peek() {
             let operator = self.advance()?;
-            let right = self.unary()?;
-            return Ok(Box::new(Expr::Unary { operator, right }));
+            let right = Box::new(self.unary()?);
+            return Ok(Expr::Unary { operator, right });
         }
-        self.primary()
+        self.call()
     }
 
-    fn primary(&self) -> Result<Box<Expr>> {
+    fn call(&'a self) -> Result<Expr<'a>> {
+        let mut expr = self.primary()?;
+
+        loop {
+            if self.consume(LeftParen)?.is_ok() {
+                expr = self.finish_call(expr)?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(&'a self, callee: Expr<'a>) -> Result<Expr<'a>> {
+        let mut arguments = Vec::new();
+
+        if self.peek() != Some(Ok(RightParen)) {
+            loop {
+                arguments.push(self.expression()?);
+
+                if self.peek() != Some(Ok(Comma)) {
+                    break;
+                }
+
+                // TODO jlox keeps parsing here instead of throwing an error.
+                // We need a way to store errors w/o entering panic mode
+                if arguments.len() >= 255 {
+                    return Err(ParserError::new(
+                        ParserErrorType::TooManyArguments,
+                        self.peek_token().unwrap()?,
+                    )
+                    .into());
+                }
+            }
+        }
+
+        let closing_paren =
+            self.consume_or_error(RightParen, ParserErrorType::MissingRightParen)?;
+
+        Ok(Expr::Call { callee: Box::new(callee), closing_paren, arguments })
+    }
+
+    fn primary(&'a self) -> Result<Expr<'a>> {
         let token = self.advance()?;
         match token.data {
-            False => Ok(Box::new(Expr::Literal(LiteralValue::Boolean(false)))),
-            True => Ok(Box::new(Expr::Literal(LiteralValue::Boolean(true)))),
-            Str(s) => Ok(Box::new(Expr::Literal(LiteralValue::Str(s)))),
-            Number(n) => Ok(Box::new(Expr::Literal(LiteralValue::Number(n)))),
-            Nil => Ok(Box::new(Expr::Literal(LiteralValue::Nil))),
+            False => Ok(Expr::Literal(LiteralValue::Boolean(false))),
+            True => Ok(Expr::Literal(LiteralValue::Boolean(true))),
+            Str(s) => Ok(Expr::Literal(LiteralValue::Str(s))),
+            Number(n) => Ok(Expr::Literal(LiteralValue::Number(n))),
+            Nil => Ok(Expr::Literal(LiteralValue::Nil)),
             LeftParen => {
                 let expr = self.expression()?;
 
                 self.consume_or_error(RightParen, ParserErrorType::MissingRightParen)?;
 
-                Ok(Box::new(Expr::Grouping(expr)))
+                Ok(Expr::Grouping(Box::new(expr)))
             }
-            Identifier => Ok(Box::new(Expr::Variable(token))),
+            Identifier => Ok(Expr::Variable(token)),
 
             _ => Err(ParserError::new(ParserErrorType::ExpectedPrimaryExpression, token).into()),
         }
@@ -357,11 +402,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn consume_or_error(
-        &self,
-        token: TokenData,
-        error_type: ParserErrorType,
-    ) -> Result<Token> {
+    fn consume_or_error(&self, token: TokenData, error_type: ParserErrorType) -> Result<Token> {
         match self.consume(token)? {
             Ok(token) => Ok(token),
             Err(token) => Err(ParserError::new(error_type, token).into()),
