@@ -4,20 +4,20 @@ use crate::Expr;
 
 #[derive(Debug)]
 pub enum Stmt<'a> {
-    Expression(Box<Expr<'a>>),
-    Print(Box<Expr<'a>>),
+    Expression(Expr<'a>),
+    Print(Expr<'a>),
     Var {
         name: Token<'a>,
-        initializer: Option<Box<Expr<'a>>>,
+        initializer: Option<Expr<'a>>,
     },
     Block(Vec<Stmt<'a>>),
     If {
-        condition: Box<Expr<'a>>,
+        condition: Expr<'a>,
         then_branch: Box<Stmt<'a>>,
         else_branch: Option<Box<Stmt<'a>>>,
     },
     While {
-        condition: Box<Expr<'a>>,
+        condition: Expr<'a>,
         body: Box<Stmt<'a>>,
     },
 }

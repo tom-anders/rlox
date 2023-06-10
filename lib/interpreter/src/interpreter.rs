@@ -160,6 +160,10 @@ impl Interpreter {
                     _ => unreachable!("Invalid logical operator: {:?}", operator.data),
                 }
             }
+
+            Call { callee, closing_paren, arguments } => {
+                todo!()
+            }
         }
     }
 }

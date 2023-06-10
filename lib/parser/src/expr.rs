@@ -10,7 +10,8 @@ pub enum Expr<'a> {
     Unary { operator: Token<'a>, right: Box<Expr<'a>> },
     Literal(LiteralValue<'a>),
     Variable(Token<'a>),
-    Assign{name: Token<'a>, value: Box<Expr<'a>>},
+    Assign { name: Token<'a>, value: Box<Expr<'a>> },
+    Call { callee: Box<Expr<'a>>, closing_paren: Token<'a>, arguments: Vec<Expr<'a>> },
 }
 
 impl Display for Expr<'_> {
@@ -34,8 +35,17 @@ impl Display for Expr<'_> {
             Expr::Variable(token) => {
                 write!(f, "{}", token.lexeme())
             }
-            Expr::Assign{name, value} => {
+            Expr::Assign { name, value } => {
                 write!(f, "(assign {} {})", name.lexeme(), value)
+            }
+            Expr::Call { callee, closing_paren, arguments } => {
+                write!(
+                    f,
+                    "(call {} {} {})",
+                    callee,
+                    closing_paren,
+                    arguments.iter().map(|a| a.to_string()).collect::<Vec<String>>().join(" ")
+                )
             }
         }
     }
