@@ -119,18 +119,18 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&self) -> Result<Stmt, RloxError> {
-        match self.peek() {
-            Some(Err(_)) => {
-                unreachable!("ScanError should already have been caught in declaration()")
-            }
-            Some(Ok(Print)) => self.print_statement(),
-            Some(Ok(LeftBrace)) => self.block(),
-            _ => self.expression_statement(),
+        if self.consume(Print)?.is_ok() {
+            return self.print_statement();
         }
+
+        if self.consume(LeftBrace)?.is_ok() {
+            return self.block();
+        }
+
+        self.expression_statement()
     }
 
     fn block(&self) -> Result<Stmt, RloxError> {
-        self.advance()?;
         let mut stmts = Vec::new();
 
         loop {
@@ -148,7 +148,6 @@ impl<'a> Parser<'a> {
     }
 
     fn print_statement(&self) -> Result<Stmt, RloxError> {
-        self.advance()?;
         let value = self.expression()?;
         match self.consume(Semicolon)? {
             Ok(_) => Ok(Stmt::Print(value)),
