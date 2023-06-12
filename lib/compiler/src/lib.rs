@@ -158,7 +158,7 @@ impl<'a> Compiler<'a> {
     fn binary(&self, chunk: &mut Chunk, operator_token: &Token<'a>) -> Result<()> {
         self.parse_precedence(
             chunk,
-            Self::get_parse_rule(operator_token).precedence.next_higher_precedence(),
+            self.token_precendence(operator_token).next_higher_precedence(),
         )?;
 
         match operator_token.data {
@@ -171,62 +171,41 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn get_parse_rule(token: &Token) -> ParseRule<'a> {
+    fn advance_with_prefix_rule(&self, chunk: &mut Chunk) -> Result<()> {
+        let token = self.advance()?;
         match token.data {
-            LeftParen => ParseRule {
-                prefix: Some(Compiler::grouping),
-                infix: None,
-                precedence: Precedence::None,
-            },
-            Minus => ParseRule {
-                prefix: Some(Compiler::unary),
-                infix: Some(Compiler::binary),
-                precedence: Precedence::Term,
-            },
-            Plus => ParseRule {
-                prefix: None,
-                infix: Some(Compiler::binary),
-                precedence: Precedence::Term,
-            },
-            Slash => ParseRule {
-                prefix: None,
-                infix: Some(Compiler::binary),
-                precedence: Precedence::Factor,
-            },
-            Star => ParseRule {
-                prefix: None,
-                infix: Some(Compiler::binary),
-                precedence: Precedence::Factor,
-            },
-            Number(_) => ParseRule {
-                prefix: Some(Compiler::number),
-                infix: None,
-                precedence: Precedence::None,
-            },
-            _ => ParseRule { prefix: None, infix: None, precedence: Precedence::None },
+            Number(_) => self.number(chunk, &token),
+            LeftParen => self.grouping(chunk, &token),
+            Minus => self.unary(chunk, &token),
+            _ => {
+                Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
+            }
+        }
+    }
+
+    fn advance_with_infix_rule(&self, chunk: &mut Chunk) -> Result<()> {
+        let token = self.advance()?;
+        match token.data {
+            Plus | Minus | Slash | Star => self.binary(chunk, &token),
+            _ => {
+                Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
+            }
+        }
+    }
+
+    fn token_precendence(&self, token: &Token) -> Precedence {
+        match token.data {
+            Plus | Minus => Precedence::Term,
+            Slash | Star => Precedence::Factor,
+            _ => Precedence::None,
         }
     }
 
     fn parse_precedence(&self, chunk: &mut Chunk, precedence: Precedence) -> Result<()> {
-        let token = self.advance()?;
-        trace!("Parsing precedence: {:?} {:?}", precedence, token);
+        self.advance_with_prefix_rule(chunk)?;
 
-        let prefix_rule = Self::get_parse_rule(&token).prefix.ok_or_else(|| {
-            debug!("No prefix rule for token: {:?}", token);
-            CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone())
-        })?;
-
-        prefix_rule(self, chunk, &token)?;
-
-        loop {
-            if precedence > Self::get_parse_rule(&self.peek_token().unwrap()?).precedence {
-                break;
-            }
-            let token = self.advance()?;
-            let infix_rule = Self::get_parse_rule(&token)
-                .infix
-                .unwrap_or_else(|| panic!("No infix rule for {:?}", token.data));
-            infix_rule(self, chunk, &token)?;
+        while precedence <= self.token_precendence(&self.peek_token().unwrap()?) {
+            self.advance_with_infix_rule(chunk)?;
         }
 
         Ok(())
