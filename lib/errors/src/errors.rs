@@ -13,6 +13,12 @@ pub struct RloxError {
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub struct RloxErrors(pub Vec<RloxError>);
 
+impl From<RloxError> for RloxErrors {
+    fn from(e: RloxError) -> Self {
+        Self(vec![e])
+    }
+}
+
 impl Deref for RloxErrors {
     type Target = Vec<RloxError>;
 
