@@ -13,39 +13,31 @@ pub struct Vm {
     ip: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum InterpretError {
-    CompileError(RloxErrors),
-    RuntimeError(RuntimeError),
+    #[error(transparent)]
+    CompileError(#[from] RloxErrors),
+    #[error(transparent)]
+    RuntimeError(#[from] RuntimeError),
 }
 
-impl From<RloxErrors> for InterpretError {
-    fn from(v: RloxErrors) -> Self {
-        Self::CompileError(v)
-    }
-}
-
-impl From<RuntimeError> for InterpretError {
-    fn from(v: RuntimeError) -> Self {
-        Self::RuntimeError(v)
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum RuntimeError {
+    #[error("Invalid negate operant: {0}")]
     InvalidNegateOperant(Value),
+    #[error("Invalid binary operants: {0} {1}")]
     InvalidBinaryOperants(Value, Value),
 }
 
 pub type Result<T> = std::result::Result<T, InterpretError>;
 
 impl Vm {
-    pub fn new(source: &str) -> Result<Self> {
-        Ok(Self {
-            chunk: Compiler::new(source).compile()?,
-            ip: 0,
+    pub fn new() -> Self {
+        Self {
             stack: Vec::with_capacity(256),
-        })
+            ip: 0,
+            chunk: Chunk::default(),
+        }
     }
 
     fn push(&mut self, value: Value) {
@@ -56,7 +48,10 @@ impl Vm {
         self.stack.pop().expect("Stack underflow")
     }
 
-    pub fn run(&mut self) -> Result<()> {
+    pub fn run(&mut self, source: &str) -> Result<()> {
+        self.chunk = Compiler::new(source).compile()?;
+        self.ip = 0;
+
         loop {
             let bytes = &self.chunk.code()[self.ip..];
             let op = Instruction::from_bytes(bytes);
@@ -119,7 +114,6 @@ mod tests {
         env_logger::init_from_env(Env::new().default_filter_or("trace"));
         println!();
 
-        let mut vm = Vm::new("print 1 + 2").unwrap();
-        vm.run().unwrap();
+        Vm::new().run("print 1 + 2").unwrap();
     }
 }
