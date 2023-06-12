@@ -1,13 +1,12 @@
 [package]
-name = "bytecode"
+name = "compiler"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-itertools.workspace = true
-bytecode_derive = { path = "../bytecode_derive" }
+bytecode = { path = "../bytecode" }
+scanner = { path = "../scanner" }
 cursor = { path = "../cursor" }
-strum = { version = "0.24.1", features = ["derive"] }
-strum_macros = "0.24.3"
+errors = { path = "../errors" }

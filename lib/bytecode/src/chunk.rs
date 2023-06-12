@@ -1,5 +1,6 @@
 use std::{fmt::Debug, println, writeln};
 
+use cursor::Line;
 use itertools::Itertools;
 
 use crate::{instructions::*, value::Value};
@@ -12,12 +13,18 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn write_instruction(&mut self, op: Instruction, line: usize) {
+    pub fn write_instructions(&mut self, instructions: impl IntoIterator<Item = (Instruction, Line)>) {
+        for (instruction, line) in instructions {
+            self.write_instruction(instruction, line);
+        }
+    }
+
+    pub fn write_instruction(&mut self, op: Instruction, line: cursor::Line) {
         self.code.extend_from_slice(op.bytes());
 
         // TODO: This is a waste of memory of course, challenge 1 in chapter 14 would solve this.
         for _ in 0..op.num_bytes() {
-            self.lines.push(line);
+            self.lines.push(line.0);
         }
     }
 
@@ -86,6 +93,8 @@ impl Debug for Chunk {
 
 #[cfg(test)]
 mod tests {
+    use cursor::Line;
+
     use super::*;
 
     #[test]
@@ -93,11 +102,11 @@ mod tests {
         let mut chunk = Chunk::default();
 
         let c = chunk.add_constant(Value::Number(1.2));
-        chunk.write_instruction( c, 1);
+        chunk.write_instruction( c, Line(1));
         let c = chunk.add_constant(Value::Number(3.4));
-        chunk.write_instruction(c, 1);
+        chunk.write_instruction(c, Line(1));
 
-        chunk.write_instruction(Instruction::Return, 1);
+        chunk.write_instruction(Instruction::Return, Line(1));
 
         dbg!(chunk);
     }

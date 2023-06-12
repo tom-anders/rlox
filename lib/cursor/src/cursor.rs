@@ -15,7 +15,7 @@ impl <'a> PartialEq for Cursor<'a> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Line(pub usize);
 
 impl Display for Line {

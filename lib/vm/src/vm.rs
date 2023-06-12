@@ -1,6 +1,8 @@
 use std::{ptr, marker::PhantomPinned, pin::Pin, ops::{DerefMut, Neg}};
 
 use bytecode::{chunk::Chunk, instructions::Instruction, value::Value};
+use compiler::Compiler;
+use errors::RloxErrors;
 
 #[derive(Debug, Clone)]
 pub struct Vm {
@@ -13,8 +15,14 @@ pub struct Vm {
 
 #[derive(Debug)]
 pub enum InterpretError {
-    CompileError,
+    CompileError(RloxErrors),
     RuntimeError(RuntimeError),
+}
+
+impl From<RloxErrors> for InterpretError {
+    fn from(v: RloxErrors) -> Self {
+        Self::CompileError(v)
+    }
 }
 
 impl From<RuntimeError> for InterpretError {
@@ -32,12 +40,12 @@ pub enum RuntimeError {
 pub type Result<T> = std::result::Result<T, InterpretError>;
 
 impl Vm {
-    pub fn new(chunk: Chunk) -> Self {
-        Self {
-            chunk,
+    pub fn new(source: &str) -> Result<Self> {
+        Ok(Self {
+            chunk: Compiler::new(source).compile()?,
             ip: 0,
             stack: Vec::with_capacity(256),
-        }
+        })
     }
 
     fn push(&mut self, value: Value) {
@@ -111,14 +119,7 @@ mod tests {
         env_logger::init_from_env(Env::new().default_filter_or("trace"));
         println!();
 
-        let mut chunk = Chunk::default();
-
-        let c = chunk.add_constant(Value::Number(1.2));
-        chunk.write_instruction( c, 1);
-        chunk.write_instruction(Instruction::Negate, 123);
-        chunk.write_instruction(Instruction::Return, 123);
-
-        let mut vm = Vm::new(chunk);
+        let mut vm = Vm::new("print 1 + 2").unwrap();
         vm.run().unwrap();
     }
 }
