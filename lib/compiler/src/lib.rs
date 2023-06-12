@@ -8,9 +8,9 @@ use bytecode::{
 use cursor::Line;
 use errors::{RloxError, RloxErrors};
 use log::{debug, info, trace};
-use scanner::{token::TokenData, Token, TokenStream};
+use scanner::{token::TokenData, Token, TokenStream, TokenType};
 
-use TokenData::*;
+use TokenType::*;
 
 pub type Result<T> = std::result::Result<T, RloxError>;
 
@@ -88,16 +88,15 @@ impl Precedence {
 
 #[derive(Debug)]
 pub struct Compiler<'a> {
-    // TODO should be able to get rid of the RefCell here
-    token_stream: RefCell<Peekable<TokenStream<'a>>>,
+    token_stream: Peekable<TokenStream<'a>>,
 }
 
 impl<'a> Compiler<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self { token_stream: RefCell::new(TokenStream::new(source).peekable()) }
+        Self { token_stream: TokenStream::new(source).peekable() }
     }
 
-    pub fn compile(self) -> std::result::Result<Chunk, RloxErrors> {
+    pub fn compile(mut self) -> std::result::Result<Chunk, RloxErrors> {
         let mut errors = RloxErrors(Vec::new());
         let mut chunk = Chunk::default();
 
@@ -112,7 +111,7 @@ impl<'a> Compiler<'a> {
             }
         }
 
-        match self.consume_or_error(TokenData::Eof, CompilerErrorType::ExpectedEof) {
+        match self.consume_or_error(Eof, CompilerErrorType::ExpectedEof) {
             Ok(_) => {}
             Err(e) => errors.0.push(e),
         }
@@ -128,7 +127,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn expression(&self, chunk: &mut Chunk) -> Result<()> {
+    fn expression(&mut self, chunk: &mut Chunk) -> Result<()> {
         self.parse_precedence(chunk, Precedence::Assignment)
     }
 
@@ -142,26 +141,25 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn grouping(&self, chunk: &mut Chunk, _: &Token<'a>) -> Result<()> {
+    fn grouping(&mut self, chunk: &mut Chunk, _: &Token<'a>) -> Result<()> {
         self.expression(chunk)?;
-        self.consume_or_error(TokenData::RightParen, CompilerErrorType::ExpectedRightParen)?;
+        self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen)?;
         Ok(())
     }
 
-    fn unary(&self, chunk: &mut Chunk, prefix_token: &Token<'a>) -> Result<()> {
+    fn unary(&mut self, chunk: &mut Chunk, prefix_token: &Token<'a>) -> Result<()> {
         // Compile the operand
         self.parse_precedence(chunk, Precedence::Unary)?;
         chunk.write_instruction(Instruction::Negate, prefix_token.line());
         Ok(())
     }
 
-    fn binary(&self, chunk: &mut Chunk, operator_token: &Token<'a>) -> Result<()> {
-        self.parse_precedence(
-            chunk,
-            self.token_precendence(operator_token).next_higher_precedence(),
-        )?;
+    fn binary(&mut self, chunk: &mut Chunk, operator_token: &Token<'a>) -> Result<()> {
+        let next_higher_prec = 
+            self.token_precendence(operator_token.ty()).next_higher_precedence();
+        self.parse_precedence(chunk, next_higher_prec)?;
 
-        match operator_token.data {
+        match operator_token.ty() {
             Minus => chunk.write_instruction(Instruction::Subtract, operator_token.line()),
             Plus => chunk.write_instruction(Instruction::Add, operator_token.line()),
             Slash => chunk.write_instruction(Instruction::Divide, operator_token.line()),
@@ -171,11 +169,11 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn advance_with_prefix_rule(&self, chunk: &mut Chunk) -> Result<()> {
+    fn advance_with_prefix_rule(&mut self, chunk: &mut Chunk) -> Result<()> {
         let token = self.advance()?;
         trace!("Advancing with prefix rule for {}", token);
-        match token.data {
-            Number(_) => self.number(chunk, &token),
+        match token.ty() {
+            Number => self.number(chunk, &token),
             LeftParen => self.grouping(chunk, &token),
             Minus => self.unary(chunk, &token),
             _ => {
@@ -184,10 +182,10 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn advance_with_infix_rule(&self, chunk: &mut Chunk) -> Result<()> {
+    fn advance_with_infix_rule(&mut self, chunk: &mut Chunk) -> Result<()> {
         let token = self.advance()?;
         trace!("Advancing with infix rule for {}", token);
-        match token.data {
+        match token.ty() {
             Plus | Minus | Slash | Star => self.binary(chunk, &token),
             _ => {
                 Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
@@ -195,30 +193,35 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn token_precendence(&self, token: &Token) -> Precedence {
-        match token.data {
+    fn token_precendence(&mut self, token_type: TokenType) -> Precedence {
+        match token_type {
             Plus | Minus => Precedence::Term,
             Slash | Star => Precedence::Factor,
             _ => Precedence::None,
         }
     }
 
-    fn parse_precedence(&self, chunk: &mut Chunk, precedence: Precedence) -> Result<()> {
+    fn peek_precendence(&mut self) -> Result<Precedence> {
+        let peek = self.peek().unwrap()?;
+        Ok(self.token_precendence(peek))
+    }
+
+    fn parse_precedence(&mut self, chunk: &mut Chunk, precedence: Precedence) -> Result<()> {
         trace!("Parsing precedence: {:?}", precedence);
         self.advance_with_prefix_rule(chunk)?;
 
-        while precedence <= self.token_precendence(&self.peek_token().unwrap()?) {
+        while precedence <= self.peek_precendence()? {
             self.advance_with_infix_rule(chunk)?;
         }
 
         Ok(())
     }
 
-    fn synchronize(&self) {
+    fn synchronize(&mut self) {
         loop {
             log::trace!("Syncing... {:?}", self.peek_token());
             match self.peek_token() {
-                Some(Ok(t)) => match t.data {
+                Some(Ok(t)) => match t.ty() {
                     Semicolon => {
                         self.advance().unwrap();
                         return;
@@ -236,36 +239,35 @@ impl<'a> Compiler<'a> {
 
 // Helpers
 impl<'a> Compiler<'a> {
-    fn consume(&self, token: TokenData) -> Result<std::result::Result<Token, Token>> {
-        debug_assert!(!matches!(token, Number(_) | Str(_)));
+    fn consume(&mut self, token_type: TokenType) -> Result<std::result::Result<Token, Token>> {
         match self.peek_token() {
-            Some(Ok(t)) if t.data == token => Ok(Ok(self.advance().unwrap())),
+            Some(Ok(t)) if t.ty() == token_type => Ok(Ok(self.advance().unwrap())),
             Some(Ok(t)) => Ok(Err(t)),
             Some(Err(err)) => Err(err),
             None => unreachable!("Should have hit Eof"),
         }
     }
 
-    fn consume_or_error(&self, token: TokenData, error: CompilerErrorType) -> Result<Token> {
-        match self.consume(token)? {
+    fn consume_or_error(&mut self, token_type: TokenType, error: CompilerErrorType) -> Result<Token> {
+        match self.consume(token_type)? {
             Ok(token) => Ok(token),
             Err(token) => Err(CompilerError::new(error, token).into()),
         }
     }
 
-    fn peek_token(&self) -> Option<Result<Token<'a>>> {
-        self.token_stream.borrow_mut().peek().cloned()
+    fn peek_token(&mut self) -> Option<Result<Token<'a>>> {
+        self.token_stream.peek().cloned()
     }
 
-    fn peek(&self) -> Option<Result<TokenData>> {
-        self.peek_token().map(|t| t.map(|t| t.data))
+    fn peek(&mut self) -> Option<Result<TokenType>> {
+        self.peek_token().map(|t| t.map(|t| t.data.into()))
     }
 
-    fn advance(&self) -> Result<Token<'a>> {
-        self.token_stream.borrow_mut().next().unwrap()
+    fn advance(&mut self) -> Result<Token<'a>> {
+        self.token_stream.next().unwrap()
     }
 
-    fn is_at_end(&self) -> bool {
+    fn is_at_end(&mut self) -> bool {
         match self.peek() {
             Some(Ok(Eof)) => true,
             Some(_) => false,
