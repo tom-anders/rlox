@@ -74,23 +74,23 @@ impl Vm {
                     self.push(neg);
                 }
                 Instruction::Add => {
-                    let a = self.pop();
                     let b = self.pop();
+                    let a = self.pop();
                     self.push((a + b).map_err( RuntimeError::InvalidBinaryOperants)?);
                 }
                 Instruction::Subtract => {
-                    let a = self.pop();
                     let b = self.pop();
+                    let a = self.pop();
                     self.push((a - b).map_err( RuntimeError::InvalidBinaryOperants)?);
                 }
                 Instruction::Multiply => {
-                    let a = self.pop();
                     let b = self.pop();
+                    let a = self.pop();
                     self.push((a * b).map_err( RuntimeError::InvalidBinaryOperants)?);
                 }
                 Instruction::Divide => {
-                    let a = self.pop();
                     let b = self.pop();
+                    let a = self.pop();
                     self.push((a / b).map_err( RuntimeError::InvalidBinaryOperants)?);
                 }
             }
