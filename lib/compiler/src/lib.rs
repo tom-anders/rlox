@@ -89,19 +89,23 @@ impl Precedence {
 #[derive(Debug)]
 pub struct Compiler<'a> {
     token_stream: Peekable<TokenStream<'a>>,
+    chunk: Chunk,
 }
 
 impl<'a> Compiler<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self { token_stream: TokenStream::new(source).peekable() }
+        Self { token_stream: TokenStream::new(source).peekable(), chunk: Chunk::default() }
+    }
+
+    fn current_chunk(&mut self) -> &mut Chunk {
+        &mut self.chunk
     }
 
     pub fn compile(mut self) -> std::result::Result<Chunk, RloxErrors> {
         let mut errors = RloxErrors(Vec::new());
-        let mut chunk = Chunk::default();
 
         while !self.is_at_end() {
-            match self.expression(&mut chunk) {
+            match self.expression() {
                 Ok(()) => (),
                 Err(e) => {
                     log::trace!("Hit error: {:?}, syncing...", e);
@@ -117,76 +121,76 @@ impl<'a> Compiler<'a> {
         }
 
         // Only temporarily so that in the VM we get some output
-        chunk.write_instruction(Instruction::Return, Line(0));
+        self.current_chunk().write_instruction(Instruction::Return, Line(0));
 
         if errors.is_empty() {
-            log::trace!("Compiled chunk: {chunk:?}");
-            Ok(chunk)
+            log::trace!("Compiled chunk: {:?}", self.current_chunk());
+            Ok(self.chunk)
         } else {
             Err(errors)
         }
     }
 
-    fn expression(&mut self, chunk: &mut Chunk) -> Result<()> {
-        self.parse_precedence(chunk, Precedence::Assignment)
+    fn expression(&mut self) -> Result<()> {
+        self.parse_precedence(Precedence::Assignment)
     }
 
-    fn number(&self, chunk: &mut Chunk, prefix_token: &Token<'a>) -> Result<()> {
+    fn number(&mut self, prefix_token: &Token<'a>) -> Result<()> {
         trace!("Compiling number: {:?}", prefix_token);
         let value = prefix_token.lexeme().parse::<f64>().unwrap();
-        let instr = chunk.add_constant(Value::Number(value)).ok_or_else(|| {
+        let instr = self.current_chunk().add_constant(Value::Number(value)).ok_or_else(|| {
             CompilerError::new(CompilerErrorType::TooManyConstants, prefix_token.clone())
         })?;
-        chunk.write_instruction(instr, prefix_token.line());
+        self.current_chunk().write_instruction(instr, prefix_token.line());
         Ok(())
     }
 
-    fn grouping(&mut self, chunk: &mut Chunk, _: &Token<'a>) -> Result<()> {
-        self.expression(chunk)?;
+    fn grouping(&mut self, _: &Token<'a>) -> Result<()> {
+        self.expression()?;
         self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen)?;
         Ok(())
     }
 
-    fn unary(&mut self, chunk: &mut Chunk, prefix_token: &Token<'a>) -> Result<()> {
+    fn unary(&mut self, prefix_token: &Token<'a>) -> Result<()> {
         // Compile the operand
-        self.parse_precedence(chunk, Precedence::Unary)?;
-        chunk.write_instruction(Instruction::Negate, prefix_token.line());
+        self.parse_precedence(Precedence::Unary)?;
+        self.current_chunk().write_instruction(Instruction::Negate, prefix_token.line());
         Ok(())
     }
 
-    fn binary(&mut self, chunk: &mut Chunk, operator_token: &Token<'a>) -> Result<()> {
+    fn binary(&mut self, operator_token: &Token<'a>) -> Result<()> {
         let next_higher_prec = 
             self.token_precendence(operator_token.ty()).next_higher_precedence();
-        self.parse_precedence(chunk, next_higher_prec)?;
+        self.parse_precedence(next_higher_prec)?;
 
         match operator_token.ty() {
-            Minus => chunk.write_instruction(Instruction::Subtract, operator_token.line()),
-            Plus => chunk.write_instruction(Instruction::Add, operator_token.line()),
-            Slash => chunk.write_instruction(Instruction::Divide, operator_token.line()),
-            Star => chunk.write_instruction(Instruction::Multiply, operator_token.line()),
+            Minus => self.current_chunk().write_instruction(Instruction::Subtract, operator_token.line()),
+            Plus => self.current_chunk().write_instruction(Instruction::Add, operator_token.line()),
+            Slash => self.current_chunk().write_instruction(Instruction::Divide, operator_token.line()),
+            Star => self.current_chunk().write_instruction(Instruction::Multiply, operator_token.line()),
             _ => unreachable!(),
         }
         Ok(())
     }
 
-    fn advance_with_prefix_rule(&mut self, chunk: &mut Chunk) -> Result<()> {
+    fn advance_with_prefix_rule(&mut self) -> Result<()> {
         let token = self.advance()?;
         trace!("Advancing with prefix rule for {}", token);
         match token.ty() {
-            Number => self.number(chunk, &token),
-            LeftParen => self.grouping(chunk, &token),
-            Minus => self.unary(chunk, &token),
+            Number => self.number(&token),
+            LeftParen => self.grouping(&token),
+            Minus => self.unary(&token),
             _ => {
                 Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
             }
         }
     }
 
-    fn advance_with_infix_rule(&mut self, chunk: &mut Chunk) -> Result<()> {
+    fn advance_with_infix_rule(&mut self) -> Result<()> {
         let token = self.advance()?;
         trace!("Advancing with infix rule for {}", token);
         match token.ty() {
-            Plus | Minus | Slash | Star => self.binary(chunk, &token),
+            Plus | Minus | Slash | Star => self.binary(&token),
             _ => {
                 Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
             }
@@ -206,12 +210,12 @@ impl<'a> Compiler<'a> {
         Ok(self.token_precendence(peek))
     }
 
-    fn parse_precedence(&mut self, chunk: &mut Chunk, precedence: Precedence) -> Result<()> {
+    fn parse_precedence(&mut self, precedence: Precedence) -> Result<()> {
         trace!("Parsing precedence: {:?}", precedence);
-        self.advance_with_prefix_rule(chunk)?;
+        self.advance_with_prefix_rule()?;
 
         while precedence <= self.peek_precendence()? {
-            self.advance_with_infix_rule(chunk)?;
+            self.advance_with_infix_rule()?;
         }
 
         Ok(())
