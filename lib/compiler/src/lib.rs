@@ -3,9 +3,11 @@ use std::{cell::RefCell, debug_assert, iter::Peekable, unreachable};
 use bytecode::{
     chunk::Chunk,
     instructions::{Instruction, OpCode},
+    value::Value,
 };
 use cursor::Line;
 use errors::{RloxError, RloxErrors};
+use log::{debug, info, trace};
 use scanner::{token::TokenData, Token, TokenStream};
 
 use TokenData::*;
@@ -13,15 +15,86 @@ use TokenData::*;
 pub type Result<T> = std::result::Result<T, RloxError>;
 
 #[derive(Debug)]
+pub struct CompilerError<'a> {
+    error: CompilerErrorType,
+    token: Token<'a>,
+}
+
+impl<'a> From<CompilerError<'a>> for RloxError {
+    fn from(error: CompilerError<'a>) -> Self {
+        RloxError {
+            line: error.token.line(),
+            col: error.token.col(),
+            message: error.error.to_string(),
+        }
+    }
+}
+
+impl<'a> CompilerError<'a> {
+    fn new(error: CompilerErrorType, token: Token<'a>) -> Self {
+        Self { token, error }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CompilerErrorType {
+    #[error("Too many constants")]
+    TooManyConstants,
+    #[error("Expected EOF")]
+    ExpectedEof,
+    #[error("Expected ')' after expression")]
+    ExpectedRightParen,
+    #[error("Expected expression")]
+    ExpectedExpression,
+}
+
+#[repr(u8)]
+#[derive(
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    num_enum::IntoPrimitive,
+    num_enum::TryFromPrimitive,
+)]
+enum Precedence {
+    None,
+    Assignment,
+    Or,
+    And,
+    Equality,
+    Comparison,
+    Term,
+    Factor,
+    Unary,
+    Call,
+    Primary,
+}
+
+impl Precedence {
+    pub fn next_higher_precedence(self) -> Self {
+        let prim: u8 = self.into();
+        (prim + 1).try_into().unwrap()
+    }
+
+    pub fn next_lower_precedence(self) -> Self {
+        let prim: u8 = self.into();
+        (prim - 1).try_into().unwrap()
+    }
+}
+
+#[derive(Debug)]
 pub struct Compiler<'a> {
+    // TODO should be able to get rid of the RefCell here
     token_stream: RefCell<Peekable<TokenStream<'a>>>,
 }
 
 impl<'a> Compiler<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self {
-            token_stream: RefCell::new(TokenStream::new(source).peekable()),
-        }
+        Self { token_stream: RefCell::new(TokenStream::new(source).peekable()) }
     }
 
     pub fn compile(self) -> std::result::Result<Chunk, RloxErrors> {
@@ -32,13 +105,14 @@ impl<'a> Compiler<'a> {
             match self.expression(&mut chunk) {
                 Ok(()) => (),
                 Err(e) => {
+                    log::trace!("Hit error: {:?}, syncing...", e);
                     self.synchronize();
                     errors.0.push(e)
                 }
             }
         }
 
-        match self.consume_or_error(TokenData::Eof, "Expected end of expression") {
+        match self.consume_or_error(TokenData::Eof, CompilerErrorType::ExpectedEof) {
             Ok(_) => {}
             Err(e) => errors.0.push(e),
         }
@@ -47,6 +121,7 @@ impl<'a> Compiler<'a> {
         chunk.write_instruction(Instruction::Return, Line(0));
 
         if errors.is_empty() {
+            log::trace!("Compiled chunk: {chunk:?}");
             Ok(chunk)
         } else {
             Err(errors)
@@ -54,18 +129,125 @@ impl<'a> Compiler<'a> {
     }
 
     fn expression(&self, chunk: &mut Chunk) -> Result<()> {
-        todo!()
+        self.parse_precedence(chunk, Precedence::Assignment)
+    }
+
+    fn number(&self, chunk: &mut Chunk, prefix_token: &Token<'a>) -> Result<()> {
+        trace!("Compiling number: {:?}", prefix_token);
+        let value = prefix_token.lexeme().parse::<f64>().unwrap();
+        let instr = chunk.add_constant(Value::Number(value)).ok_or_else(|| {
+            CompilerError::new(CompilerErrorType::TooManyConstants, prefix_token.clone())
+        })?;
+        chunk.write_instruction(instr, prefix_token.line());
+        Ok(())
+    }
+
+    fn grouping(&self, chunk: &mut Chunk, _: &Token<'a>) -> Result<()> {
+        self.expression(chunk)?;
+        self.consume_or_error(TokenData::RightParen, CompilerErrorType::ExpectedRightParen)?;
+        Ok(())
+    }
+
+    fn unary(&self, chunk: &mut Chunk, prefix_token: &Token<'a>) -> Result<()> {
+        // Compile the operand
+        self.parse_precedence(chunk, Precedence::Unary)?;
+        chunk.write_instruction(Instruction::Negate, prefix_token.line());
+        Ok(())
+    }
+
+    fn binary(&self, chunk: &mut Chunk, operator_token: &Token<'a>) -> Result<()> {
+        self.parse_precedence(
+            chunk,
+            Self::get_parse_rule(operator_token).precedence.next_higher_precedence(),
+        )?;
+
+        match operator_token.data {
+            Minus => chunk.write_instruction(Instruction::Subtract, operator_token.line()),
+            Plus => chunk.write_instruction(Instruction::Add, operator_token.line()),
+            Slash => chunk.write_instruction(Instruction::Divide, operator_token.line()),
+            Star => chunk.write_instruction(Instruction::Multiply, operator_token.line()),
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
+
+    fn get_parse_rule(token: &Token) -> ParseRule<'a> {
+        match token.data {
+            LeftParen => ParseRule {
+                prefix: Some(Compiler::grouping),
+                infix: None,
+                precedence: Precedence::None,
+            },
+            Minus => ParseRule {
+                prefix: Some(Compiler::unary),
+                infix: Some(Compiler::binary),
+                precedence: Precedence::Term,
+            },
+            Plus => ParseRule {
+                prefix: None,
+                infix: Some(Compiler::binary),
+                precedence: Precedence::Term,
+            },
+            Slash => ParseRule {
+                prefix: None,
+                infix: Some(Compiler::binary),
+                precedence: Precedence::Factor,
+            },
+            Star => ParseRule {
+                prefix: None,
+                infix: Some(Compiler::binary),
+                precedence: Precedence::Factor,
+            },
+            Number(_) => ParseRule {
+                prefix: Some(Compiler::number),
+                infix: None,
+                precedence: Precedence::None,
+            },
+            _ => ParseRule { prefix: None, infix: None, precedence: Precedence::None },
+        }
+    }
+
+    fn parse_precedence(&self, chunk: &mut Chunk, precedence: Precedence) -> Result<()> {
+        let token = self.advance()?;
+        trace!("Parsing precedence: {:?} {:?}", precedence, token);
+
+        let prefix_rule = Self::get_parse_rule(&token).prefix.ok_or_else(|| {
+            debug!("No prefix rule for token: {:?}", token);
+            CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone())
+        })?;
+
+        prefix_rule(self, chunk, &token)?;
+
+        loop {
+            if precedence > Self::get_parse_rule(&self.peek_token().unwrap()?).precedence {
+                break;
+            }
+            let token = self.advance()?;
+            let infix_rule = Self::get_parse_rule(&token)
+                .infix
+                .unwrap_or_else(|| panic!("No infix rule for {:?}", token.data));
+            infix_rule(self, chunk, &token)?;
+        }
+
+        Ok(())
     }
 
     fn synchronize(&self) {
         loop {
-            if let Ok(t) = self.advance() {
-                match t.data {
-                    Semicolon => return,
+            log::trace!("Syncing... {:?}", self.peek_token());
+            match self.peek_token() {
+                Some(Ok(t)) => match t.data {
+                    Semicolon => {
+                        self.advance().unwrap();
+                        return;
+                    }
                     Class | Fun | Var | For | If | While | Print | Return | Eof => return,
                     _ => {}
-                }
+                },
+                Some(Err(_)) => (),
+                None => return,
             }
+            self.advance().unwrap();
         }
     }
 }
@@ -82,16 +264,14 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn consume_or_error(&self, token: TokenData, msg: &'static str) -> Result<Token> {
+    fn consume_or_error(&self, token: TokenData, error: CompilerErrorType) -> Result<Token> {
         match self.consume(token)? {
             Ok(token) => Ok(token),
-            Err(token) => {
-                Err(RloxError { line: token.line(), col: token.col(), message: msg.to_string() })
-            }
+            Err(token) => Err(CompilerError::new(error, token).into()),
         }
     }
 
-    fn peek_token(&self) -> Option<Result<Token>> {
+    fn peek_token(&self) -> Option<Result<Token<'a>>> {
         self.token_stream.borrow_mut().peek().cloned()
     }
 
