@@ -16,6 +16,10 @@ impl<'a> Token<'a> {
         }
     }
 
+    pub fn ty(&self) -> TokenType {
+        self.data.into()
+    }
+
     pub fn lexeme(&self) -> &str {
         self.range.lexeme()
     }
@@ -35,7 +39,8 @@ impl Display for Token<'_> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, strum::EnumDiscriminants)]
+#[strum_discriminants(name(TokenType))]
 pub enum TokenData<'a> {
     // Single-character tokens.
     LeftParen,
