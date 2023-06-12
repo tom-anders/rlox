@@ -25,8 +25,8 @@ pub enum InterpretError {
 pub enum RuntimeError {
     #[error("Invalid negate operant: {0}")]
     InvalidNegateOperant(Value),
-    #[error("Invalid binary operants: {} {}", 0.0, 0.1)]
-    InvalidBinaryOperants((Value, Value)),
+    #[error("Invalid binary operants: ({0}, {1})")]
+    InvalidBinaryOperants(Value, Value),
 }
 
 pub type Result<T> = std::result::Result<T, InterpretError>;
@@ -83,22 +83,22 @@ impl Vm {
                 Instruction::Add => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push((a + b).map_err(|v| self.runtime_error(RuntimeError::InvalidBinaryOperants(v)))?);
+                    self.push((a + b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?);
                 }
                 Instruction::Subtract => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push((a - b).map_err(|v| self.runtime_error(RuntimeError::InvalidBinaryOperants(v)))?);
+                    self.push((a - b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?);
                 }
                 Instruction::Multiply => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push((a * b).map_err(|v| self.runtime_error(RuntimeError::InvalidBinaryOperants(v)))?);
+                    self.push((a * b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?);
                 }
                 Instruction::Divide => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push((a / b).map_err(|v| self.runtime_error(RuntimeError::InvalidBinaryOperants(v)))?);
+                    self.push((a / b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?);
                 }
             }
 
