@@ -25,8 +25,8 @@ pub enum InterpretError {
 pub enum RuntimeError {
     #[error("Invalid negate operant: {0}")]
     InvalidNegateOperant(Value),
-    #[error("Invalid binary operants: {0} {1}")]
-    InvalidBinaryOperants(Value, Value),
+    #[error("Invalid binary operants: {} {}", 0.0, 0.1)]
+    InvalidBinaryOperants((Value, Value)),
 }
 
 pub type Result<T> = std::result::Result<T, InterpretError>;
@@ -70,28 +70,28 @@ impl Vm {
                 }
                 Instruction::Negate => {
                     let v = self.pop();
-                    let neg = v.clone().neg().map_err(|v| RuntimeError::InvalidNegateOperant(v))?;
+                    let neg = v.clone().neg().map_err(RuntimeError::InvalidNegateOperant)?;
                     self.push(neg);
                 }
                 Instruction::Add => {
                     let a = self.pop();
                     let b = self.pop();
-                    self.push((a + b).map_err(|(a, b)| RuntimeError::InvalidBinaryOperants(a, b))?);
+                    self.push((a + b).map_err( RuntimeError::InvalidBinaryOperants)?);
                 }
                 Instruction::Subtract => {
                     let a = self.pop();
                     let b = self.pop();
-                    self.push((a - b).map_err(|(a, b)| RuntimeError::InvalidBinaryOperants(a, b))?);
+                    self.push((a - b).map_err( RuntimeError::InvalidBinaryOperants)?);
                 }
                 Instruction::Multiply => {
                     let a = self.pop();
                     let b = self.pop();
-                    self.push((a * b).map_err(|(a, b)| RuntimeError::InvalidBinaryOperants(a, b))?);
+                    self.push((a * b).map_err( RuntimeError::InvalidBinaryOperants)?);
                 }
                 Instruction::Divide => {
                     let a = self.pop();
                     let b = self.pop();
-                    self.push((a / b).map_err(|(a, b)| RuntimeError::InvalidBinaryOperants(a, b))?);
+                    self.push((a / b).map_err( RuntimeError::InvalidBinaryOperants)?);
                 }
             }
 
