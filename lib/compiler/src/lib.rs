@@ -173,6 +173,7 @@ impl<'a> Compiler<'a> {
 
     fn advance_with_prefix_rule(&self, chunk: &mut Chunk) -> Result<()> {
         let token = self.advance()?;
+        trace!("Advancing with prefix rule for {}", token);
         match token.data {
             Number(_) => self.number(chunk, &token),
             LeftParen => self.grouping(chunk, &token),
@@ -185,6 +186,7 @@ impl<'a> Compiler<'a> {
 
     fn advance_with_infix_rule(&self, chunk: &mut Chunk) -> Result<()> {
         let token = self.advance()?;
+        trace!("Advancing with infix rule for {}", token);
         match token.data {
             Plus | Minus | Slash | Star => self.binary(chunk, &token),
             _ => {
@@ -202,6 +204,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn parse_precedence(&self, chunk: &mut Chunk, precedence: Precedence) -> Result<()> {
+        trace!("Parsing precedence: {:?}", precedence);
         self.advance_with_prefix_rule(chunk)?;
 
         while precedence <= self.token_precendence(&self.peek_token().unwrap()?) {
