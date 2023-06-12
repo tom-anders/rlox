@@ -7,5 +7,6 @@ edition = "2021"
 
 [dependencies]
 itertools.workspace = true
+bytecode_derive = { path = "../bytecode_derive" }
 strum = { version = "0.24.1", features = ["derive"] }
 strum_macros = "0.24.3"
