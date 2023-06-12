@@ -35,6 +35,7 @@ fn run(source: String, vm: &mut Vm) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
+    env_logger::init();
     let args = Args::parse();
 
     let mut vm = Vm::new();

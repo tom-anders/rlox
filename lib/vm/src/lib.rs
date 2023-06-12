@@ -1,2 +1,2 @@
-pub mod vm;
+mod vm;
 pub use crate::vm::*;
