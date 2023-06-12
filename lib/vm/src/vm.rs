@@ -17,8 +17,8 @@ pub struct Vm {
 pub enum InterpretError {
     #[error(transparent)]
     CompileError(#[from] RloxErrors),
-    #[error(transparent)]
-    RuntimeError(#[from] RuntimeError),
+    #[error("line {line}: {error}")]
+    RuntimeError{line: usize, error: RuntimeError},
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -48,6 +48,13 @@ impl Vm {
         self.stack.pop().expect("Stack underflow")
     }
 
+    fn runtime_error(&self, error: RuntimeError) -> InterpretError {
+        InterpretError::RuntimeError {
+            line: self.chunk.lines()[self.ip],
+            error: error.into(),
+        }
+    }
+
     pub fn run(&mut self, source: &str) -> Result<()> {
         self.chunk = Compiler::new(source).compile()?;
         self.ip = 0;
@@ -70,28 +77,28 @@ impl Vm {
                 }
                 Instruction::Negate => {
                     let v = self.pop();
-                    let neg = v.clone().neg().map_err(RuntimeError::InvalidNegateOperant)?;
+                    let neg = v.clone().neg().map_err(|v| self.runtime_error(RuntimeError::InvalidNegateOperant(v)))?;
                     self.push(neg);
                 }
                 Instruction::Add => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push((a + b).map_err( RuntimeError::InvalidBinaryOperants)?);
+                    self.push((a + b).map_err(|v| self.runtime_error(RuntimeError::InvalidBinaryOperants(v)))?);
                 }
                 Instruction::Subtract => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push((a - b).map_err( RuntimeError::InvalidBinaryOperants)?);
+                    self.push((a - b).map_err(|v| self.runtime_error(RuntimeError::InvalidBinaryOperants(v)))?);
                 }
                 Instruction::Multiply => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push((a * b).map_err( RuntimeError::InvalidBinaryOperants)?);
+                    self.push((a * b).map_err(|v| self.runtime_error(RuntimeError::InvalidBinaryOperants(v)))?);
                 }
                 Instruction::Divide => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push((a / b).map_err( RuntimeError::InvalidBinaryOperants)?);
+                    self.push((a / b).map_err(|v| self.runtime_error(RuntimeError::InvalidBinaryOperants(v)))?);
                 }
             }
 
