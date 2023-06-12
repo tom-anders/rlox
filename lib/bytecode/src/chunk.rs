@@ -73,6 +73,9 @@ impl Chunk {
             Instruction::Subtract => ("Subtract", "".to_string()),
             Instruction::Multiply => ("Multiply", "".to_string()),
             Instruction::Divide => ("Divide", "".to_string()),
+            Instruction::Nil => ("Nil", "".to_string()),
+            Instruction::True => ("True", "".to_string()),
+            Instruction::False => ("False", "".to_string()),
         };
 
         (format!("{offset:04} {line_str} {op_str:16} {op_args}"), offset + op.num_bytes())

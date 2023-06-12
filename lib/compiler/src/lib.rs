@@ -135,6 +135,18 @@ impl<'a> Compiler<'a> {
         self.parse_precedence(Precedence::Assignment)
     }
 
+    fn literal(&mut self, prefix_token: &Token<'a>) -> Result<()> {
+        trace!("Compiling literal: {:?}", prefix_token);
+        self.chunk.write_instruction(match prefix_token.ty() {
+            True => Instruction::True,
+            False => Instruction::False,
+            Nil => Instruction::Nil,
+            _ => unreachable!(),
+        }, prefix_token.line());
+
+        Ok(())
+    }
+
     fn number(&mut self, prefix_token: &Token<'a>) -> Result<()> {
         trace!("Compiling number: {:?}", prefix_token);
         let value = prefix_token.lexeme().parse::<f64>().unwrap();
@@ -178,6 +190,7 @@ impl<'a> Compiler<'a> {
         trace!("Advancing with prefix rule for {}", token);
         match token.ty() {
             Number => self.number(&token),
+            True | False | Nil => self.literal(&token),
             LeftParen => self.grouping(&token),
             Minus => self.unary(&token),
             _ => {

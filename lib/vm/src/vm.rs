@@ -75,6 +75,9 @@ impl Vm {
                     let constant = self.chunk.constants().get(index as usize).unwrap();
                     self.push(constant.clone());
                 }
+                Instruction::Nil => self.push(Value::Nil),
+                Instruction::True => self.push(Value::Boolean(true)),
+                Instruction::False => self.push(Value::Boolean(false)),
                 Instruction::Negate => {
                     let v = self.pop();
                     let neg = v.clone().neg().map_err(|v| self.runtime_error(RuntimeError::InvalidNegateOperant(v)))?;
