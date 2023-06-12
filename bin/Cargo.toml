@@ -14,3 +14,6 @@ itertools.workspace = true
 scanner.path = "../lib/scanner"
 vm.path = "../lib/vm"
 errors.path = "../lib/errors"
+
+log.workspace = true
+env_logger = "0.10.0"
