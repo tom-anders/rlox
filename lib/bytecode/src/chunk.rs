@@ -28,9 +28,10 @@ impl Chunk {
         }
     }
 
-    pub fn add_constant(&mut self, value: Value) -> Instruction {
+    pub fn add_constant(&mut self, value: Value) -> Option<Instruction> {
         self.constants.push(value);
-        Instruction::Constant{ index: (self.constants.len() - 1).try_into().expect("Too many constants!") }
+        let index = (self.constants.len() - 1).try_into().ok()?;
+        Some(Instruction::Constant{ index })
     }
 
     pub fn code(&self) -> &[u8] {
@@ -101,9 +102,9 @@ mod tests {
     fn debug() {
         let mut chunk = Chunk::default();
 
-        let c = chunk.add_constant(Value::Number(1.2));
+        let c = chunk.add_constant(Value::Number(1.2)).unwrap();
         chunk.write_instruction( c, Line(1));
-        let c = chunk.add_constant(Value::Number(3.4));
+        let c = chunk.add_constant(Value::Number(3.4)).unwrap();
         chunk.write_instruction(c, Line(1));
 
         chunk.write_instruction(Instruction::Return, Line(1));

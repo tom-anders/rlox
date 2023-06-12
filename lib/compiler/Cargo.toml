@@ -10,3 +10,6 @@ bytecode = { path = "../bytecode" }
 scanner = { path = "../scanner" }
 cursor = { path = "../cursor" }
 errors = { path = "../errors" }
+thiserror.workspace = true
+log.workspace = true
+num_enum = "0.6.1"

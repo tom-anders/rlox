@@ -53,7 +53,7 @@ impl Vm {
     }
 
     fn pop(&mut self) -> Value {
-        self.stack.pop().unwrap()
+        self.stack.pop().expect("Stack underflow")
     }
 
     pub fn run(&mut self) -> Result<()> {
