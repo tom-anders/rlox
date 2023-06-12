@@ -1,6 +1,6 @@
 use std::{ptr, marker::PhantomPinned, pin::Pin, ops::{DerefMut, Neg}};
 
-use bytecode::{chunk::Chunk, opcode::{OpCode, Constant}, value::Value};
+use bytecode::{chunk::Chunk, instructions::Instruction, value::Value};
 
 #[derive(Debug, Clone)]
 pub struct Vm {
@@ -51,48 +51,48 @@ impl Vm {
     pub fn run(&mut self) -> Result<()> {
         loop {
             let bytes = &self.chunk.code()[self.ip..];
-            let op = OpCode::from_bytes(bytes);
+            let op = Instruction::from_bytes(bytes);
 
             log::trace!("Stack: {:?}", self.stack);
             log::trace!("{}", self.chunk.disassemble_instruction(self.ip).0);
 
             match op {
-                OpCode::Return => {
+                Instruction::Return => {
                     println!("{}", self.pop());
                     return Ok(());
                 }
-                OpCode::Constant(Constant { index }) => {
+                Instruction::Constant{ index } => {
                     let constant = self.chunk.constants().get(index as usize).unwrap();
                     self.push(constant.clone());
                 }
-                OpCode::Negate => {
+                Instruction::Negate => {
                     let v = self.pop();
                     let neg = v.clone().neg().map_err(|v| RuntimeError::InvalidNegateOperant(v))?;
                     self.push(neg);
                 }
-                OpCode::Add => {
+                Instruction::Add => {
                     let a = self.pop();
                     let b = self.pop();
                     self.push((a + b).map_err(|(a, b)| RuntimeError::InvalidBinaryOperants(a, b))?);
                 }
-                OpCode::Subtract => {
+                Instruction::Subtract => {
                     let a = self.pop();
                     let b = self.pop();
                     self.push((a - b).map_err(|(a, b)| RuntimeError::InvalidBinaryOperants(a, b))?);
                 }
-                OpCode::Multiply => {
+                Instruction::Multiply => {
                     let a = self.pop();
                     let b = self.pop();
                     self.push((a * b).map_err(|(a, b)| RuntimeError::InvalidBinaryOperants(a, b))?);
                 }
-                OpCode::Divide => {
+                Instruction::Divide => {
                     let a = self.pop();
                     let b = self.pop();
                     self.push((a / b).map_err(|(a, b)| RuntimeError::InvalidBinaryOperants(a, b))?);
                 }
             }
 
-            self.ip += op.len();
+            self.ip += op.num_bytes();
         }
     }
 }
@@ -109,14 +109,14 @@ mod tests {
     #[test]
     fn smoke_test() {
         env_logger::init_from_env(Env::new().default_filter_or("trace"));
-        println!("");
+        println!();
 
         let mut chunk = Chunk::default();
 
-        let c = Constant{index: chunk.add_constant(Value::Number(1.2))}.into();
+        let c = chunk.add_constant(Value::Number(1.2));
         chunk.write_instruction( c, 1);
-        chunk.write_instruction(OpCode::Negate, 123);
-        chunk.write_instruction(OpCode::Return, 123);
+        chunk.write_instruction(Instruction::Negate, 123);
+        chunk.write_instruction(Instruction::Return, 123);
 
         let mut vm = Vm::new(chunk);
         vm.run().unwrap();
