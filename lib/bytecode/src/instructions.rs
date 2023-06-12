@@ -8,6 +8,9 @@ pub enum Instruction {
     Subtract,
     Multiply,
     Divide,
+    Nil,
+    True,
+    False,
 }
 
 impl Instruction {
