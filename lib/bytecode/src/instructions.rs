@@ -4,6 +4,7 @@ pub enum Instruction {
     Return,
     Constant{index: u8},
     Negate,
+    Not,
     Add,
     Subtract,
     Multiply,

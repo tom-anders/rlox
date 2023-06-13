@@ -83,6 +83,10 @@ impl Vm {
                     let neg = v.clone().neg().map_err(|v| self.runtime_error(RuntimeError::InvalidNegateOperant(v)))?;
                     self.push(neg);
                 }
+                Instruction::Not => {
+                    let v = self.pop();
+                    self.push(Value::Boolean(!v.is_truthy()));
+                }
                 Instruction::Add => {
                     let b = self.pop();
                     let a = self.pop();

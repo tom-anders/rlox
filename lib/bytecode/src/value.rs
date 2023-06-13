@@ -7,6 +7,19 @@ pub enum Value {
     Nil,
 }
 
+impl Value {
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Value::Nil => false,
+            Value::Boolean(false) => false,
+            _ => true,
+        }
+    }
+    pub fn is_falsey(&self) -> bool {
+        !self.is_truthy()
+    }
+}
+
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

@@ -74,6 +74,7 @@ impl Chunk {
             Instruction::Multiply => ("Multiply", "".to_string()),
             Instruction::Divide => ("Divide", "".to_string()),
             Instruction::Nil => ("Nil", "".to_string()),
+            Instruction::Not => ("Not", "".to_string()),
             Instruction::True => ("True", "".to_string()),
             Instruction::False => ("False", "".to_string()),
         };
