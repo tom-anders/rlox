@@ -13,7 +13,10 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn write_instructions(&mut self, instructions: impl IntoIterator<Item = (Instruction, Line)>) {
+    pub fn write_instructions(
+        &mut self,
+        instructions: impl IntoIterator<Item = (Instruction, Line)>,
+    ) {
         for (instruction, line) in instructions {
             self.write_instruction(instruction, line);
         }
@@ -31,7 +34,7 @@ impl Chunk {
     pub fn add_constant(&mut self, value: Value) -> Option<Instruction> {
         self.constants.push(value);
         let index = (self.constants.len() - 1).try_into().ok()?;
-        Some(Instruction::Constant{ index })
+        Some(Instruction::Constant { index })
     }
 
     pub fn code(&self) -> &[u8] {
@@ -47,7 +50,7 @@ impl Chunk {
     }
 
     pub fn disassemble_instruction(&self, offset: usize) -> (String, usize) {
-        let op = Instruction::from_bytes(&self.code[offset..]);
+        let instr = Instruction::from_bytes(&self.code[offset..]);
 
         let line = self.lines[offset];
         let line_str = if offset > 0 && line == self.lines[offset - 1] {
@@ -56,30 +59,20 @@ impl Chunk {
             format!("{:4}", line)
         };
 
-        let (op_str, op_args) = match op {
-            Instruction::Return => ("Return", "".to_string()),
-            Instruction::Constant{ index } => (
-                "Constant",
-                format!(
-                    "{index} '{}'",
-                    self.constants
-                        .get(index as usize)
-                        .map(|c| c.to_string())
-                        .unwrap_or_else(|| "??".to_string())
-                ),
+        let op_args = match instr {
+            Instruction::Constant { index } => format!(
+                "{index} '{}'",
+                self.constants
+                    .get(index as usize)
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "??".to_string())
             ),
-            Instruction::Negate => ("Negate", "".to_string()),
-            Instruction::Add => ("Add", "".to_string()),
-            Instruction::Subtract => ("Subtract", "".to_string()),
-            Instruction::Multiply => ("Multiply", "".to_string()),
-            Instruction::Divide => ("Divide", "".to_string()),
-            Instruction::Nil => ("Nil", "".to_string()),
-            Instruction::Not => ("Not", "".to_string()),
-            Instruction::True => ("True", "".to_string()),
-            Instruction::False => ("False", "".to_string()),
+            _ => "".to_string(),
         };
 
-        (format!("{offset:04} {line_str} {op_str:16} {op_args}"), offset + op.num_bytes())
+        let opcode: OpCode = instr.clone().into();
+
+        (format!("{offset:04} {line_str} {opcode:16} {op_args}"), offset + instr.num_bytes())
     }
 }
 
@@ -111,7 +104,7 @@ mod tests {
         let mut chunk = Chunk::default();
 
         let c = chunk.add_constant(Value::Number(1.2)).unwrap();
-        chunk.write_instruction( c, Line(1));
+        chunk.write_instruction(c, Line(1));
         let c = chunk.add_constant(Value::Number(3.4)).unwrap();
         chunk.write_instruction(c, Line(1));
 

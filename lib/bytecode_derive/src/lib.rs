@@ -121,6 +121,12 @@ fn impl_opcode(data_enum: &DataEnum) -> proc_macro2::TokenStream {
         }
     });
 
+    let display_arms = opcodes.clone().map(|variant| {
+        quote! {
+            OpCode::#variant => write!(f, "{}", stringify!(#variant)),
+        }
+    });
+
     quote! {
         #[repr(u8)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,6 +141,38 @@ fn impl_opcode(data_enum: &DataEnum) -> proc_macro2::TokenStream {
                         #from_arms
                     )*
                     _ => panic!("Invalid opcode: {}", op),
+                }
+            }
+        }
+
+        impl std::fmt::Display for OpCode {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    #(
+                        #display_arms
+                    )*
+                }
+            }
+        }
+    }
+}
+
+/// implement From<#indent> for OpCode
+fn impl_opcode_from_instr(ident: &Ident, data_enum: &DataEnum) -> proc_macro2::TokenStream {
+    let from_arms = data_enum.variants.iter().map(|variant| {
+        let opcode = variant.ident.clone();
+        quote! {
+            #ident::#opcode { .. } => OpCode::#opcode,
+        }
+    });
+
+    quote! {
+        impl From<#ident> for OpCode {
+            fn from(instr: #ident) -> Self {
+                match instr {
+                    #(
+                        #from_arms
+                    )*
                 }
             }
         }
@@ -153,11 +191,13 @@ pub fn derive_instruction(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     let impl_opcode = impl_opcode(&data_enum);
     let impl_len = impl_num_bytes(&ident, &data_enum);
     let impl_from_bytes = impl_from_bytes(&ident, &data_enum);
+    let impl_opcode_from_instr = impl_opcode_from_instr(&ident, &data_enum);
 
     quote! {
         #impl_len
         #impl_opcode
         #impl_from_bytes
+        #impl_opcode_from_instr
     }
     .into()
 }
