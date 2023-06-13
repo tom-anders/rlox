@@ -46,6 +46,8 @@ pub enum CompilerErrorType {
     ExpectedRightParen,
     #[error("Expected expression")]
     ExpectedExpression,
+    #[error("Expected ';'")]
+    ExpectedSemicolon,
 }
 
 #[repr(u8)]
@@ -105,7 +107,7 @@ impl<'a> Compiler<'a> {
         let mut errors = RloxErrors(Vec::new());
 
         while !self.is_at_end() {
-            match self.expression() {
+            match self.declaration() {
                 Ok(()) => (),
                 Err(e) => {
                     log::trace!("Hit error: {:?}, syncing...", e);
@@ -129,6 +131,29 @@ impl<'a> Compiler<'a> {
         } else {
             Err(errors)
         }
+    }
+
+    fn declaration(&mut self) -> Result<()> {
+        self.statement()
+    }
+
+    fn statement(&mut self) -> Result<()> {
+        if self.consume(Print)?.is_ok() {
+            self.print_statement()
+        } else {
+            self.expression_statement()
+        }
+    }
+    
+    fn print_statement(&mut self) -> Result<()> {
+        self.expression()?;
+        let line = self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?.line();
+        self.chunk.write_instruction(Instruction::Print, line);
+        Ok(())
+    }
+
+    fn expression_statement(&mut self) -> Result<()> {
+        todo!()
     }
 
     fn expression(&mut self) -> Result<()> {
