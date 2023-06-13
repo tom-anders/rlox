@@ -1,4 +1,4 @@
-use std::{cell::RefCell, debug_assert, iter::Peekable, unreachable};
+use std::{cell::RefCell, debug_assert, iter::Peekable, unreachable, rc::Rc};
 
 use bytecode::{
     chunk::Chunk,
@@ -134,7 +134,15 @@ impl<'a> Compiler<'a> {
     }
 
     fn declaration(&mut self) -> Result<()> {
-        self.statement()
+        if self.consume(Var)?.is_ok() {
+            self.var_declaration()
+        } else {
+            self.statement()
+        }
+    }
+
+    fn var_declaration(&mut self) -> Result<()> {
+        todo!()
     }
 
     fn statement(&mut self) -> Result<()> {
@@ -194,7 +202,7 @@ impl<'a> Compiler<'a> {
             _ => unreachable!(),
         }.to_string();
 
-        let instr = self.current_chunk().add_constant(Value::Object(Box::new(Object::new(ObjectData::String(s))))).ok_or_else(|| {
+        let instr = self.current_chunk().add_constant(Value::Object(Box::new(Object::new(ObjectData::String(Rc::new(s)))))).ok_or_else(|| {
             CompilerError::new(CompilerErrorType::TooManyConstants, prefix_token.clone())
         })?;
         self.current_chunk().write_instruction(instr, prefix_token.line());
