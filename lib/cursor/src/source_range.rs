@@ -14,7 +14,6 @@ impl<'a> From<(Cursor<'a>, Cursor<'a>)> for SourceRange<'a> {
 
 impl<'a> SourceRange<'a> {
     pub fn new(start: Cursor<'a>, end: Cursor<'a>) -> Self {
-        assert!(start.source == end.source);
         assert!(start.chars.as_str().len() >= end.chars.as_str().len());
         Self { start, end }
     }
