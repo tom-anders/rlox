@@ -41,10 +41,9 @@ impl Chunk {
         }
     }
 
-    pub fn add_constant(&mut self, value: Value) -> Option<Instruction> {
+    pub fn add_constant(&mut self, value: Value) -> Option<u8> {
         self.constants.push(value);
-        let index = (self.constants.len() - 1).try_into().ok()?;
-        Some(Instruction::Constant { index })
+        (self.constants.len() - 1).try_into().ok()
     }
 
     pub fn code(&self) -> &[u8] {
@@ -57,6 +56,16 @@ impl Chunk {
 
     pub fn constants(&self) -> &[Value] {
         &self.constants
+    }
+
+    pub fn get_string_constant(&self, index: u8) -> Option<&Rc<String>> {
+        self.constants.get(index as usize).and_then(|v| match v {
+            Value::Object(o) => match o.data() {
+                ObjectData::String(s) => Some(s),
+                _ => None,
+            },
+            _ => None,
+        })
     }
 
     pub fn disassemble_instruction(&self, offset: usize) -> (String, usize) {
@@ -100,26 +109,5 @@ impl Debug for Chunk {
         writeln!(f, "=======================================")?;
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use cursor::Line;
-
-    use super::*;
-
-    #[test]
-    fn debug() {
-        let mut chunk = Chunk::default();
-
-        let c = chunk.add_constant(Value::Number(1.2)).unwrap();
-        chunk.write_instruction(c, Line(1));
-        let c = chunk.add_constant(Value::Number(3.4)).unwrap();
-        chunk.write_instruction(c, Line(1));
-
-        chunk.write_instruction(Instruction::Return, Line(1));
-
-        dbg!(chunk);
     }
 }

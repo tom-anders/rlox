@@ -1,4 +1,4 @@
-use std::{fmt::{Display, Formatter}, ops::{Neg, Add, Mul, Sub, Div}};
+use std::{fmt::{Display, Formatter}, ops::{Neg, Add, Mul, Sub, Div}, rc::Rc};
 
 mod object;
 pub use object::*;
@@ -27,6 +27,17 @@ impl Value {
     pub fn intern_string<Interner: StringInterner>(&mut self, interner: &mut Interner) {
         if let Value::Object(o) = self {
             o.intern_string(interner)
+        }
+    }
+
+    pub fn string(s: String) -> Value {
+        Value::Object(Box::new(Object::string(s)))
+    }
+
+    pub fn try_as_string(&self) -> Option<Rc<String>> {
+        match self {
+            Value::Object(o) => o.try_as_string(),
+            _ => None,
         }
     }
 
