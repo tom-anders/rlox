@@ -5,7 +5,7 @@ use bytecode::{
     instructions::{Instruction, OpCode},
     value::{Value, Object, ObjectData},
 };
-use cursor::Line;
+use cursor::{Line, Col};
 use errors::{RloxError, RloxErrors};
 use log::{debug, info, trace};
 use scanner::{token::TokenData, Token, TokenStream, TokenType};
@@ -15,24 +15,25 @@ use TokenType::*;
 pub type Result<T> = std::result::Result<T, RloxError>;
 
 #[derive(Debug)]
-pub struct CompilerError<'a> {
+pub struct CompilerError {
     error: CompilerErrorType,
-    token: Token<'a>,
+    line: Line,
+    col: Col,
 }
 
-impl<'a> From<CompilerError<'a>> for RloxError {
-    fn from(error: CompilerError<'a>) -> Self {
+impl From<CompilerError> for RloxError {
+    fn from(error: CompilerError) -> Self {
         RloxError {
-            line: error.token.line(),
-            col: error.token.col(),
+            line: error.line,
+            col: error.col,
             message: error.error.to_string(),
         }
     }
 }
 
-impl<'a> CompilerError<'a> {
-    fn new(error: CompilerErrorType, token: Token<'a>) -> Self {
-        Self { token, error }
+impl CompilerError {
+    fn new(error: CompilerErrorType, token: Token) -> Self {
+        Self { error, line: token.line(), col: token.col() }
     }
 }
 
@@ -48,6 +49,8 @@ pub enum CompilerErrorType {
     ExpectedExpression,
     #[error("Expected ';'")]
     ExpectedSemicolon,
+    #[error("Expected variable name")]
+    ExpectedVariableName,
 }
 
 #[repr(u8)]
@@ -141,8 +144,52 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn variable(&mut self, token: &Token<'a>) -> Result<()> {
+        self.named_variable(token)
+    }
+
+    fn named_variable(&mut self, identifier: &Token<'a>) -> Result<()> {
+        let constant_index = self.add_identifier_constant(identifier)?;
+        if self.consume(Equal)?.is_ok() {
+            self.expression()?;
+            self.chunk.write_instruction(Instruction::SetGlobal { constant_index }, identifier.line());
+        } else {
+            self.chunk.write_instruction(Instruction::ReadGlobal{ constant_index }, identifier.line());
+        }
+        Ok(())
+    }
+
     fn var_declaration(&mut self) -> Result<()> {
-        todo!()
+        let (global, line) = self.parse_variable(CompilerErrorType::ExpectedVariableName)?;
+        if self.consume(Equal)?.is_ok() {
+            self.expression()?;
+        } else {
+            self.chunk.write_instruction(Instruction::Nil, line);
+        }
+        self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?;
+        self.define_variable(global, line)
+    }
+
+    fn parse_variable(&mut self, error: CompilerErrorType) -> Result<(u8, Line)> {
+        let (name, line) = match self.consume_or_error(Identifier, error) {
+            Ok(token) => (token.lexeme().to_string(), token.line()),
+            Err(e) => return Err(e),
+        };
+
+        let index = self.chunk.add_constant(Value::string(name))
+            .ok_or(CompilerError { error: CompilerErrorType::TooManyConstants, line, col: Col(1) })?;
+
+        Ok((index, line))
+    }
+
+    fn add_identifier_constant(&mut self, token: &Token<'a>) -> Result<u8> {
+        self.current_chunk().add_constant(Value::string(token.lexeme().to_string()))
+            .ok_or_else(|| CompilerError::new(CompilerErrorType::TooManyConstants, token.clone()).into())
+    }
+
+    fn define_variable(&mut self, global: u8, line: Line) -> Result<()> {
+        self.chunk.write_instruction(Instruction::DefineGlobal{ constant_index: global }, line);
+        Ok(())
     }
 
     fn statement(&mut self) -> Result<()> {
@@ -189,10 +236,10 @@ impl<'a> Compiler<'a> {
             TokenData::Number(n) => n,
             _ => unreachable!(),
         };
-        let instr = self.current_chunk().add_constant(Value::Number(value)).ok_or_else(|| {
+        let index = self.current_chunk().add_constant(Value::Number(value)).ok_or_else(|| {
             CompilerError::new(CompilerErrorType::TooManyConstants, prefix_token.clone())
         })?;
-        self.current_chunk().write_instruction(instr, prefix_token.line());
+        self.current_chunk().write_instruction(Instruction::Constant { index }, prefix_token.line());
         Ok(())
     }
 
@@ -202,10 +249,10 @@ impl<'a> Compiler<'a> {
             _ => unreachable!(),
         }.to_string();
 
-        let instr = self.current_chunk().add_constant(Value::Object(Box::new(Object::new(ObjectData::String(Rc::new(s)))))).ok_or_else(|| {
+        let index = self.current_chunk().add_constant(Value::Object(Box::new(Object::new(ObjectData::String(Rc::new(s)))))).ok_or_else(|| {
             CompilerError::new(CompilerErrorType::TooManyConstants, prefix_token.clone())
         })?;
-        self.current_chunk().write_instruction(instr, prefix_token.line());
+        self.current_chunk().write_instruction(Instruction::Constant { index }, prefix_token.line());
 
         Ok(())
     }
@@ -257,6 +304,7 @@ impl<'a> Compiler<'a> {
             LeftParen => self.grouping(&token),
             Minus | Bang => self.unary(&token),
             Str => self.string(&token),
+            Identifier => self.variable(&token),
             _ => {
                 Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
             }

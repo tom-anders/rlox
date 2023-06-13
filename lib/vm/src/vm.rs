@@ -1,6 +1,6 @@
-use std::{ptr, marker::PhantomPinned, pin::Pin, ops::{DerefMut, Neg}, rc::Rc, collections::HashSet};
+use std::{ptr, marker::PhantomPinned, pin::Pin, ops::{DerefMut, Neg}, rc::Rc, collections::{HashSet, HashMap, hash_map::Entry}};
 
-use bytecode::{chunk::Chunk, instructions::Instruction, value::Value};
+use bytecode::{chunk::Chunk, instructions::Instruction, value::{Value, ObjectData}};
 use compiler::Compiler;
 use errors::RloxErrors;
 
@@ -9,6 +9,7 @@ pub struct Vm {
     chunk: Chunk,
     stack: Vec<Value>,
     strings: HashSet<Rc<String>>,
+    globals: HashMap<Rc<String>, Value>,
     // FIXME: Using a raw pointer would be a bit more performant, but would also require `unsafe`.
     // So let's leave it like this for now and maybe optimize later.
     ip: usize,
@@ -28,6 +29,8 @@ pub enum RuntimeError {
     InvalidNegateOperant(Value),
     #[error("Invalid binary operants: ({0}, {1})")]
     InvalidBinaryOperants(Value, Value),
+    #[error("Undefined variable: '{0}'")]
+    UndefinedVariable(String),
 }
 
 pub type Result<T> = std::result::Result<T, InterpretError>;
@@ -50,6 +53,7 @@ impl Vm {
             ip: 0,
             strings: HashSet::new(),
             chunk: Chunk::default(),
+            globals: HashMap::new(),
         }
     }
 
@@ -59,6 +63,10 @@ impl Vm {
 
     fn pop(&mut self) -> Value {
         self.stack.pop().expect("Stack underflow")
+    }
+
+    fn peek(&self) -> &Value {
+        self.stack.last().expect("Stack underflow")
     }
 
     fn runtime_error(&self, error: RuntimeError) -> InterpretError {
@@ -79,6 +87,7 @@ impl Vm {
             let op = Instruction::from_bytes(bytes);
 
             log::trace!("Stack: {:?}", self.stack);
+            log::trace!("Globals: {:?}", self.globals);
             log::trace!("{}", self.chunk.disassemble_instruction(self.ip).0);
 
             match op {
@@ -95,6 +104,34 @@ impl Vm {
                 Instruction::Constant{ index } => {
                     let constant = self.chunk.constants().get(index as usize).unwrap();
                     self.push(constant.clone());
+                }
+                Instruction::DefineGlobal { constant_index } => {
+                    let name = self.chunk.get_string_constant(constant_index)
+                        .expect("Missing string constant for global");
+
+                    self.globals.insert(name.clone(), self.peek().clone());
+                    self.pop();
+                }
+                Instruction::SetGlobal { constant_index } => {
+                    let name = self.chunk.get_string_constant(constant_index)
+                        .expect("Missing string constant for global");
+
+                    let val = self.peek().clone();
+                    match self.globals.entry(name.clone()) {
+                        Entry::Occupied(mut entry) => {
+                            *entry.get_mut() = val;
+                        }
+                        Entry::Vacant(_) => return Err(self.runtime_error(RuntimeError::UndefinedVariable(name.to_string()))),
+                    };
+                }
+                Instruction::ReadGlobal { constant_index } => {
+                    let name = self.chunk.get_string_constant(constant_index)
+                        .expect("Missing string constant for global");
+
+                    let value = self.globals.get(name)
+                        .ok_or(self.runtime_error(RuntimeError::UndefinedVariable(name.to_string())))?;
+
+                    self.push(value.clone());
                 }
                 Instruction::Nil => self.push(Value::Nil),
                 Instruction::True => self.push(Value::Boolean(true)),

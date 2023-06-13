@@ -6,7 +6,7 @@ use super::Value;
 
 #[derive(Debug, Clone)]
 pub struct Object {
-    data: ObjectData,
+    pub(crate) data: ObjectData,
 }
 
 impl PartialEq for Object {
@@ -27,6 +27,17 @@ impl Object {
             ObjectData::String(s) => {
                 interner.intern_string(s);
             }
+        }
+    }
+
+    pub fn string(s: impl Into<Rc<String>>) -> Self {
+        Self::new(ObjectData::String(s.into()))
+    }
+
+    pub fn try_as_string(&self) -> Option<Rc<String>> {
+        match &self.data {
+            ObjectData::String(s) => Some(s.clone()),
+            _ => None,
         }
     }
 
