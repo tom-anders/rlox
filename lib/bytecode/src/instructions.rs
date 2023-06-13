@@ -15,6 +15,7 @@ pub enum Instruction {
     Equal,
     Greater,
     Less,
+    Print,
 }
 
 impl Instruction {

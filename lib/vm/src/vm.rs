@@ -68,8 +68,11 @@ impl Vm {
 
             match op {
                 Instruction::Return => {
-                    println!("{}", self.pop());
+                    //  Exit interpreter
                     return Ok(());
+                }
+                Instruction::Print => {
+                    println!("{}", self.pop());
                 }
                 Instruction::Constant{ index } => {
                     let constant = self.chunk.constants().get(index as usize).unwrap();
