@@ -1,10 +1,16 @@
 use std::{fmt::{Display, Formatter}, ops::{Neg, Add, Mul, Sub, Div}};
 
+mod object;
+pub use object::*;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Number(f64),
     Boolean(bool),
     Nil,
+    // FIXME: Box is probably not correct here, clox just uses a raw pointer of course.
+    // We'll have to see how this works out when we add GC.
+    Object(Box<Object>)
 }
 
 impl Value {
@@ -40,6 +46,7 @@ impl Display for Value {
             Value::Number(n) => write!(f, "{}", n),
             Value::Nil => write!(f, "nil"),
             Value::Boolean(b) => write!(f, "{}", b),
+            Value::Object(o) => write!(f, "{}", o),
         }
     }
 }
@@ -50,8 +57,7 @@ impl Neg for Value {
     fn neg(self) -> Self::Output {
         match self {
             Value::Number(n) => Ok(Value::Number(-n)),
-            Value::Boolean(_) => Err(self),
-            Value::Nil => Err(self),
+            _ => Err(self),
         }
     }
 }
@@ -60,10 +66,10 @@ impl Add for Value {
     type Output = Result<Self, (Self, Self)>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        match (&self, &rhs) {
+        match (self, rhs) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
-            // TODO add Value::String here once we have it
-            _ => Err((self, rhs)),
+            (Value::Object(a), Value::Object(b)) => a + b,
+            (a, b) => Err((a, b)),
         }
     }
 }
