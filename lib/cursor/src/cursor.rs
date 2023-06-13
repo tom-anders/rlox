@@ -7,6 +7,7 @@ pub use source_range::*;
 pub struct Cursor<'a> {
     source: &'a str,
     chars: Chars<'a>,
+    line: Line,
 }
 
 impl <'a> PartialEq for Cursor<'a> {
@@ -35,43 +36,11 @@ impl Display for Col {
 
 impl<'a> Cursor<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self { source, chars: source.chars(), }
-    }
-
-    pub fn from_line_col(source: &'a str, line: Line, col: Col) -> Self {
-        let mut chars = source.chars();
-        let mut line_count = 1;
-        let mut col_count = 1;
-
-        while line_count != line.0 || col_count != col.0 {
-            match chars.next() {
-                Some('\n') => {
-                    line_count += 1;
-                    col_count = 1;
-                }
-                Some(_) => {
-                    col_count += 1;
-                }
-                None => {
-                    panic!("Line {:?} and column {:?} is out of bounds for source", line, col);
-                }
-            }
-        }
-
-        Self { source, chars }
+        Self { source, chars: source.chars(), line: Line(1) }
     }
 
     pub fn line(&self) -> Line {
-        let mut line = 1;
-        let mut chars = self.source.chars();
-
-        while chars.as_str() != self.chars.as_str() {
-            if chars.next() == Some('\n') {
-                line += 1;
-            }
-        }
-
-        Line(line)
+        self.line
     }
 
     pub fn col(&self) -> Col {
@@ -100,7 +69,11 @@ impl<'a> Iterator for Cursor<'a> {
     type Item = char;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.chars.next()
+        let c = self.chars.next();
+        if c == Some('\n') {
+            self.line.0 += 1;
+        }
+        c
     }
 }
 
@@ -127,9 +100,16 @@ impl<'a> Cursor<'a> {
 
         let chars = self.source[self.source.len() - self.chars.as_str().len() - 1..].chars();
 
+        let line = if chars.clone().next() == Some('\n') {
+            Line(self.line.0 - 1) 
+        } else {
+            self.line
+        };
+
         Some(Cursor {
             source: self.source,
             chars,
+            line
         })
     }
 }
