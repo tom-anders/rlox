@@ -3,7 +3,7 @@ use std::{cell::RefCell, debug_assert, iter::Peekable, unreachable};
 use bytecode::{
     chunk::Chunk,
     instructions::{Instruction, OpCode},
-    value::Value,
+    value::{Value, Object, ObjectData},
 };
 use cursor::Line;
 use errors::{RloxError, RloxErrors};
@@ -149,11 +149,28 @@ impl<'a> Compiler<'a> {
 
     fn number(&mut self, prefix_token: &Token<'a>) -> Result<()> {
         trace!("Compiling number: {:?}", prefix_token);
-        let value = prefix_token.lexeme().parse::<f64>().unwrap();
+        let value = match prefix_token.data {
+            TokenData::Number(n) => n,
+            _ => unreachable!(),
+        };
         let instr = self.current_chunk().add_constant(Value::Number(value)).ok_or_else(|| {
             CompilerError::new(CompilerErrorType::TooManyConstants, prefix_token.clone())
         })?;
         self.current_chunk().write_instruction(instr, prefix_token.line());
+        Ok(())
+    }
+
+    fn string(&mut self, prefix_token: &Token<'a>) -> Result<()> {
+        let s = match prefix_token.data {
+            TokenData::Str(s) => s,
+            _ => unreachable!(),
+        }.to_string();
+
+        let instr = self.current_chunk().add_constant(Value::Object(Box::new(Object::new(ObjectData::String(s))))).ok_or_else(|| {
+            CompilerError::new(CompilerErrorType::TooManyConstants, prefix_token.clone())
+        })?;
+        self.current_chunk().write_instruction(instr, prefix_token.line());
+
         Ok(())
     }
 
@@ -203,6 +220,7 @@ impl<'a> Compiler<'a> {
             True | False | Nil => self.literal(&token),
             LeftParen => self.grouping(&token),
             Minus | Bang => self.unary(&token),
+            Str => self.string(&token),
             _ => {
                 Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
             }

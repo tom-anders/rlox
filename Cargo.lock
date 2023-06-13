@@ -85,6 +85,7 @@ dependencies = [
  "bytecode_derive",
  "cursor",
  "itertools",
+ "log",
  "strum",
  "strum_macros",
 ]
