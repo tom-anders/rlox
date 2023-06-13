@@ -16,6 +16,7 @@ pub enum Instruction {
     Greater,
     Less,
     Print,
+    Pop,
 }
 
 impl Instruction {

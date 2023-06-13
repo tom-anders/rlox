@@ -74,6 +74,9 @@ impl Vm {
                 Instruction::Print => {
                     println!("{}", self.pop());
                 }
+                Instruction::Pop => {
+                    self.pop();
+                }
                 Instruction::Constant{ index } => {
                     let constant = self.chunk.constants().get(index as usize).unwrap();
                     self.push(constant.clone());
