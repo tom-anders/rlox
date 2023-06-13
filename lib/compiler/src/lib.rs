@@ -166,7 +166,11 @@ impl<'a> Compiler<'a> {
     fn unary(&mut self, prefix_token: &Token<'a>) -> Result<()> {
         // Compile the operand
         self.parse_precedence(Precedence::Unary)?;
-        self.current_chunk().write_instruction(Instruction::Negate, prefix_token.line());
+        self.current_chunk().write_instruction(match prefix_token.ty() {
+            Minus => Instruction::Negate,
+            Bang => Instruction::Not,
+            _ => unreachable!(),
+        }, prefix_token.line());
         Ok(())
     }
 
@@ -192,7 +196,7 @@ impl<'a> Compiler<'a> {
             Number => self.number(&token),
             True | False | Nil => self.literal(&token),
             LeftParen => self.grouping(&token),
-            Minus => self.unary(&token),
+            Minus | Bang => self.unary(&token),
             _ => {
                 Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
             }
