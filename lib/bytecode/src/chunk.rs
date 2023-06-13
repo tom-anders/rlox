@@ -1,15 +1,19 @@
-use std::{fmt::Debug, println, writeln};
+use std::{fmt::Debug, println, writeln, rc::Rc, collections::HashSet};
 
 use cursor::Line;
 use itertools::Itertools;
 
-use crate::{instructions::*, value::Value};
+use crate::{instructions::*, value::{Value, ObjectData}};
 
 #[derive(Clone, Default)]
 pub struct Chunk {
     code: Vec<u8>,
     constants: Vec<Value>,
     lines: Vec<usize>,
+}
+
+pub trait StringInterner {
+    fn intern_string(&mut self, string: &mut Rc<String>);
 }
 
 impl Chunk {
@@ -28,6 +32,12 @@ impl Chunk {
         // TODO: This is a waste of memory of course, challenge 1 in chapter 14 would solve this.
         for _ in 0..op.num_bytes() {
             self.lines.push(line.0);
+        }
+    }
+
+    pub fn intern_strings<Interner: StringInterner>(&mut self, interner: &mut Interner) {
+        for constant in self.constants.iter_mut() {
+            constant.intern_string(interner);
         }
     }
 

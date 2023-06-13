@@ -1,4 +1,4 @@
-use std::{ptr, marker::PhantomPinned, pin::Pin, ops::{DerefMut, Neg}};
+use std::{ptr, marker::PhantomPinned, pin::Pin, ops::{DerefMut, Neg}, rc::Rc, collections::HashSet};
 
 use bytecode::{chunk::Chunk, instructions::Instruction, value::Value};
 use compiler::Compiler;
@@ -8,6 +8,7 @@ use errors::RloxErrors;
 pub struct Vm {
     chunk: Chunk,
     stack: Vec<Value>,
+    strings: HashSet<Rc<String>>,
     // FIXME: Using a raw pointer would be a bit more performant, but would also require `unsafe`.
     // So let's leave it like this for now and maybe optimize later.
     ip: usize,
@@ -18,7 +19,7 @@ pub enum InterpretError {
     #[error(transparent)]
     CompileError(#[from] RloxErrors),
     #[error("line {line}: {error}")]
-    RuntimeError{line: usize, error: RuntimeError},
+    RuntimeError{line: usize, error: String},
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -31,11 +32,23 @@ pub enum RuntimeError {
 
 pub type Result<T> = std::result::Result<T, InterpretError>;
 
+impl bytecode::chunk::StringInterner for Vm {
+    fn intern_string(&mut self, string: &mut Rc<String>) {
+        match self.strings.get(string) {
+            Some(s) => *string = s.clone(),
+            None => {
+                self.strings.insert(string.clone());
+            }
+        }
+    }
+}
+
 impl Vm {
     pub fn new() -> Self {
         Self {
             stack: Vec::with_capacity(256),
             ip: 0,
+            strings: HashSet::new(),
             chunk: Chunk::default(),
         }
     }
@@ -51,12 +64,14 @@ impl Vm {
     fn runtime_error(&self, error: RuntimeError) -> InterpretError {
         InterpretError::RuntimeError {
             line: self.chunk.lines()[self.ip],
-            error: error.into(),
+            error: error.to_string(),
         }
     }
 
     pub fn run(&mut self, source: &str) -> Result<()> {
-        self.chunk = Compiler::new(source).compile()?;
+        let mut chunk = Compiler::new(source).compile()?;
+        chunk.intern_strings(self);
+        self.chunk = chunk;
         self.ip = 0;
 
         loop {
@@ -111,7 +126,9 @@ impl Vm {
                 Instruction::Add => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push((a + b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?);
+                    let mut result = (a + b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?;
+                    result.intern_string(self);
+                    self.push(result);
                 }
                 Instruction::Subtract => {
                     let b = self.pop();

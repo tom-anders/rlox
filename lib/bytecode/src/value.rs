@@ -3,6 +3,8 @@ use std::{fmt::{Display, Formatter}, ops::{Neg, Add, Mul, Sub, Div}};
 mod object;
 pub use object::*;
 
+use crate::chunk::StringInterner;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Number(f64),
@@ -17,8 +19,15 @@ impl Value {
     pub fn is_truthy(&self) -> bool {
         !matches!(self, Value::Nil | Value::Boolean(false))
     }
+
     pub fn is_falsey(&self) -> bool {
         !self.is_truthy()
+    }
+
+    pub fn intern_string<Interner: StringInterner>(&mut self, interner: &mut Interner) {
+        if let Value::Object(o) = self {
+            o.intern_string(interner)
+        }
     }
 
     pub fn less_than(self, other: Value) -> Result<Value, (Value, Value)> {
