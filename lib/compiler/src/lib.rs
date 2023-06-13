@@ -153,7 +153,10 @@ impl<'a> Compiler<'a> {
     }
 
     fn expression_statement(&mut self) -> Result<()> {
-        todo!()
+        self.expression()?;
+        let line = self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?.line();
+        self.chunk.write_instruction(Instruction::Pop, line);
+        Ok(())
     }
 
     fn expression(&mut self) -> Result<()> {
