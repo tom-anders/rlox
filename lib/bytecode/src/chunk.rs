@@ -15,9 +15,9 @@ pub struct Chunk {
 impl Chunk {
     pub fn write_instructions(
         &mut self,
-        instructions: impl IntoIterator<Item = (Instruction, Line)>,
+        instructions: impl IntoIterator<Item = Instruction>, line: cursor::Line
     ) {
-        for (instruction, line) in instructions {
+        for instruction in instructions {
             self.write_instruction(instruction, line);
         }
     }

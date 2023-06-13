@@ -12,6 +12,9 @@ pub enum Instruction {
     Nil,
     True,
     False,
+    Equal,
+    Greater,
+    Less,
 }
 
 impl Instruction {

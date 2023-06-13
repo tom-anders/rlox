@@ -184,6 +184,12 @@ impl<'a> Compiler<'a> {
             Plus => self.current_chunk().write_instruction(Instruction::Add, operator_token.line()),
             Slash => self.current_chunk().write_instruction(Instruction::Divide, operator_token.line()),
             Star => self.current_chunk().write_instruction(Instruction::Multiply, operator_token.line()),
+            BangEqual => self.current_chunk().write_instructions([Instruction::Equal, Instruction::Not], operator_token.line()),
+            EqualEqual => self.current_chunk().write_instruction(Instruction::Equal, operator_token.line()),
+            Greater => self.current_chunk().write_instruction(Instruction::Greater, operator_token.line()),
+            GreaterEqual => self.current_chunk().write_instructions([Instruction::Less, Instruction::Not], operator_token.line()),
+            Less => self.current_chunk().write_instruction(Instruction::Less, operator_token.line()),
+            LessEqual => self.current_chunk().write_instructions([Instruction::Greater, Instruction::Not], operator_token.line()),
             _ => unreachable!(),
         }
         Ok(())
@@ -207,7 +213,10 @@ impl<'a> Compiler<'a> {
         let token = self.advance()?;
         trace!("Advancing with infix rule for {}", token);
         match token.ty() {
-            Plus | Minus | Slash | Star => self.binary(&token),
+            Plus | Minus | Slash | Star |
+            EqualEqual | BangEqual | Greater | GreaterEqual | Less | LessEqual => {
+                self.binary(&token)
+            }
             _ => {
                 Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
             }
@@ -218,6 +227,8 @@ impl<'a> Compiler<'a> {
         match token_type {
             Plus | Minus => Precedence::Term,
             Slash | Star => Precedence::Factor,
+            EqualEqual | BangEqual => Precedence::Equality,
+            Greater | GreaterEqual | Less | LessEqual => Precedence::Comparison,
             _ => Precedence::None,
         }
     }

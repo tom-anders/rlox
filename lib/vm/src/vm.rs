@@ -87,6 +87,21 @@ impl Vm {
                     let v = self.pop();
                     self.push(Value::Boolean(!v.is_truthy()));
                 }
+                Instruction::Equal => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    self.push(Value::Boolean(a == b));
+                }
+                Instruction::Less => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    self.push(a.less_than(b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?);
+                }
+                Instruction::Greater => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    self.push(a.greater_than(b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?);
+                }
                 Instruction::Add => {
                     let b = self.pop();
                     let a = self.pop();
