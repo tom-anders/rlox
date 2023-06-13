@@ -1,6 +1,6 @@
 use std::{fmt::{Display, Formatter}, ops::{Neg, Add, Mul, Sub, Div}};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Number(f64),
     Boolean(bool),
@@ -17,6 +17,20 @@ impl Value {
     }
     pub fn is_falsey(&self) -> bool {
         !self.is_truthy()
+    }
+
+    pub fn less_than(self, other: Value) -> Result<Value, (Value, Value)> {
+        match (&self, &other) {
+            (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a < b)),
+            _ => Err((self, other)),
+        }
+    }
+
+    pub fn greater_than(self, other: Value) -> Result<Value, (Value, Value)> {
+        match (&self, &other) {
+            (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a > b)),
+            _ => Err((self, other)),
+        }
     }
 }
 
