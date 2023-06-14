@@ -51,6 +51,8 @@ pub enum CompilerErrorType {
     ExpectedSemicolon,
     #[error("Expected variable name")]
     ExpectedVariableName,
+    #[error("Invalid assignment target")]
+    InvalidAssignmentTarget,
 }
 
 #[repr(u8)]
@@ -88,6 +90,10 @@ impl Precedence {
     pub fn next_lower_precedence(self) -> Self {
         let prim: u8 = self.into();
         (prim - 1).try_into().unwrap()
+    }
+
+    pub fn lower_or_equal(self, other: Self) -> bool {
+        self as u8 <= other as u8
     }
 }
 
@@ -144,13 +150,13 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn variable(&mut self, token: &Token<'a>) -> Result<()> {
-        self.named_variable(token)
+    fn variable(&mut self, token: &Token<'a>, can_assign: bool) -> Result<()> {
+        self.named_variable(token, can_assign)
     }
 
-    fn named_variable(&mut self, identifier: &Token<'a>) -> Result<()> {
+    fn named_variable(&mut self, identifier: &Token<'a>, can_assign: bool) -> Result<()> {
         let constant_index = self.add_identifier_constant(identifier)?;
-        if self.consume(Equal)?.is_ok() {
+        if can_assign && self.consume(Equal)?.is_ok() {
             self.expression()?;
             self.chunk.write_instruction(Instruction::SetGlobal { constant_index }, identifier.line());
         } else {
@@ -295,7 +301,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn advance_with_prefix_rule(&mut self) -> Result<()> {
+    fn advance_with_prefix_rule(&mut self, can_assign: bool) -> Result<()> {
         let token = self.advance()?;
         trace!("Advancing with prefix rule for {}", token);
         match token.ty() {
@@ -304,7 +310,7 @@ impl<'a> Compiler<'a> {
             LeftParen => self.grouping(&token),
             Minus | Bang => self.unary(&token),
             Str => self.string(&token),
-            Identifier => self.variable(&token),
+            Identifier => self.variable(&token, can_assign),
             _ => {
                 Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
             }
@@ -341,11 +347,20 @@ impl<'a> Compiler<'a> {
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<()> {
-        trace!("Parsing precedence: {:?}", precedence);
-        self.advance_with_prefix_rule()?;
+        let can_assign = precedence.lower_or_equal(Precedence::Assignment);
+        trace!("Parsing precedence: {:?}, can_assign: {can_assign}", precedence);
+        self.advance_with_prefix_rule(can_assign)?;
 
         while precedence <= self.peek_precendence()? {
             self.advance_with_infix_rule()?;
+        }
+
+        if can_assign {
+            // If the equal has not been consumed, we tried assigning to an invalid target,
+            // so report that error here
+            if let Ok(token) = self.consume(Equal)? {
+                return Err(CompilerError::new(CompilerErrorType::InvalidAssignmentTarget, token).into())
+            }
         }
 
         Ok(())
