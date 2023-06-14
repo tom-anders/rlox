@@ -68,52 +68,6 @@ fn impl_num_bytes(ident: &Ident, data_enum: &DataEnum) -> proc_macro2::TokenStre
     }
 }
 
-fn impl_from_bytes(ident: &Ident, data_enum: &DataEnum) -> proc_macro2::TokenStream {
-    let from_bytes_arms = data_enum.variants.iter().map(|variant| match variant.fields {
-        syn::Fields::Named(ref fields) => {
-            let fields = fields.named.iter().enumerate().map(|(i, f)| {
-                let ident = &f.ident;
-                let index = i + 1;
-                quote! {
-                    #ident: bytes[#index],
-                }
-            });
-            let opcode = variant.ident.clone();
-            quote! {
-                OpCode::#opcode => #ident::#opcode { #(#fields),* }
-            }
-        }
-        syn::Fields::Unnamed(ref fields) => {
-            let fields = fields.unnamed.iter().enumerate().map(|(i, _)| {
-                let index = i + 1;
-                quote! {
-                    bytes[#index],
-                }
-            });
-            let opcode = variant.ident.clone();
-            quote! {
-                OpCode::#opcode => #ident::#opcode(#(#fields),*)
-            }
-        }
-        syn::Fields::Unit => {
-            quote! {
-                OpCode::#variant => #ident::#variant
-            }
-        }
-    });
-
-    quote! {
-        impl #ident {
-            pub fn from_bytes(bytes: &[u8]) -> Self {
-                let op = OpCode::from(bytes[0]);
-                match op {
-                    #(#from_bytes_arms),*
-                }
-            }
-        }
-    }
-}
-
 fn impl_opcode(data_enum: &DataEnum) -> proc_macro2::TokenStream {
     let opcodes = data_enum.variants.iter().map(|variant| variant.ident.clone());
 
@@ -179,6 +133,12 @@ fn impl_opcode_from_instr(ident: &Ident, data_enum: &DataEnum) -> proc_macro2::T
                 }
             }
         }
+        impl #ident {
+            // SAFETY: https://doc.rust-lang.org/std/mem/fn.discriminant.html#accessing-the-numeric-value-of-the-discriminant
+            pub fn opcode(&self) -> OpCode {
+                unsafe { *<*const _>::from(self).cast::<u8>() }.into()
+            }
+        }
     }
 }
 
@@ -193,13 +153,11 @@ pub fn derive_instruction(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
     let impl_opcode = impl_opcode(&data_enum);
     let impl_len = impl_num_bytes(&ident, &data_enum);
-    let impl_from_bytes = impl_from_bytes(&ident, &data_enum);
     let impl_opcode_from_instr = impl_opcode_from_instr(&ident, &data_enum);
 
     quote! {
         #impl_len
         #impl_opcode
-        #impl_from_bytes
         #impl_opcode_from_instr
     }
     .into()
