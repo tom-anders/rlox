@@ -308,9 +308,19 @@ impl<'a> Compiler<'a> {
         self.expression()?;
         let token = self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("if"))?;
 
-        let jump = self.write_jump(Instruction::JumpIfFalse(Jump(0)), token.line());
+        let then_jump = self.write_jump(Instruction::JumpIfFalse(Jump(0)), token.line());
+        self.current_chunk().write_instruction(Instruction::Pop, token.line());
         self.statement()?;
-        self.patch_jump(jump, token)?;
+
+        let else_jump = self.write_jump(Instruction::Jump(Jump(0)), token.line());
+
+        self.patch_jump(then_jump, token.clone())?;
+        self.current_chunk().write_instruction(Instruction::Pop, token.line());
+
+        if self.consume(Else)?.is_ok() {
+            self.statement()?;
+        }
+        self.patch_jump(else_jump, token)?;
 
         Ok(())
     }

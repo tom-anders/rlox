@@ -26,6 +26,7 @@ pub enum Instruction {
     SetLocal { stack_slot: u8 },
     GetLocal { stack_slot: u8 },
     JumpIfFalse(Jump),
+    Jump(Jump),
 }
 
 impl Instruction {
@@ -56,6 +57,9 @@ impl Instruction {
             OpCode::SetLocal => Instruction::SetLocal { stack_slot: bytes[1] },
             OpCode::GetLocal => Instruction::GetLocal { stack_slot: bytes[1] },
             OpCode::JumpIfFalse => Instruction::JumpIfFalse (
+                Jump(u16::from_ne_bytes(bytes[1..3].try_into().unwrap())),
+            ),
+            OpCode::Jump => Instruction::Jump (
                 Jump(u16::from_ne_bytes(bytes[1..3].try_into().unwrap())),
             ),
         }

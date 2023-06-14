@@ -241,6 +241,9 @@ impl Vm {
                         self.ip += jump as usize;
                     }
                 }
+                Instruction::Jump(Jump(jump)) => {
+                    self.ip += jump as usize;
+                }
             }
 
             self.ip += op.num_bytes();

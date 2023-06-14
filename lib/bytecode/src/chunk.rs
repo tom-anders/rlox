@@ -46,6 +46,9 @@ impl Chunk {
             JumpIfFalse(jump) => {
                 self.code.extend_from_slice(&jump.0.to_ne_bytes());
             }
+            Jump(jump) => {
+                self.code.extend_from_slice(&jump.0.to_ne_bytes());
+            }
             PopN(n) => self.code.push(n),
             Return | Negate | Not | Add | Subtract | Multiply | Divide | Nil | True | False
             | Equal | Greater | Less | Print | Pop => {}
@@ -121,6 +124,7 @@ impl Chunk {
             Instruction::SetLocal { stack_slot } => format!("'{stack_slot}'"),
             Instruction::GetLocal { stack_slot } => format!("'{stack_slot}'"),
             Instruction::JumpIfFalse(jump) => format!("'{}'", jump.0),
+            Instruction::Jump(jump) => format!("'{}'", jump.0),
             Instruction::Return
             | Instruction::Negate
             | Instruction::Not
