@@ -585,6 +585,7 @@ dependencies = [
  "env_logger",
  "errors",
  "log",
+ "scanner",
  "thiserror",
 ]
 

@@ -76,6 +76,18 @@ impl Vm {
         self.stack.pop().expect("Stack underflow")
     }
 
+    fn stack_at(&self, index: u8) -> &Value {
+        self.stack.get(index as usize).unwrap_or_else(|| panic!("Invalid stack index: {}", index))
+    }
+
+    fn stack_at_mut(&mut self, index: u8) -> &mut Value {
+        self.stack.get_mut(index as usize).unwrap_or_else(|| panic!("Invalid stack index: {}", index))
+    }
+
+    fn pop_n(&mut self, n: usize) {
+        self.stack.truncate(self.stack.len() - n)
+    }
+
     fn peek(&self) -> &Value {
         self.stack.last().expect("Stack underflow")
     }
@@ -109,6 +121,9 @@ impl Vm {
                 Instruction::Pop => {
                     self.pop();
                 }
+                Instruction::PopN(n) => {
+                    self.pop_n(n as usize);
+                }
                 Instruction::Constant { index } => {
                     let constant = self.chunk.constants().get(index as usize).unwrap();
                     self.push(constant.clone());
@@ -139,7 +154,7 @@ impl Vm {
                         }
                     };
                 }
-                Instruction::ReadGlobal { constant_index } => {
+                Instruction::GetGlobal { constant_index } => {
                     let name = self
                         .chunk
                         .get_string_constant(constant_index)
@@ -150,6 +165,12 @@ impl Vm {
                     )?;
 
                     self.push(value.clone());
+                }
+                Instruction::GetLocal { stack_slot } => {
+                    self.push(self.stack_at(stack_slot).clone());
+                }
+                Instruction::SetLocal { stack_slot } => {
+                    *self.stack_at_mut(stack_slot) = self.peek().clone();
                 }
                 Instruction::Nil => self.push(Value::Nil),
                 Instruction::True => self.push(Value::Boolean(true)),

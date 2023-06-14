@@ -1,4 +1,4 @@
-use std::{cell::RefCell, debug_assert, iter::Peekable, rc::Rc, unreachable};
+use std::{cell::RefCell, debug_assert, iter::Peekable, println, rc::Rc, unreachable};
 
 use bytecode::{
     chunk::Chunk,
@@ -37,6 +37,8 @@ impl CompilerError {
 pub enum CompilerErrorType {
     #[error("Too many constants")]
     TooManyConstants,
+    #[error("Too many locals")]
+    TooManyLocals,
     #[error("Expected EOF")]
     ExpectedEof,
     #[error("Expected ')' after expression")]
@@ -49,6 +51,10 @@ pub enum CompilerErrorType {
     ExpectedVariableName,
     #[error("Invalid assignment target")]
     InvalidAssignmentTarget,
+    #[error("Expected '}}' after block")]
+    ExpectedRightBrace,
+    #[error("Variable already in scope")]
+    VariableAlreadyInScope,
 }
 
 #[repr(u8)]
@@ -94,14 +100,30 @@ impl Precedence {
 }
 
 #[derive(Debug)]
+struct Local<'a> {
+    name: &'a str,
+    depth: Option<usize>,
+}
+
+mod scope;
+use scope::Scope;
+
+#[derive(Debug)]
 pub struct Compiler<'a> {
     token_stream: Peekable<TokenStream<'a>>,
     chunk: Chunk,
+    locals: Vec<Local<'a>>,
+    scope: Scope,
 }
 
 impl<'a> Compiler<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self { token_stream: TokenStream::new(source).peekable(), chunk: Chunk::default() }
+        Self {
+            token_stream: TokenStream::new(source).peekable(),
+            chunk: Chunk::default(),
+            locals: Vec::with_capacity(u8::MAX as usize + 1),
+            scope: Scope::new(),
+        }
     }
 
     fn current_chunk(&mut self) -> &mut Chunk {
@@ -151,42 +173,98 @@ impl<'a> Compiler<'a> {
     }
 
     fn named_variable(&mut self, identifier: &Token<'a>, can_assign: bool) -> Result<()> {
-        let constant_index = self.add_identifier_constant(identifier)?;
+        let (get_instr, set_instr) = match self.resolve_local(identifier) {
+            Some(stack_slot) => {
+                (Instruction::GetLocal { stack_slot }, Instruction::SetLocal { stack_slot })
+            }
+            None => {
+                let constant_index = self.add_identifier_constant(identifier)?;
+                (
+                    Instruction::GetGlobal { constant_index },
+                    Instruction::SetGlobal { constant_index },
+                )
+            }
+        };
+
         if can_assign && self.consume(Equal)?.is_ok() {
             self.expression()?;
-            self.chunk
-                .write_instruction(Instruction::SetGlobal { constant_index }, identifier.line());
+            self.chunk.write_instruction(set_instr, identifier.line());
         } else {
-            self.chunk
-                .write_instruction(Instruction::ReadGlobal { constant_index }, identifier.line());
+            self.chunk.write_instruction(get_instr, identifier.line());
         }
         Ok(())
     }
 
+    fn resolve_local(&self, identifier: &Token<'a>) -> Option<u8> {
+        self.locals.iter().rev().enumerate().find_map(|(i, local)| {
+            (local.depth.is_some() && local.name == identifier.lexeme())
+                .then_some((self.locals.len() - i - 1) as u8)
+        })
+    }
+
     fn var_declaration(&mut self) -> Result<()> {
-        let (global, line) = self.parse_variable(CompilerErrorType::ExpectedVariableName)?;
+        let (global_constant_index, line) =
+            self.parse_variable(CompilerErrorType::ExpectedVariableName)?;
         if self.consume(Equal)?.is_ok() {
             self.expression()?;
         } else {
             self.chunk.write_instruction(Instruction::Nil, line);
         }
         self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?;
-        self.define_variable(global, line)
+        self.define_variable(global_constant_index, line)
     }
 
     fn parse_variable(&mut self, error: CompilerErrorType) -> Result<(u8, Line)> {
-        let (name, line) = match self.consume_or_error(Identifier, error) {
-            Ok(token) => (token.lexeme().to_string(), token.line()),
-            Err(e) => return Err(e),
-        };
+        let token = self.consume_or_error(Identifier, error)?;
 
-        let index = self.chunk.add_constant(Value::string(name)).ok_or(CompilerError {
-            error: CompilerErrorType::TooManyConstants,
-            line,
-            col: Col(1),
-        })?;
+        let line = token.line();
+        self.declare_variable(&token)?;
+        if self.scope.inside_local() {
+            return Ok((0, line));
+        }
+
+        let index = self
+            .current_chunk()
+            .add_constant(Value::string(token.lexeme().to_string()))
+            .ok_or_else(|| -> RloxError {
+                CompilerError::new(CompilerErrorType::TooManyConstants, token.clone()).into()
+            })?;
 
         Ok((index, line))
+    }
+
+    fn declare_variable(&mut self, name: &Token<'a>) -> Result<()> {
+        if self.scope.inside_global() {
+            return Ok(());
+        }
+
+        if self
+            .locals
+            .iter()
+            .rev()
+            .take_while(|local| match local.depth {
+                Some(depth) => depth == self.scope.depth(),
+                None => false,
+            })
+            .any(|local| local.name == name.lexeme())
+        {
+            return Err(CompilerError::new(
+                CompilerErrorType::VariableAlreadyInScope,
+                name.clone(),
+            )
+            .into());
+        }
+
+        self.add_local(name)
+    }
+
+    fn add_local(&mut self, name: &Token<'a>) -> Result<()> {
+        if self.locals.len() == self.locals.capacity() {
+            return Err(CompilerError::new(CompilerErrorType::TooManyLocals, name.clone()).into());
+        }
+
+        self.locals.push(Local { name: name.lexeme(), depth: None });
+        Ok(())
     }
 
     fn add_identifier_constant(&mut self, token: &Token<'a>) -> Result<u8> {
@@ -195,17 +273,54 @@ impl<'a> Compiler<'a> {
         )
     }
 
-    fn define_variable(&mut self, global: u8, line: Line) -> Result<()> {
-        self.chunk.write_instruction(Instruction::DefineGlobal { constant_index: global }, line);
+    fn define_variable(&mut self, constant_index: u8, line: Line) -> Result<()> {
+        if self.scope.inside_local() {
+            self.locals.last_mut().unwrap().depth = Some(self.scope.depth());
+            return Ok(());
+        }
+        self.chunk.write_instruction(Instruction::DefineGlobal { constant_index }, line);
         Ok(())
     }
 
     fn statement(&mut self) -> Result<()> {
         if self.consume(Print)?.is_ok() {
             self.print_statement()
+        } else if self.consume(LeftBrace)?.is_ok() {
+            self.scope.begin_scope();
+            let right_brace_line = self.block()?.line();
+            self.end_scope(right_brace_line);
+            Ok(())
         } else {
             self.expression_statement()
         }
+    }
+
+    fn end_scope(&mut self, line: Line) {
+        let last_local_in_scope = self
+            .locals
+            .iter()
+            .rev()
+            .enumerate()
+            .find_map(|(index, local)| (local.depth != Some(self.scope.depth())).then_some(index))
+            .unwrap_or(0);
+
+        let num_locals_to_pop = (self.locals.len() - last_local_in_scope) as u8;
+        self.current_chunk().write_instruction(Instruction::PopN(num_locals_to_pop), line);
+
+        self.locals.truncate(last_local_in_scope);
+
+        self.scope.end_scope();
+    }
+
+    fn block(&mut self) -> Result<Token> {
+        loop {
+            match self.peek().unwrap()? {
+                RightBrace | Eof => break,
+                _ => self.declaration()?,
+            }
+        }
+
+        self.consume_or_error(RightBrace, CompilerErrorType::ExpectedRightBrace)
     }
 
     fn print_statement(&mut self) -> Result<()> {
@@ -420,7 +535,10 @@ impl<'a> Compiler<'a> {
 
 // Helpers
 impl<'a> Compiler<'a> {
-    fn consume(&mut self, token_type: TokenType) -> Result<std::result::Result<Token, Token>> {
+    fn consume(
+        &mut self,
+        token_type: TokenType,
+    ) -> Result<std::result::Result<Token<'a>, Token<'a>>> {
         match self.peek_token() {
             Some(Ok(t)) if t.ty() == token_type => Ok(Ok(self.advance().unwrap())),
             Some(Ok(t)) => Ok(Err(t)),
@@ -433,7 +551,7 @@ impl<'a> Compiler<'a> {
         &mut self,
         token_type: TokenType,
         error: CompilerErrorType,
-    ) -> Result<Token> {
+    ) -> Result<Token<'a>> {
         match self.consume(token_type)? {
             Ok(token) => Ok(token),
             Err(token) => Err(CompilerError::new(error, token).into()),

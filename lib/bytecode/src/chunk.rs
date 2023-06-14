@@ -83,6 +83,7 @@ impl Chunk {
         };
 
         let op_args = match instr {
+            Instruction::PopN(n) => format!("'{n}'"),
             Instruction::Constant { index } => format!(
                 "{index} '{}'",
                 self.constants
@@ -90,7 +91,26 @@ impl Chunk {
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "??".to_string())
             ),
-            _ => "".to_string(),
+            Instruction::DefineGlobal { constant_index } => format!("'{constant_index}'"),
+            Instruction::SetGlobal { constant_index } => format!("'{constant_index}'"),
+            Instruction::GetGlobal { constant_index } => format!("'{constant_index}'"),
+            Instruction::SetLocal { stack_slot } => format!("'{stack_slot}'"),
+            Instruction::GetLocal { stack_slot } => format!("'{stack_slot}'"),
+            Instruction::Return
+            | Instruction::Negate
+            | Instruction::Not
+            | Instruction::Add
+            | Instruction::Subtract
+            | Instruction::Multiply
+            | Instruction::Divide
+            | Instruction::Nil
+            | Instruction::True
+            | Instruction::False
+            | Instruction::Equal
+            | Instruction::Greater
+            | Instruction::Less
+            | Instruction::Print
+            | Instruction::Pop => "".to_string(),
         };
 
         let opcode: OpCode = instr.clone().into();
