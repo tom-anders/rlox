@@ -30,11 +30,25 @@ impl Chunk {
         }
     }
 
-    pub fn write_instruction(&mut self, op: Instruction, line: cursor::Line) {
-        self.code.extend_from_slice(op.bytes());
+    pub fn write_instruction(&mut self, instr: Instruction, line: cursor::Line) {
+        let opcode = instr.opcode();
+        self.code.push(opcode as u8);
+
+        use Instruction::*;
+        match instr {
+            Constant { index } => self.code.push(index),
+            DefineGlobal { constant_index } => self.code.push(constant_index),
+            SetGlobal { constant_index } => self.code.push(constant_index),
+            GetGlobal { constant_index } => self.code.push(constant_index),
+            SetLocal { stack_slot } => self.code.push(stack_slot),
+            GetLocal { stack_slot } => self.code.push(stack_slot),
+            PopN(n) => self.code.push(n),
+            Return | Negate | Not | Add | Subtract | Multiply | Divide | Nil | True | False
+            | Equal | Greater | Less | Print | Pop => {}
+        };
 
         // TODO: This is a waste of memory of course, challenge 1 in chapter 14 would solve this.
-        for _ in 0..op.num_bytes() {
+        for _ in 0..instr.num_bytes() {
             self.lines.push(line.0);
         }
     }
@@ -113,7 +127,7 @@ impl Chunk {
             | Instruction::Pop => "".to_string(),
         };
 
-        let opcode: OpCode = instr.clone().into();
+        let opcode: OpCode = instr.opcode();
 
         (format!("{offset:04} {line_str} {opcode:16} {op_args}"), offset + instr.num_bytes())
     }
