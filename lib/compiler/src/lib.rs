@@ -1,11 +1,11 @@
-use std::{cell::RefCell, debug_assert, iter::Peekable, unreachable, rc::Rc};
+use std::{cell::RefCell, debug_assert, iter::Peekable, rc::Rc, unreachable};
 
 use bytecode::{
     chunk::Chunk,
     instructions::{Instruction, OpCode},
-    value::{Value, Object, ObjectData},
+    value::{Object, ObjectData, Value},
 };
-use cursor::{Line, Col};
+use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
 use log::{debug, info, trace};
 use scanner::{token::TokenData, Token, TokenStream, TokenType};
@@ -23,11 +23,7 @@ pub struct CompilerError {
 
 impl From<CompilerError> for RloxError {
     fn from(error: CompilerError) -> Self {
-        RloxError {
-            line: error.line,
-            col: error.col,
-            message: error.error.to_string(),
-        }
+        RloxError { line: error.line, col: error.col, message: error.error.to_string() }
     }
 }
 
@@ -158,9 +154,11 @@ impl<'a> Compiler<'a> {
         let constant_index = self.add_identifier_constant(identifier)?;
         if can_assign && self.consume(Equal)?.is_ok() {
             self.expression()?;
-            self.chunk.write_instruction(Instruction::SetGlobal { constant_index }, identifier.line());
+            self.chunk
+                .write_instruction(Instruction::SetGlobal { constant_index }, identifier.line());
         } else {
-            self.chunk.write_instruction(Instruction::ReadGlobal{ constant_index }, identifier.line());
+            self.chunk
+                .write_instruction(Instruction::ReadGlobal { constant_index }, identifier.line());
         }
         Ok(())
     }
@@ -182,19 +180,23 @@ impl<'a> Compiler<'a> {
             Err(e) => return Err(e),
         };
 
-        let index = self.chunk.add_constant(Value::string(name))
-            .ok_or(CompilerError { error: CompilerErrorType::TooManyConstants, line, col: Col(1) })?;
+        let index = self.chunk.add_constant(Value::string(name)).ok_or(CompilerError {
+            error: CompilerErrorType::TooManyConstants,
+            line,
+            col: Col(1),
+        })?;
 
         Ok((index, line))
     }
 
     fn add_identifier_constant(&mut self, token: &Token<'a>) -> Result<u8> {
-        self.current_chunk().add_constant(Value::string(token.lexeme().to_string()))
-            .ok_or_else(|| CompilerError::new(CompilerErrorType::TooManyConstants, token.clone()).into())
+        self.current_chunk().add_constant(Value::string(token.lexeme().to_string())).ok_or_else(
+            || CompilerError::new(CompilerErrorType::TooManyConstants, token.clone()).into(),
+        )
     }
 
     fn define_variable(&mut self, global: u8, line: Line) -> Result<()> {
-        self.chunk.write_instruction(Instruction::DefineGlobal{ constant_index: global }, line);
+        self.chunk.write_instruction(Instruction::DefineGlobal { constant_index: global }, line);
         Ok(())
     }
 
@@ -205,7 +207,7 @@ impl<'a> Compiler<'a> {
             self.expression_statement()
         }
     }
-    
+
     fn print_statement(&mut self) -> Result<()> {
         self.expression()?;
         let line = self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?.line();
@@ -226,12 +228,15 @@ impl<'a> Compiler<'a> {
 
     fn literal(&mut self, prefix_token: &Token<'a>) -> Result<()> {
         trace!("Compiling literal: {:?}", prefix_token);
-        self.chunk.write_instruction(match prefix_token.ty() {
-            True => Instruction::True,
-            False => Instruction::False,
-            Nil => Instruction::Nil,
-            _ => unreachable!(),
-        }, prefix_token.line());
+        self.chunk.write_instruction(
+            match prefix_token.ty() {
+                True => Instruction::True,
+                False => Instruction::False,
+                Nil => Instruction::Nil,
+                _ => unreachable!(),
+            },
+            prefix_token.line(),
+        );
 
         Ok(())
     }
@@ -245,7 +250,8 @@ impl<'a> Compiler<'a> {
         let index = self.current_chunk().add_constant(Value::Number(value)).ok_or_else(|| {
             CompilerError::new(CompilerErrorType::TooManyConstants, prefix_token.clone())
         })?;
-        self.current_chunk().write_instruction(Instruction::Constant { index }, prefix_token.line());
+        self.current_chunk()
+            .write_instruction(Instruction::Constant { index }, prefix_token.line());
         Ok(())
     }
 
@@ -253,12 +259,17 @@ impl<'a> Compiler<'a> {
         let s = match prefix_token.data {
             TokenData::Str(s) => s,
             _ => unreachable!(),
-        }.to_string();
+        }
+        .to_string();
 
-        let index = self.current_chunk().add_constant(Value::Object(Box::new(Object::new(ObjectData::String(Rc::new(s)))))).ok_or_else(|| {
-            CompilerError::new(CompilerErrorType::TooManyConstants, prefix_token.clone())
-        })?;
-        self.current_chunk().write_instruction(Instruction::Constant { index }, prefix_token.line());
+        let index = self
+            .current_chunk()
+            .add_constant(Value::Object(Box::new(Object::new(ObjectData::String(Rc::new(s))))))
+            .ok_or_else(|| {
+                CompilerError::new(CompilerErrorType::TooManyConstants, prefix_token.clone())
+            })?;
+        self.current_chunk()
+            .write_instruction(Instruction::Constant { index }, prefix_token.line());
 
         Ok(())
     }
@@ -272,30 +283,51 @@ impl<'a> Compiler<'a> {
     fn unary(&mut self, prefix_token: &Token<'a>) -> Result<()> {
         // Compile the operand
         self.parse_precedence(Precedence::Unary)?;
-        self.current_chunk().write_instruction(match prefix_token.ty() {
-            Minus => Instruction::Negate,
-            Bang => Instruction::Not,
-            _ => unreachable!(),
-        }, prefix_token.line());
+        self.current_chunk().write_instruction(
+            match prefix_token.ty() {
+                Minus => Instruction::Negate,
+                Bang => Instruction::Not,
+                _ => unreachable!(),
+            },
+            prefix_token.line(),
+        );
         Ok(())
     }
 
     fn binary(&mut self, operator_token: &Token<'a>) -> Result<()> {
-        let next_higher_prec = 
-            self.token_precendence(operator_token.ty()).next_higher_precedence();
+        let next_higher_prec = self.token_precendence(operator_token.ty()).next_higher_precedence();
         self.parse_precedence(next_higher_prec)?;
 
         match operator_token.ty() {
-            Minus => self.current_chunk().write_instruction(Instruction::Subtract, operator_token.line()),
+            Minus => {
+                self.current_chunk().write_instruction(Instruction::Subtract, operator_token.line())
+            }
             Plus => self.current_chunk().write_instruction(Instruction::Add, operator_token.line()),
-            Slash => self.current_chunk().write_instruction(Instruction::Divide, operator_token.line()),
-            Star => self.current_chunk().write_instruction(Instruction::Multiply, operator_token.line()),
-            BangEqual => self.current_chunk().write_instructions([Instruction::Equal, Instruction::Not], operator_token.line()),
-            EqualEqual => self.current_chunk().write_instruction(Instruction::Equal, operator_token.line()),
-            Greater => self.current_chunk().write_instruction(Instruction::Greater, operator_token.line()),
-            GreaterEqual => self.current_chunk().write_instructions([Instruction::Less, Instruction::Not], operator_token.line()),
-            Less => self.current_chunk().write_instruction(Instruction::Less, operator_token.line()),
-            LessEqual => self.current_chunk().write_instructions([Instruction::Greater, Instruction::Not], operator_token.line()),
+            Slash => {
+                self.current_chunk().write_instruction(Instruction::Divide, operator_token.line())
+            }
+            Star => {
+                self.current_chunk().write_instruction(Instruction::Multiply, operator_token.line())
+            }
+            BangEqual => self
+                .current_chunk()
+                .write_instructions([Instruction::Equal, Instruction::Not], operator_token.line()),
+            EqualEqual => {
+                self.current_chunk().write_instruction(Instruction::Equal, operator_token.line())
+            }
+            Greater => {
+                self.current_chunk().write_instruction(Instruction::Greater, operator_token.line())
+            }
+            GreaterEqual => self
+                .current_chunk()
+                .write_instructions([Instruction::Less, Instruction::Not], operator_token.line()),
+            Less => {
+                self.current_chunk().write_instruction(Instruction::Less, operator_token.line())
+            }
+            LessEqual => self.current_chunk().write_instructions(
+                [Instruction::Greater, Instruction::Not],
+                operator_token.line(),
+            ),
             _ => unreachable!(),
         }
         Ok(())
@@ -321,10 +353,8 @@ impl<'a> Compiler<'a> {
         let token = self.advance()?;
         trace!("Advancing with infix rule for {}", token);
         match token.ty() {
-            Plus | Minus | Slash | Star |
-            EqualEqual | BangEqual | Greater | GreaterEqual | Less | LessEqual => {
-                self.binary(&token)
-            }
+            Plus | Minus | Slash | Star | EqualEqual | BangEqual | Greater | GreaterEqual
+            | Less | LessEqual => self.binary(&token),
             _ => {
                 Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
             }
@@ -359,7 +389,9 @@ impl<'a> Compiler<'a> {
             // If the equal has not been consumed, we tried assigning to an invalid target,
             // so report that error here
             if let Ok(token) = self.consume(Equal)? {
-                return Err(CompilerError::new(CompilerErrorType::InvalidAssignmentTarget, token).into())
+                return Err(
+                    CompilerError::new(CompilerErrorType::InvalidAssignmentTarget, token).into()
+                );
             }
         }
 
@@ -397,7 +429,11 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn consume_or_error(&mut self, token_type: TokenType, error: CompilerErrorType) -> Result<Token> {
+    fn consume_or_error(
+        &mut self,
+        token_type: TokenType,
+        error: CompilerErrorType,
+    ) -> Result<Token> {
         match self.consume(token_type)? {
             Ok(token) => Ok(token),
             Err(token) => Err(CompilerError::new(error, token).into()),

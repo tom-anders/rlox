@@ -1,9 +1,10 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::quote;
-use syn::{parse_macro_input, DataEnum, DeriveInput, punctuated::Punctuated, token::Comma, Field, Fields};
+use syn::{
+    parse_macro_input, punctuated::Punctuated, token::Comma, DataEnum, DeriveInput, Field, Fields,
+};
 
 fn impl_num_bytes(ident: &Ident, data_enum: &DataEnum) -> proc_macro2::TokenStream {
-
     // This computes the number of bytes each enum variant takes up in memory.
     // The "1+" is to account for the enum discriminant
     let opcode_num_bytes = data_enum.variants.iter().map(|variant| {
@@ -20,31 +21,33 @@ fn impl_num_bytes(ident: &Ident, data_enum: &DataEnum) -> proc_macro2::TokenStre
     });
 
     // Match arms for #ident::num_bytes()
-    let num_byte_arms = opcode_num_bytes.clone().zip(data_enum.variants.clone()).map(|(num_bytes, variant)| {
-        let opcode = variant.ident;
-        let suffix = match variant.fields {
-            Fields::Named(_) => {
-                quote! { { .. } }
+    let num_byte_arms =
+        opcode_num_bytes.clone().zip(data_enum.variants.clone()).map(|(num_bytes, variant)| {
+            let opcode = variant.ident;
+            let suffix = match variant.fields {
+                Fields::Named(_) => {
+                    quote! { { .. } }
+                }
+                Fields::Unnamed(_) => {
+                    quote! { (..) }
+                }
+                Fields::Unit => {
+                    quote! {}
+                }
+            };
+            quote! {
+                #ident::#opcode #suffix => #num_bytes,
             }
-            Fields::Unnamed(_) => {
-                quote! { (..) }
-            }
-            Fields::Unit => {
-                quote! { }
-            }
-        };
-        quote! {
-            #ident::#opcode #suffix => #num_bytes,
-        }
-    });
+        });
 
     // Match arms for OpCode::num_bytes()
-    let op_code_num_bytes_arms = opcode_num_bytes.clone().zip(data_enum.variants.clone()).map(|(num_bytes, variant)| {
-        let ident = variant.ident;
-        quote! {
-            OpCode::#ident => #num_bytes,
-        }
-    });
+    let op_code_num_bytes_arms =
+        opcode_num_bytes.clone().zip(data_enum.variants.clone()).map(|(num_bytes, variant)| {
+            let ident = variant.ident;
+            quote! {
+                OpCode::#ident => #num_bytes,
+            }
+        });
 
     quote! {
         impl #ident {

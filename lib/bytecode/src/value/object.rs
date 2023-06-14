@@ -54,11 +54,12 @@ impl Add for Box<Object> {
     type Output = Result<Value, (Value, Value)>;
     fn add(self, other: Self) -> Self::Output {
         match (&*self, &*other) {
-            (Object {
-                data: ObjectData::String(a),
-            }, Object {
-                data: ObjectData::String(b),
-            }) => Ok(Value::Object(Box::new(Object::new(ObjectData::String(Rc::new(format!("{}{}", a, b))))))),
+            (Object { data: ObjectData::String(a) }, Object { data: ObjectData::String(b) }) => {
+                Ok(Value::Object(Box::new(Object::new(ObjectData::String(Rc::new(format!(
+                    "{}{}",
+                    a, b
+                )))))))
+            }
             _ => Err((Value::Object(self), Value::Object(other))),
         }
     }
@@ -79,8 +80,7 @@ impl PartialEq for ObjectData {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             // Strings are interned via reference counting, so comparing by pointer is enough.
-            (ObjectData::String(a), ObjectData::String(b)) => 
-                Rc::ptr_eq(a, b),
+            (ObjectData::String(a), ObjectData::String(b)) => Rc::ptr_eq(a, b),
         }
     }
 }

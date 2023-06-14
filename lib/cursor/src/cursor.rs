@@ -1,4 +1,7 @@
-use std::{str::Chars, fmt::{Display, Formatter}};
+use std::{
+    fmt::{Display, Formatter},
+    str::Chars,
+};
 
 mod source_range;
 pub use source_range::*;
@@ -10,7 +13,7 @@ pub struct Cursor<'a> {
     line: Line,
 }
 
-impl <'a> PartialEq for Cursor<'a> {
+impl<'a> PartialEq for Cursor<'a> {
     fn eq(&self, other: &Self) -> bool {
         (self.source, self.chars.as_str()) == (other.source, other.chars.as_str())
     }
@@ -100,17 +103,10 @@ impl<'a> Cursor<'a> {
 
         let chars = self.source[self.source.len() - self.chars.as_str().len() - 1..].chars();
 
-        let line = if chars.clone().next() == Some('\n') {
-            Line(self.line.0 - 1) 
-        } else {
-            self.line
-        };
+        let line =
+            if chars.clone().next() == Some('\n') { Line(self.line.0 - 1) } else { self.line };
 
-        Some(Cursor {
-            source: self.source,
-            chars,
-            line
-        })
+        Some(Cursor { source: self.source, chars, line })
     }
 }
 

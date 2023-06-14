@@ -1,6 +1,9 @@
-use std::{ops::{Deref, DerefMut}, fmt::Display};
+use std::{
+    fmt::Display,
+    ops::{Deref, DerefMut},
+};
 
-use cursor::{Line, Col};
+use cursor::{Col, Line};
 
 #[derive(thiserror::Error, Clone, Debug, PartialEq)]
 #[error("error (l. {line}, c. {col}): {message}")]
@@ -40,4 +43,3 @@ impl Display for RloxErrors {
 }
 
 pub type Result<T> = std::result::Result<T, RloxError>;
-

@@ -1,11 +1,14 @@
-use std::{path::PathBuf, println, io::{stdin, stdout, Write}};
+use std::{
+    io::{stdin, stdout, Write},
+    path::PathBuf,
+    println,
+};
 
-use anyhow::{bail};
+use anyhow::bail;
 use clap::Parser;
 
 use scanner::TokenStream;
 use vm::Vm;
-
 
 #[derive(clap::Parser)]
 struct Args {

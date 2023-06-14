@@ -1,4 +1,4 @@
-use crate::{Cursor, Col, Line};
+use crate::{Col, Cursor, Line};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SourceRange<'a> {
