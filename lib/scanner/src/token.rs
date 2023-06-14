@@ -17,7 +17,7 @@ impl<'a> Token<'a> {
         self.data.into()
     }
 
-    pub fn lexeme(&self) -> &str {
+    pub fn lexeme(&self) -> &'a str {
         self.range.lexeme()
     }
 

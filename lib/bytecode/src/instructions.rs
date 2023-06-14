@@ -17,9 +17,12 @@ pub enum Instruction {
     Less,
     Print,
     Pop,
+    PopN(u8),
     DefineGlobal { constant_index: u8 },
     SetGlobal { constant_index: u8 },
-    ReadGlobal { constant_index: u8 },
+    GetGlobal { constant_index: u8 },
+    SetLocal { stack_slot: u8 },
+    GetLocal { stack_slot: u8 },
 }
 
 impl Instruction {
