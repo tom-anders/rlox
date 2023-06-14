@@ -10,8 +10,8 @@ pub enum ScanError<'a> {
 
 pub mod token;
 
-use errors::{RloxError, Result};
 use cursor::Cursor;
+use errors::{Result, RloxError};
 use token::TokenData::{self, *};
 pub use token::*;
 
@@ -255,7 +255,10 @@ impl<'a> Iterator for TokenStream<'a> {
         match next {
             None if !self.eof => {
                 self.eof = true;
-                Some(Ok(Token::new(Eof, (self.scanner.cursor.clone(), self.scanner.cursor.clone()))))
+                Some(Ok(Token::new(
+                    Eof,
+                    (self.scanner.cursor.clone(), self.scanner.cursor.clone()),
+                )))
             }
             _ => next,
         }
@@ -264,8 +267,8 @@ impl<'a> Iterator for TokenStream<'a> {
 
 #[cfg(test)]
 mod tests {
-    use cursor::{Line, Col};
-    use pretty_assertions::{assert_eq};
+    use cursor::{Col, Line};
+    use pretty_assertions::assert_eq;
 
     use errors::RloxError;
 
@@ -299,11 +302,36 @@ mod tests {
         assert_eq!(
             scan_expected_tokens("var x = 3;\n  @"),
             vec![
-                Ok(ExpectedToken { data: Var, line: Line(1), col: Col(1), lexeme: "var".to_string() }),
-                Ok(ExpectedToken { data: Identifier, line: Line(1), col: Col(5), lexeme: "x".to_string() }),
-                Ok(ExpectedToken { data: Equal, line: Line(1), col: Col(7), lexeme: "=".to_string() }),
-                Ok(ExpectedToken { data: Number(3.0), line: Line(1), col: Col(9), lexeme: "3".to_string() }),
-                Ok(ExpectedToken { data: Semicolon, line: Line(1), col: Col(10), lexeme: ";".to_string() }),
+                Ok(ExpectedToken {
+                    data: Var,
+                    line: Line(1),
+                    col: Col(1),
+                    lexeme: "var".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: Identifier,
+                    line: Line(1),
+                    col: Col(5),
+                    lexeme: "x".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: Equal,
+                    line: Line(1),
+                    col: Col(7),
+                    lexeme: "=".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: Number(3.0),
+                    line: Line(1),
+                    col: Col(9),
+                    lexeme: "3".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: Semicolon,
+                    line: Line(1),
+                    col: Col(10),
+                    lexeme: ";".to_string()
+                }),
                 Err(RloxError {
                     line: Line(2),
                     col: Col(3),
@@ -324,7 +352,12 @@ mod tests {
                     col: Col(14),
                     message: ScanError::UnterminatedBlockComment(" hello world").to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(15), lexeme: "".to_string() })
+                Ok(ExpectedToken {
+                    data: Eof,
+                    line: Line(1),
+                    col: Col(15),
+                    lexeme: "".to_string()
+                })
             ]
         );
 
@@ -343,9 +376,15 @@ mod tests {
 
     #[test]
     fn test_block_comments() {
-        assert_eq!(scan_expected_tokens("/* hello world */"), vec![
-            Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(18), lexeme: "".to_string() })
-        ]);
+        assert_eq!(
+            scan_expected_tokens("/* hello world */"),
+            vec![Ok(ExpectedToken {
+                data: Eof,
+                line: Line(1),
+                col: Col(18),
+                lexeme: "".to_string()
+            })]
+        );
 
         assert_eq!(
             scan_expected_tokens("/* hello world */ 123"),
@@ -356,7 +395,12 @@ mod tests {
                     col: Col(19),
                     lexeme: "123".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(22), lexeme: "".to_string() })
+                Ok(ExpectedToken {
+                    data: Eof,
+                    line: Line(1),
+                    col: Col(22),
+                    lexeme: "".to_string()
+                })
             ]
         );
 
@@ -383,7 +427,12 @@ mod tests {
                     col: Col(25),
                     lexeme: "123".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(57), lexeme: "".to_string() })
+                Ok(ExpectedToken {
+                    data: Eof,
+                    line: Line(1),
+                    col: Col(57),
+                    lexeme: "".to_string()
+                })
             ]
         );
     }
@@ -405,8 +454,18 @@ mod tests {
                     col: Col(5),
                     lexeme: "1.23".to_string()
                 }),
-                Ok(ExpectedToken { data: Number(1.0), line: Line(1), col: Col(10), lexeme: "1".to_string() }),
-                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(11), lexeme: "".to_string() })
+                Ok(ExpectedToken {
+                    data: Number(1.0),
+                    line: Line(1),
+                    col: Col(10),
+                    lexeme: "1".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: Eof,
+                    line: Line(1),
+                    col: Col(11),
+                    lexeme: "".to_string()
+                })
             ]
         );
     }
@@ -422,7 +481,12 @@ mod tests {
                     col: Col(1),
                     lexeme: "\"hello world\"".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(14), lexeme: "".to_string() })
+                Ok(ExpectedToken {
+                    data: Eof,
+                    line: Line(1),
+                    col: Col(14),
+                    lexeme: "".to_string()
+                })
             ]
         );
 
@@ -434,7 +498,12 @@ mod tests {
                     col: Col(13),
                     message: ScanError::UnterminatedString("hello world").to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: Line(3), col: Col(14), lexeme: "".to_string() })
+                Ok(ExpectedToken {
+                    data: Eof,
+                    line: Line(3),
+                    col: Col(14),
+                    lexeme: "".to_string()
+                })
             ]
         );
 
@@ -503,7 +572,12 @@ mod tests {
                     col: Col(18),
                     lexeme: ">=".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(20), lexeme: "".to_string() })
+                Ok(ExpectedToken {
+                    data: Eof,
+                    line: Line(1),
+                    col: Col(20),
+                    lexeme: "".to_string()
+                })
             ]
         );
     }
@@ -512,7 +586,12 @@ mod tests {
     fn test_line_comment() {
         assert_eq!(
             scan_expected_tokens("// hello world"),
-            vec![Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(15), lexeme: "".to_string() })]
+            vec![Ok(ExpectedToken {
+                data: Eof,
+                line: Line(1),
+                col: Col(15),
+                lexeme: "".to_string()
+            })]
         );
 
         assert_eq!(
@@ -533,7 +612,12 @@ mod tests {
     fn test_whitespace() {
         assert_eq!(
             scan_expected_tokens(" \t\r\n"),
-            vec![Ok(ExpectedToken { data: Eof, line: Line(2), col: Col(1), lexeme: "".to_string() })]
+            vec![Ok(ExpectedToken {
+                data: Eof,
+                line: Line(2),
+                col: Col(1),
+                lexeme: "".to_string()
+            })]
         );
     }
 
@@ -542,16 +626,36 @@ mod tests {
         assert_eq!(
             scan_expected_tokens("a a_c _abc _abc123"),
             vec![
-                Ok(ExpectedToken { data: Identifier, line: Line(1), col: Col(1), lexeme: "a".to_string() }),
-                Ok(ExpectedToken { data: Identifier, line: Line(1), col: Col(3), lexeme: "a_c".to_string() }),
-                Ok(ExpectedToken { data: Identifier, line: Line(1), col: Col(7), lexeme: "_abc".to_string() }),
+                Ok(ExpectedToken {
+                    data: Identifier,
+                    line: Line(1),
+                    col: Col(1),
+                    lexeme: "a".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: Identifier,
+                    line: Line(1),
+                    col: Col(3),
+                    lexeme: "a_c".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: Identifier,
+                    line: Line(1),
+                    col: Col(7),
+                    lexeme: "_abc".to_string()
+                }),
                 Ok(ExpectedToken {
                     data: Identifier,
                     line: Line(1),
                     col: Col(12),
                     lexeme: "_abc123".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(19), lexeme: "".to_string() })
+                Ok(ExpectedToken {
+                    data: Eof,
+                    line: Line(1),
+                    col: Col(19),
+                    lexeme: "".to_string()
+                })
             ]
         );
     }
@@ -659,7 +763,12 @@ mod tests {
                     col: Col(73),
                     lexeme: "while".to_string()
                 }),
-                Ok(ExpectedToken { data: Eof, line: Line(1), col: Col(78), lexeme: "".to_string() })
+                Ok(ExpectedToken {
+                    data: Eof,
+                    line: Line(1),
+                    col: Col(78),
+                    lexeme: "".to_string()
+                })
             ]
         );
     }

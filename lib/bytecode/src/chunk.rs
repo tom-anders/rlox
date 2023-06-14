@@ -1,9 +1,12 @@
-use std::{fmt::Debug, println, writeln, rc::Rc, collections::HashSet};
+use std::{collections::HashSet, fmt::Debug, println, rc::Rc, writeln};
 
 use cursor::Line;
 use itertools::Itertools;
 
-use crate::{instructions::*, value::{Value, ObjectData}};
+use crate::{
+    instructions::*,
+    value::{ObjectData, Value},
+};
 
 #[derive(Clone, Default)]
 pub struct Chunk {
@@ -19,7 +22,8 @@ pub trait StringInterner {
 impl Chunk {
     pub fn write_instructions(
         &mut self,
-        instructions: impl IntoIterator<Item = Instruction>, line: cursor::Line
+        instructions: impl IntoIterator<Item = Instruction>,
+        line: cursor::Line,
     ) {
         for instruction in instructions {
             self.write_instruction(instruction, line);

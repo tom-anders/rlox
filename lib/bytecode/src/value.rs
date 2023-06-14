@@ -1,4 +1,8 @@
-use std::{fmt::{Display, Formatter}, ops::{Neg, Add, Mul, Sub, Div}, rc::Rc};
+use std::{
+    fmt::{Display, Formatter},
+    ops::{Add, Div, Mul, Neg, Sub},
+    rc::Rc,
+};
 
 mod object;
 pub use object::*;
@@ -12,7 +16,7 @@ pub enum Value {
     Nil,
     // FIXME: Box is probably not correct here, clox just uses a raw pointer of course.
     // We'll have to see how this works out when we add GC.
-    Object(Box<Object>)
+    Object(Box<Object>),
 }
 
 impl Value {

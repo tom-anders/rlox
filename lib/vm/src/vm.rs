@@ -1,6 +1,17 @@
-use std::{ptr, marker::PhantomPinned, pin::Pin, ops::{DerefMut, Neg}, rc::Rc, collections::{HashSet, HashMap, hash_map::Entry}};
+use std::{
+    collections::{hash_map::Entry, HashMap, HashSet},
+    marker::PhantomPinned,
+    ops::{DerefMut, Neg},
+    pin::Pin,
+    ptr,
+    rc::Rc,
+};
 
-use bytecode::{chunk::Chunk, instructions::Instruction, value::{Value, ObjectData}};
+use bytecode::{
+    chunk::Chunk,
+    instructions::Instruction,
+    value::{ObjectData, Value},
+};
 use compiler::Compiler;
 use errors::RloxErrors;
 
@@ -20,7 +31,7 @@ pub enum InterpretError {
     #[error(transparent)]
     CompileError(#[from] RloxErrors),
     #[error("line {line}: {error}")]
-    RuntimeError{line: usize, error: String},
+    RuntimeError { line: usize, error: String },
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -70,10 +81,7 @@ impl Vm {
     }
 
     fn runtime_error(&self, error: RuntimeError) -> InterpretError {
-        InterpretError::RuntimeError {
-            line: self.chunk.lines()[self.ip],
-            error: error.to_string(),
-        }
+        InterpretError::RuntimeError { line: self.chunk.lines()[self.ip], error: error.to_string() }
     }
 
     pub fn run(&mut self, source: &str) -> Result<()> {
@@ -101,19 +109,23 @@ impl Vm {
                 Instruction::Pop => {
                     self.pop();
                 }
-                Instruction::Constant{ index } => {
+                Instruction::Constant { index } => {
                     let constant = self.chunk.constants().get(index as usize).unwrap();
                     self.push(constant.clone());
                 }
                 Instruction::DefineGlobal { constant_index } => {
-                    let name = self.chunk.get_string_constant(constant_index)
+                    let name = self
+                        .chunk
+                        .get_string_constant(constant_index)
                         .expect("Missing string constant for global");
 
                     self.globals.insert(name.clone(), self.peek().clone());
                     self.pop();
                 }
                 Instruction::SetGlobal { constant_index } => {
-                    let name = self.chunk.get_string_constant(constant_index)
+                    let name = self
+                        .chunk
+                        .get_string_constant(constant_index)
                         .expect("Missing string constant for global");
 
                     let val = self.peek().clone();
@@ -121,15 +133,21 @@ impl Vm {
                         Entry::Occupied(mut entry) => {
                             *entry.get_mut() = val;
                         }
-                        Entry::Vacant(_) => return Err(self.runtime_error(RuntimeError::UndefinedVariable(name.to_string()))),
+                        Entry::Vacant(_) => {
+                            return Err(self
+                                .runtime_error(RuntimeError::UndefinedVariable(name.to_string())))
+                        }
                     };
                 }
                 Instruction::ReadGlobal { constant_index } => {
-                    let name = self.chunk.get_string_constant(constant_index)
+                    let name = self
+                        .chunk
+                        .get_string_constant(constant_index)
                         .expect("Missing string constant for global");
 
-                    let value = self.globals.get(name)
-                        .ok_or(self.runtime_error(RuntimeError::UndefinedVariable(name.to_string())))?;
+                    let value = self.globals.get(name).ok_or(
+                        self.runtime_error(RuntimeError::UndefinedVariable(name.to_string())),
+                    )?;
 
                     self.push(value.clone());
                 }
@@ -138,7 +156,10 @@ impl Vm {
                 Instruction::False => self.push(Value::Boolean(false)),
                 Instruction::Negate => {
                     let v = self.pop();
-                    let neg = v.clone().neg().map_err(|v| self.runtime_error(RuntimeError::InvalidNegateOperant(v)))?;
+                    let neg = v
+                        .clone()
+                        .neg()
+                        .map_err(|v| self.runtime_error(RuntimeError::InvalidNegateOperant(v)))?;
                     self.push(neg);
                 }
                 Instruction::Not => {
@@ -153,34 +174,46 @@ impl Vm {
                 Instruction::Less => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push(a.less_than(b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?);
+                    self.push(a.less_than(b).map_err(|(a, b)| {
+                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                    })?);
                 }
                 Instruction::Greater => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push(a.greater_than(b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?);
+                    self.push(a.greater_than(b).map_err(|(a, b)| {
+                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                    })?);
                 }
                 Instruction::Add => {
                     let b = self.pop();
                     let a = self.pop();
-                    let mut result = (a + b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?;
+                    let mut result = (a + b).map_err(|(a, b)| {
+                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                    })?;
                     result.intern_string(self);
                     self.push(result);
                 }
                 Instruction::Subtract => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push((a - b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?);
+                    self.push((a - b).map_err(|(a, b)| {
+                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                    })?);
                 }
                 Instruction::Multiply => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push((a * b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?);
+                    self.push((a * b).map_err(|(a, b)| {
+                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                    })?);
                 }
                 Instruction::Divide => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push((a / b).map_err(|(a, b)| self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b)))?);
+                    self.push((a / b).map_err(|(a, b)| {
+                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                    })?);
                 }
             }
 
@@ -199,7 +232,7 @@ impl Default for Vm {
 mod tests {
     use std::println;
 
-    use bytecode::{value::Value};
+    use bytecode::value::Value;
     use env_logger::Env;
 
     use super::*;

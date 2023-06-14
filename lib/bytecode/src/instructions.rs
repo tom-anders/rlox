@@ -2,7 +2,7 @@
 #[derive(Debug, Clone, PartialEq, bytecode_derive::Instruction)]
 pub enum Instruction {
     Return,
-    Constant{index: u8},
+    Constant { index: u8 },
     Negate,
     Not,
     Add,
@@ -17,8 +17,8 @@ pub enum Instruction {
     Less,
     Print,
     Pop,
-    DefineGlobal{ constant_index: u8 },
-    SetGlobal{ constant_index: u8 },
+    DefineGlobal { constant_index: u8 },
+    SetGlobal { constant_index: u8 },
     ReadGlobal { constant_index: u8 },
 }
 
@@ -39,7 +39,7 @@ mod tests {
 
         let instructions = vec![
             Instruction::Return,
-            Instruction::Constant{index: 123},
+            Instruction::Constant { index: 123 },
             Instruction::Negate,
             Instruction::Add,
             Instruction::Subtract,
