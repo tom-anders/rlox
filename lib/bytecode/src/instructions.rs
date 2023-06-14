@@ -1,3 +1,6 @@
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Jump(pub u16);
+
 #[derive(Debug, Clone, PartialEq, bytecode_derive::Instruction)]
 pub enum Instruction {
     Return,
@@ -22,9 +25,11 @@ pub enum Instruction {
     GetGlobal { constant_index: u8 },
     SetLocal { stack_slot: u8 },
     GetLocal { stack_slot: u8 },
+    JumpIfFalse(Jump),
 }
 
 impl Instruction {
+    // TODO we could move this back to a proc_macro
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let opcode: OpCode = bytes[0].into();
         match opcode {
@@ -50,6 +55,9 @@ impl Instruction {
             OpCode::GetGlobal => Instruction::GetGlobal { constant_index: bytes[1] },
             OpCode::SetLocal => Instruction::SetLocal { stack_slot: bytes[1] },
             OpCode::GetLocal => Instruction::GetLocal { stack_slot: bytes[1] },
+            OpCode::JumpIfFalse => Instruction::JumpIfFalse (
+                Jump(u16::from_ne_bytes(bytes[1..3].try_into().unwrap())),
+            ),
         }
     }
 }

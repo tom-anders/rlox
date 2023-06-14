@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Debug, println, rc::Rc, writeln};
+use std::{collections::HashSet, fmt::Debug, println, rc::Rc, writeln, mem::size_of};
 
 use cursor::Line;
 use itertools::Itertools;
@@ -24,13 +24,14 @@ impl Chunk {
         &mut self,
         instructions: impl IntoIterator<Item = Instruction>,
         line: cursor::Line,
-    ) {
+    ) -> usize {
         for instruction in instructions {
             self.write_instruction(instruction, line);
         }
+        self.code().len() - 1
     }
 
-    pub fn write_instruction(&mut self, instr: Instruction, line: cursor::Line) {
+    pub fn write_instruction(&mut self, instr: Instruction, line: cursor::Line) -> usize {
         let opcode = instr.opcode();
         self.code.push(opcode as u8);
 
@@ -42,6 +43,9 @@ impl Chunk {
             GetGlobal { constant_index } => self.code.push(constant_index),
             SetLocal { stack_slot } => self.code.push(stack_slot),
             GetLocal { stack_slot } => self.code.push(stack_slot),
+            JumpIfFalse(jump) => {
+                self.code.extend_from_slice(&jump.0.to_ne_bytes());
+            }
             PopN(n) => self.code.push(n),
             Return | Negate | Not | Add | Subtract | Multiply | Divide | Nil | True | False
             | Equal | Greater | Less | Print | Pop => {}
@@ -51,6 +55,12 @@ impl Chunk {
         for _ in 0..instr.num_bytes() {
             self.lines.push(line.0);
         }
+
+        self.code().len() - 1
+    }
+
+    pub fn patch_jump(&mut self, offset: usize, jump: Jump) {
+        self.code[offset..offset + size_of::<Jump>()].copy_from_slice(&jump.0.to_ne_bytes());
     }
 
     pub fn intern_strings<Interner: StringInterner>(&mut self, interner: &mut Interner) {
@@ -110,6 +120,7 @@ impl Chunk {
             Instruction::GetGlobal { constant_index } => format!("'{constant_index}'"),
             Instruction::SetLocal { stack_slot } => format!("'{stack_slot}'"),
             Instruction::GetLocal { stack_slot } => format!("'{stack_slot}'"),
+            Instruction::JumpIfFalse(jump) => format!("'{}'", jump.0),
             Instruction::Return
             | Instruction::Negate
             | Instruction::Not

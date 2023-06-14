@@ -1,8 +1,10 @@
-use std::{cell::RefCell, debug_assert, iter::Peekable, println, rc::Rc, unreachable};
+use std::{
+    cell::RefCell, debug_assert, iter::Peekable, mem::size_of, println, rc::Rc, unreachable,
+};
 
 use bytecode::{
     chunk::Chunk,
-    instructions::{Instruction, OpCode},
+    instructions::{Instruction, Jump, OpCode},
     value::{Object, ObjectData, Value},
 };
 use cursor::{Col, Line};
@@ -41,8 +43,8 @@ pub enum CompilerErrorType {
     TooManyLocals,
     #[error("Expected EOF")]
     ExpectedEof,
-    #[error("Expected ')' after expression")]
-    ExpectedRightParen,
+    #[error("Expected ')' after '{0}")]
+    ExpectedRightParen(&'static str),
     #[error("Expected expression")]
     ExpectedExpression,
     #[error("Expected ';'")]
@@ -55,6 +57,10 @@ pub enum CompilerErrorType {
     ExpectedRightBrace,
     #[error("Variable already in scope")]
     VariableAlreadyInScope,
+    #[error("Expected '(' after '{0}'")]
+    ExpectedLeftParen(&'static str),
+    #[error("Too much code to jump over")]
+    TooLargeJump,
 }
 
 #[repr(u8)]
@@ -285,6 +291,8 @@ impl<'a> Compiler<'a> {
     fn statement(&mut self) -> Result<()> {
         if self.consume(Print)?.is_ok() {
             self.print_statement()
+        } else if self.consume(If)?.is_ok() {
+            self.if_statement()
         } else if self.consume(LeftBrace)?.is_ok() {
             self.scope.begin_scope();
             let right_brace_line = self.block()?.line();
@@ -293,6 +301,35 @@ impl<'a> Compiler<'a> {
         } else {
             self.expression_statement()
         }
+    }
+
+    fn if_statement(&mut self) -> Result<()> {
+        self.consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("if"))?;
+        self.expression()?;
+        let token = self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("if"))?;
+
+        let jump = self.write_jump(Instruction::JumpIfFalse(Jump(0)), token.line());
+        self.statement()?;
+        self.patch_jump(jump, token)?;
+
+        Ok(())
+    }
+
+    fn write_jump(&mut self, instruction: Instruction, line: Line) -> usize {
+        self.current_chunk().write_instruction(instruction, line);
+        self.current_chunk().code().len() - size_of::<Jump>()
+    }
+
+    fn patch_jump(&mut self, offset: usize, token: Token<'a>) -> Result<()> {
+        let jump = self.current_chunk().code().len() - offset - size_of::<Jump>();
+
+        self.current_chunk().patch_jump(
+            offset,
+            Jump(jump.try_into().map_err(|_| {
+                CompilerError::new(CompilerErrorType::TooLargeJump, token)
+            })?),
+        );
+        Ok(())
     }
 
     fn end_scope(&mut self, line: Line) {
@@ -391,7 +428,7 @@ impl<'a> Compiler<'a> {
 
     fn grouping(&mut self, _: &Token<'a>) -> Result<()> {
         self.expression()?;
-        self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen)?;
+        self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("expression"))?;
         Ok(())
     }
 
@@ -444,7 +481,7 @@ impl<'a> Compiler<'a> {
                 operator_token.line(),
             ),
             _ => unreachable!(),
-        }
+        };
         Ok(())
     }
 

@@ -9,7 +9,7 @@ use std::{
 
 use bytecode::{
     chunk::Chunk,
-    instructions::Instruction,
+    instructions::{Instruction, Jump},
     value::{ObjectData, Value},
 };
 use compiler::Compiler;
@@ -235,6 +235,11 @@ impl Vm {
                     self.push((a / b).map_err(|(a, b)| {
                         self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
                     })?);
+                }
+                Instruction::JumpIfFalse(Jump(jump)) => {
+                    if self.peek().is_falsey() {
+                        self.ip += jump as usize;
+                    }
                 }
             }
 
