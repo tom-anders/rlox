@@ -33,7 +33,7 @@ fn run_prompt(vm: &mut Vm) -> anyhow::Result<()> {
 }
 
 fn run(source: String, vm: &mut Vm) -> anyhow::Result<()> {
-    vm.run(&source)?;
+    vm.run_source(&source)?;
     Ok(())
 }
 

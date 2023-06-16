@@ -9,12 +9,6 @@ impl<S> From<S> for RloxString where S: Into<Rc<String>> {
     }
 }
 
-impl std::hash::Hash for RloxString {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state)
-    }
-}
-
 impl PartialEq for RloxString {
     fn eq(&self, other: &Self) -> bool {
         // Strings are interned via reference counting, so comparing by pointer is enough.

@@ -1,10 +1,10 @@
-use std::fmt::Display;
+use std::fmt::{Display, Debug};
 
 use crate::chunk::{Chunk, StringInterner};
 
 use super::RloxString;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Function {
     pub arity: usize,
     pub chunk: Chunk,
@@ -26,6 +26,26 @@ impl PartialEq for Function {
 
 impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<fn {}>", self.name)
+        match self.name.0.as_str() {
+            "" => write!(f, "<script>"),
+            name => write!(f, "<fn {}>", name),
+        }
+    }
+}
+
+impl Debug for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let alternate = f.alternate();
+        f.debug_struct("Function")
+            .field("arity", &self.arity)
+            // Printing out the chunk makes output to verbose,
+            // do don't to it by default
+            .field("chunk", if alternate {
+                &self.chunk
+            } else {
+                &"<chunk>"
+            })
+            .field("name", &self.name)
+            .finish()
     }
 }
