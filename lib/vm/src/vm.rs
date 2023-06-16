@@ -271,6 +271,6 @@ mod tests {
         env_logger::init_from_env(Env::new().default_filter_or("trace"));
         println!();
 
-        Vm::new().run("print 1 + 2").unwrap();
+        Vm::new().run("print 1 + 2;").unwrap();
     }
 }
