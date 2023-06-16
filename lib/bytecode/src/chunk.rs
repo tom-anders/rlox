@@ -48,7 +48,7 @@ impl Chunk {
 
     pub fn intern_strings<Interner: StringInterner>(&mut self, interner: &mut Interner) {
         for constant in self.constants.iter_mut() {
-            constant.intern_string(interner);
+            constant.intern_strings(interner);
         }
     }
 

@@ -28,9 +28,9 @@ impl Value {
         !self.is_truthy()
     }
 
-    pub fn intern_string<Interner: StringInterner>(&mut self, interner: &mut Interner) {
+    pub fn intern_strings<Interner: StringInterner>(&mut self, interner: &mut Interner) {
         if let Value::Object(o) = self {
-            o.intern_string(interner)
+            o.intern_strings(interner)
         }
     }
 
