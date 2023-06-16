@@ -6,7 +6,7 @@ use super::Value;
 
 #[derive(Debug, Clone)]
 pub struct Object {
-    pub(crate) data: ObjectData,
+    pub data: ObjectData,
 }
 
 impl PartialEq for Object {
@@ -38,6 +38,7 @@ impl Object {
             ObjectData::Function(f) => {
                 f.intern_strings(interner);
             }
+            ObjectData::NativeFun(_) => {}
         }
     }
 
@@ -71,12 +72,13 @@ mod rlox_string;
 pub use rlox_string::RloxString;
 
 mod function;
-pub use function::Function;
+pub use function::*;
 
 #[derive(Debug, Clone, PartialEq, derive_more::Display)]
 pub enum ObjectData {
     String(RloxString),
     Function(Function),
+    NativeFun(NativeFun),
 }
 
 impl ObjectData {

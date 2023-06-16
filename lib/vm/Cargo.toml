@@ -12,6 +12,8 @@ compiler = { path = "../compiler" }
 errors = { path = "../errors" }
 log.workspace = true
 thiserror.workspace = true
+itertools.workspace = true
 
 [dev-dependencies]
 env_logger.workspace = true
+ctor.wokspace = true

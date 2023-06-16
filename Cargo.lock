@@ -617,8 +617,10 @@ version = "0.1.0"
 dependencies = [
  "bytecode",
  "compiler",
+ "ctor",
  "env_logger",
  "errors",
+ "itertools",
  "log",
  "scanner",
  "thiserror",

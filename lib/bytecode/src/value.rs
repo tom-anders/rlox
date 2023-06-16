@@ -34,12 +34,16 @@ impl Value {
         }
     }
 
-    pub fn string(s: String) -> Value {
-        Value::Object(Box::new(Object::string(s)))
+    pub fn string(s: impl ToString) -> Value {
+        Value::Object(Box::new(Object::string(s.to_string())))
     }
 
     pub fn function(f: Function) -> Value {
         Value::Object(Box::new(Object::new(ObjectData::Function(f))))
+    }
+
+    pub fn native_function(f: NativeFun) -> Value {
+        Value::Object(Box::new(Object::new(ObjectData::NativeFun(f))))
     }
 
     pub fn try_as_string(&self) -> Option<&RloxString> {
