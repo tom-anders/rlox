@@ -22,10 +22,13 @@ impl Object {
         obj
     }
 
-    pub fn intern_string<Interner: StringInterner>(&mut self, interner: &mut Interner) {
+    pub fn intern_strings<Interner: StringInterner>(&mut self, interner: &mut Interner) {
         match &mut self.data {
             ObjectData::String(s) => {
                 interner.intern_string(s);
+            }
+            ObjectData::Function(f) => {
+                f.intern_strings(interner);
             }
         }
     }
@@ -71,13 +74,17 @@ impl Display for Object {
     }
 }
 
+mod rlox_string;
+pub use rlox_string::RloxString;
+
+mod function;
+pub use function::Function;
+
 #[derive(Debug, Clone, PartialEq, derive_more::Display)]
 pub enum ObjectData {
     String(RloxString),
+    Function(Function),
 }
-
-mod rlox_string;
-pub use rlox_string::RloxString;
 
 impl Drop for Object {
     fn drop(&mut self) {

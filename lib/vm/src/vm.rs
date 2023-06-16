@@ -212,7 +212,7 @@ impl Vm {
                     let mut result = (a + b).map_err(|(a, b)| {
                         self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
                     })?;
-                    result.intern_string(self);
+                    result.intern_strings(self);
                     self.push(result);
                 }
                 Instruction::Subtract => {
