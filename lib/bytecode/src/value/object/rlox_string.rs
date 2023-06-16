@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{rc::Rc, str::FromStr};
 
 #[derive(Debug, Clone, Default, Eq)]
 pub struct RloxString(pub Rc<String>);

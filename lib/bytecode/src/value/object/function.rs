@@ -1,10 +1,13 @@
-use std::fmt::{Display, Debug};
+use std::fmt::{Debug, Display};
 
-use crate::chunk::{Chunk, StringInterner};
+use crate::{
+    chunk::{Chunk, StringInterner},
+    value::Value,
+};
 
-use super::RloxString;
+use super::{RloxString, ObjectData, Object};
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct Function {
     pub arity: usize,
     pub chunk: Chunk,
@@ -12,15 +15,15 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn intern_strings<Interner: StringInterner>(&mut self, interner: &mut Interner) {
-        interner.intern_string(&mut self.name);
-        self.chunk.intern_strings(interner);
+    pub fn new(arity: usize, name: impl Into<RloxString>) -> Function {
+        Function { arity, chunk: Chunk::default(), name: name.into() }
     }
 }
 
-impl PartialEq for Function {
-    fn eq(&self, other: &Self) -> bool {
-        todo!()
+impl Function {
+    pub fn intern_strings<Interner: StringInterner>(&mut self, interner: &mut Interner) {
+        interner.intern_string(&mut self.name);
+        self.chunk.intern_strings(interner);
     }
 }
 
@@ -40,12 +43,23 @@ impl Debug for Function {
             .field("arity", &self.arity)
             // Printing out the chunk makes output to verbose,
             // do don't to it by default
-            .field("chunk", if alternate {
-                &self.chunk
-            } else {
-                &"<chunk>"
-            })
+            .field("chunk", if alternate { &self.chunk } else { &"<chunk>" })
             .field("name", &self.name)
             .finish()
+    }
+}
+
+impl From<Function> for Value {
+    fn from(value: Function) -> Self {
+        Value::Object(Box::new(Object { data: ObjectData::Function(value) }))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativeFun (pub fn(Vec<Value>) -> Value);
+
+impl Display for NativeFun {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<native fn>")
     }
 }

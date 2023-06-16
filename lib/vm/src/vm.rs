@@ -3,17 +3,19 @@ use std::{
     marker::PhantomPinned,
     ops::{DerefMut, Neg},
     pin::Pin,
-    ptr,
+    println, ptr,
     rc::Rc,
 };
 
 use bytecode::{
-    chunk::Chunk,
+    chunk::{Chunk, StringInterner},
     instructions::{Instruction, Jump},
-    value::{Function, Object, ObjectData, RloxString, Value},
+    value::{Function, NativeFun, Object, ObjectData, RloxString, Value},
 };
 use compiler::Compiler;
 use errors::RloxErrors;
+use itertools::Itertools;
+use log::trace;
 
 #[derive(Debug, Clone)]
 struct CallFrame {
@@ -22,6 +24,16 @@ struct CallFrame {
     // So let's leave it like this for now and maybe optimize later.
     ip: usize,
     base_slot: usize,
+}
+
+impl CallFrame {
+    pub fn new(function: Function, base_slot: usize) -> Self {
+        Self { function, ip: 0, base_slot }
+    }
+
+    fn line(&self) -> usize {
+        self.function.chunk.lines()[self.ip]
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -36,8 +48,8 @@ pub struct Vm {
 pub enum InterpretError {
     #[error(transparent)]
     CompileError(#[from] RloxErrors),
-    #[error("line {line}: {error}")]
-    RuntimeError { line: usize, error: String },
+    #[error("line {line}: {error}\n{stack_trace}")]
+    RuntimeError { line: usize, error: String, stack_trace: String },
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -48,6 +60,10 @@ pub enum RuntimeError {
     InvalidBinaryOperants(Value, Value),
     #[error("Undefined variable: '{0}'")]
     UndefinedVariable(String),
+    #[error("{0} is not a function, can only call functions and classes")]
+    NotAFunction(Value),
+    #[error("Invalid argument count: expected {expected}, got {got}")]
+    InvalidArgumentCount { expected: usize, got: usize },
 }
 
 pub type Result<T> = std::result::Result<T, InterpretError>;
@@ -68,21 +84,35 @@ impl bytecode::chunk::StringInterner for Interner {
     }
 }
 
+impl Default for Vm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Vm {
     pub fn new() -> Self {
-        Self {
+        let mut vm = Self {
             stack: Vec::with_capacity(256),
             string_interner: Interner::default(),
             globals: HashMap::new(),
             frames: Vec::with_capacity(64),
-        }
+        };
+        vm.define_native("clock", |_| {
+            let now = std::time::SystemTime::now();
+            let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap();
+            Value::Number(duration.as_secs_f64())
+        });
+        vm
     }
 
     fn push(&mut self, value: Value) {
+        trace!("Pushing {:?}", value);
         self.stack.push(value);
     }
 
     fn pop(&mut self) -> Value {
+        trace!("Popping {:?}", self.stack.last());
         self.stack.pop().expect("Stack underflow")
     }
 
@@ -104,10 +134,31 @@ impl Vm {
         self.stack.last().expect("Stack underflow")
     }
 
+    fn peek_n(&self, n: usize) -> &Value {
+        self.stack.get(self.stack.len() - 1 - n).expect("Stack underflow")
+    }
+
+    fn stack_trace(&self) -> String {
+        self.frames
+            .iter()
+            .rev()
+            .map(|frame| {
+                let name = if frame.function.name.0.is_empty() {
+                    "script".to_string()
+                } else {
+                    format!("{}()", frame.function.name)
+                };
+                format!("[line {}] in {}", frame.line(), name)
+            })
+            .collect_vec()
+            .join("\n")
+    }
+
     fn runtime_error(&self, error: RuntimeError) -> InterpretError {
         InterpretError::RuntimeError {
             line: self.frame().function.chunk.lines()[self.frame().ip],
             error: error.to_string(),
+            stack_trace: self.stack_trace(),
         }
     }
 
@@ -124,24 +175,65 @@ impl Vm {
     }
 
     pub fn run_source(&mut self, source: &str) -> Result<()> {
-        let mut function = Compiler::new(source).compile()?;
+        let mut function = Compiler::from_source(source).compile()?;
         function.intern_strings(&mut self.string_interner);
 
-        let frame = CallFrame { function, ip: 0, base_slot: self.stack.len() };
-        self.push_frame(frame);
+        self.push(function.clone().into());
+        self.call(function.into(), 0).unwrap();
         self.run()?;
-        self.pop_frame();
         Ok(())
     }
 
     fn push_frame(&mut self, mut frame: CallFrame) {
+        trace!("Pushing frame: {:?}", frame);
         frame.function.intern_strings(&mut self.string_interner);
-        self.push(Value::function(frame.function.clone()));
         self.frames.push(frame);
     }
 
     fn pop_frame(&mut self) -> CallFrame {
-        self.frames.pop().unwrap()
+        self.frames.pop().expect("callstack underflow")
+    }
+
+    fn call(&mut self, value: Value, arg_count: usize) -> Result<()> {
+        match value {
+            Value::Object(ref o) => match &o.data {
+                ObjectData::Function(function) => {
+                    if function.arity != arg_count {
+                        return Err(self.runtime_error(RuntimeError::InvalidArgumentCount {
+                            expected: function.arity,
+                            got: arg_count,
+                        }));
+                    }
+                    trace!("stack: {}, len {}", self.stack.len(), arg_count);
+                    self.push_frame(CallFrame::new(
+                        function.clone(),
+                        self.stack.len() - arg_count - 1,
+                    ));
+                    Ok(())
+                }
+                ObjectData::NativeFun(native_fun) => {
+                    let args = self.stack.split_off(self.stack.len() - arg_count);
+                    let result = native_fun.0(args);
+                    self.pop_n(arg_count);
+                    self.push(result);
+                    Ok(())
+                }
+                _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
+            },
+            _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
+        }
+    }
+
+    fn define_native(&mut self, name: &str, native_fun: fn(Vec<Value>) -> Value) {
+        self.push(Value::string(name));
+        self.push(Value::native_function(NativeFun(native_fun)));
+
+        self.stack.last_mut().unwrap().intern_strings(&mut self.string_interner);
+
+        self.globals.insert(self.peek_n(1).try_as_string().unwrap().clone().0, self.peek().clone());
+
+        self.pop();
+        self.pop();
     }
 
     fn run(&mut self) -> Result<()> {
@@ -151,12 +243,19 @@ impl Vm {
 
             log::trace!("Stack: {:?}", self.stack);
             log::trace!("Globals: {:?}", self.globals);
+            log::trace!("Constants: {:?}", self.frame_chunk().constants());
             log::trace!("{}", self.frame_chunk().disassemble_instruction(self.frame().ip).0);
+
+            self.frame_mut().ip += op.num_bytes();
 
             match op {
                 Instruction::Return => {
-                    //  Exit interpreter
-                    return Ok(());
+                    let result = self.pop();
+                    self.pop_frame();
+                    if self.frames.is_empty() {
+                        return Ok(());
+                    }
+                    self.push(result);
                 }
                 Instruction::Print => {
                     println!("{}", self.pop());
@@ -169,6 +268,7 @@ impl Vm {
                 }
                 Instruction::Constant { index } => {
                     let constant = self.frame_chunk().constants().get(index as usize).unwrap();
+                    trace!("Pushed constant: {:?}", constant);
                     self.push(constant.clone());
                 }
                 Instruction::DefineGlobal { constant_index } => {
@@ -177,6 +277,7 @@ impl Vm {
                         .get_string_constant(constant_index)
                         .expect("Missing string constant for global");
 
+                    trace!("Defining global: {:?} {:?}", name, self.peek());
                     self.globals.insert(name.0.clone(), self.peek().clone());
                     self.pop();
                 }
@@ -203,9 +304,6 @@ impl Vm {
                         .frame_chunk()
                         .get_string_constant(constant_index)
                         .expect("Missing string constant for global");
-
-                    // println!("Globals: {:?}", self.globals);
-                    // println!("Globals: {:?}", self.globals.contains_key(name));
 
                     let value = self.globals.get(&name.0).ok_or(
                         self.runtime_error(RuntimeError::UndefinedVariable(name.to_string())),
@@ -291,26 +389,23 @@ impl Vm {
                 Instruction::Jump(Jump(jump)) => {
                     self.frame_mut().ip += jump as usize;
                 }
+                Instruction::Call { arg_count } => {
+                    let callee = self.peek_n(arg_count as usize).clone();
+                    self.call(callee, arg_count as usize)?;
+                }
             }
-
-            self.frame_mut().ip += op.num_bytes();
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::println;
-
     use env_logger::Env;
 
     use super::*;
 
-    #[test]
-    fn smoke_test() {
+    #[ctor::ctor]
+    fn init() {
         env_logger::init_from_env(Env::new().default_filter_or("trace"));
-        println!();
-
-        Vm::new().run_source("print 1 + 2;").unwrap();
     }
 }

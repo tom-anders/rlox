@@ -37,6 +37,7 @@ pub enum Instruction {
     GetLocal { stack_slot: u8 },
     JumpIfFalse(Jump),
     Jump(Jump),
+    Call { arg_count: u8 },
 }
 
 #[cfg(test)]

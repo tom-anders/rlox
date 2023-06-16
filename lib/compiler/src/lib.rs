@@ -5,7 +5,7 @@ use std::{
 use bytecode::{
     chunk::Chunk,
     instructions::{Instruction, Jump, OpCode},
-    value::{Object, ObjectData, Value, Function},
+    value::{Function, Object, ObjectData, Value},
 };
 use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
@@ -14,7 +14,7 @@ use scanner::{token::TokenData, Token, TokenStream, TokenType};
 
 use TokenType::*;
 
-pub type Result<T> = std::result::Result<T, RloxError>;
+pub type Result<T> = std::result::Result<T, RloxErrors>;
 
 #[derive(Debug)]
 pub struct CompilerError {
@@ -55,12 +55,22 @@ pub enum CompilerErrorType {
     InvalidAssignmentTarget,
     #[error("Expected '}}' after block")]
     ExpectedRightBrace,
+    #[error("Expected '{{' after {after}")]
+    ExpectedLeftBrace { after: &'static str },
     #[error("Variable already in scope")]
     VariableAlreadyInScope,
     #[error("Expected '(' after '{0}'")]
     ExpectedLeftParen(&'static str),
     #[error("Too much code to jump over")]
     TooLargeJump,
+    #[error("Expected function name")]
+    ExpectedFunctionName,
+    #[error("Too many function arguments")]
+    TooManyArguments,
+    #[error("Expected parameter name")]
+    ExpectedParameterName,
+    #[error("Can't return from top-level code")]
+    ReturnOutsideFunction,
 }
 
 #[repr(u8)]
@@ -114,7 +124,7 @@ struct Local<'a> {
 mod scope;
 use scope::Scope;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum FunctionType {
     Function,
     Script,
@@ -126,6 +136,16 @@ struct CurrentFunction {
     function: Function,
 }
 
+impl CurrentFunction {
+    fn script() -> Self {
+        Self { ty: FunctionType::Script, function: Function::default() }
+    }
+
+    fn new(ty: FunctionType, function: Function) -> Self {
+        Self { ty, function }
+    }
+}
+
 #[derive(Debug)]
 pub struct Compiler<'a> {
     token_stream: Peekable<TokenStream<'a>>,
@@ -135,58 +155,161 @@ pub struct Compiler<'a> {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new(source: &'a str) -> Self {
+    fn new(
+        token_stream: Peekable<TokenStream<'a>>,
+        current_function: CurrentFunction,
+        scope: Scope,
+    ) -> Self {
         let mut locals = Vec::with_capacity(u8::MAX as usize + 1);
         locals.push(Local { name: "", depth: Some(0) });
-        Self {
-            token_stream: TokenStream::new(source).peekable(),
-            current_function: CurrentFunction { ty: FunctionType::Script, function: Function::default() },
-            locals,
-            scope: Scope::new(),
-        }
+        Self { token_stream, current_function, locals, scope }
+    }
+
+    pub fn from_source(source: &'a str) -> Self {
+        Self::new(
+            TokenStream::new(source).peekable(),
+            CurrentFunction::script(),
+            Scope::global(),
+        )
     }
 
     fn current_chunk(&mut self) -> &mut Chunk {
         &mut self.current_function.function.chunk
     }
 
-    pub fn compile(mut self) -> std::result::Result<Function, RloxErrors> {
-        let mut errors = RloxErrors(Vec::new());
+    pub fn compile(self) -> std::result::Result<Function, RloxErrors> {
+        let (function, _) = self.compile_until_token(Eof)?;
+        Ok(function)
+    }
 
-        while !self.is_at_end() {
-            match self.declaration() {
-                Ok(()) => (),
-                Err(e) => {
-                    log::trace!("Hit error: {:?}, syncing...", e);
-                    self.synchronize();
-                    errors.0.push(e)
+    fn compile_function(mut self, function_token: Token<'a>) -> std::result::Result<(Function, Peekable<TokenStream<'a>>), RloxErrors> {
+        let mut arity = 0;
+        if self.peek().unwrap()? != RightParen {
+            loop {
+                arity += 1;
+                if arity > 255 {
+                    return Err(CompilerError::new(CompilerErrorType::TooManyArguments, function_token).into());
+                }
+
+                let (constant_index, token) = self.parse_variable(CompilerErrorType::ExpectedParameterName)?;
+                self.define_variable(constant_index, token.line())?;
+
+                if self.consume(Comma)?.is_err() {
+                    break;
                 }
             }
         }
+        self.current_function.function.arity = arity;
 
-        match self.consume_or_error(Eof, CompilerErrorType::ExpectedEof) {
-            Ok(_) => {}
-            Err(e) => errors.0.push(e),
-        }
+        self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("parameters"))?;
+        self.consume_or_error(
+            LeftBrace,
+            CompilerErrorType::ExpectedLeftBrace { after: "parameters" },
+        )?;
 
-        // Only temporarily so that in the VM we get some output
-        self.current_chunk().write_instruction(Instruction::Return, Line(0));
+        self.compile_until_token(RightBrace)
+    }
+
+    fn compile_until_token(
+        mut self,
+        until_token: TokenType,
+    ) -> std::result::Result<(Function, Peekable<TokenStream<'a>>), RloxErrors> {
+        let mut errors = RloxErrors(Vec::new());
+
+        let final_token = loop {
+            if let Ok(token) = self.consume(until_token)? {
+                break token;
+            }
+
+            match self.declaration() {
+                Ok(()) => (),
+                Err(mut e) => {
+                    log::trace!("Hit error: {:?}, syncing...", e);
+                    self.synchronize();
+                    errors.0.append(&mut e);
+                }
+            }
+        };
+
+        self.return_nil(final_token.line());
 
         if errors.is_empty() {
-            // TODO add output if <script> or <func>
-            log::trace!("Compiled chunk: {:?}", self.current_chunk());
-            Ok(self.current_function.function)
+            log::trace!("Compiled chunk [{:?}]: {:?}", 
+                self.current_function.ty.clone(),
+                self.current_chunk());
+            Ok((self.current_function.function, self.token_stream))
         } else {
             Err(errors)
         }
     }
 
+    fn return_nil(&mut self, line: Line) {
+        self.current_chunk().write_instruction(Instruction::Nil, line);
+        self.current_chunk().write_instruction(Instruction::Return, line);
+    }
+
     fn declaration(&mut self) -> Result<()> {
         if self.consume(Var)?.is_ok() {
             self.var_declaration()
+        } else if self.consume(Fun)?.is_ok() {
+            self.fun_declaration()
         } else {
             self.statement()
         }
+    }
+
+    fn fun_declaration(&mut self) -> Result<()> {
+        let (global, token) = self.parse_variable(CompilerErrorType::ExpectedFunctionName)?;
+        self.mark_initialized();
+        self.function(FunctionType::Function, token.lexeme())?;
+        self.define_variable(global, token.line())?;
+        Ok(())
+    }
+
+    fn function(&mut self, ty: FunctionType, name: &'a str) -> Result<()> {
+        let function_token = self
+            .consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("function name"))?;
+
+        let compiler =
+            Self::new(self.token_stream.clone(), CurrentFunction::new(ty, Function::new(0, name.to_string())), Scope::local());
+
+        let (function, token_stream) = compiler.compile_function(function_token.clone())?;
+        self.token_stream = token_stream;
+
+        let index = self.add_constant(Value::function(function), &function_token)?;
+
+        self.current_chunk().write_instruction(Instruction::Constant { index }, Line(0));
+
+        Ok(())
+    }
+
+    fn call(&mut self, token: &Token) -> Result<()> {
+        let arg_count = self.argument_list()?;
+        self.current_chunk().write_instruction(Instruction::Call { arg_count }, token.line());
+        Ok(())
+    }
+
+    fn argument_list(&mut self) -> Result<u8> {
+        let mut arg_count = 0;
+
+        if self.peek().unwrap()? != RightParen {
+            loop {
+                self.expression()?;
+
+                if arg_count == 255 {
+                    return Err(CompilerError::new(CompilerErrorType::TooManyArguments, self.peek_token().unwrap()?).into());
+                }
+
+                arg_count += 1;
+
+                if self.consume(Comma)?.is_err() {
+                    break;
+                }
+            }
+        }
+        self.consume_or_error(TokenType::RightParen, CompilerErrorType::ExpectedRightParen("arguments"))?;
+
+        Ok(arg_count)
     }
 
     fn variable(&mut self, token: &Token<'a>, can_assign: bool) -> Result<()> {
@@ -199,7 +322,8 @@ impl<'a> Compiler<'a> {
                 (Instruction::GetLocal { stack_slot }, Instruction::SetLocal { stack_slot })
             }
             None => {
-                let constant_index = self.add_identifier_constant(identifier)?;
+                let name = Value::string(identifier.lexeme().to_string());
+                let constant_index = self.add_constant(name, identifier)?;
                 (
                     Instruction::GetGlobal { constant_index },
                     Instruction::SetGlobal { constant_index },
@@ -217,6 +341,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn resolve_local(&self, identifier: &Token<'a>) -> Option<u8> {
+        trace!("Resolving local {:?} from {:?}", identifier.lexeme(), self.locals);
         self.locals.iter().rev().enumerate().find_map(|(i, local)| {
             (local.depth.is_some() && local.name == identifier.lexeme())
                 .then_some((self.locals.len() - i - 1) as u8)
@@ -224,34 +349,28 @@ impl<'a> Compiler<'a> {
     }
 
     fn var_declaration(&mut self) -> Result<()> {
-        let (global_constant_index, line) =
+        let (global_constant_index, token) =
             self.parse_variable(CompilerErrorType::ExpectedVariableName)?;
         if self.consume(Equal)?.is_ok() {
             self.expression()?;
         } else {
-            self.current_chunk().write_instruction(Instruction::Nil, line);
+            self.current_chunk().write_instruction(Instruction::Nil, token.line());
         }
         self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?;
-        self.define_variable(global_constant_index, line)
+        self.define_variable(global_constant_index, token.line())
     }
 
-    fn parse_variable(&mut self, error: CompilerErrorType) -> Result<(u8, Line)> {
+    fn parse_variable(&mut self, error: CompilerErrorType) -> Result<(u8, Token<'a>)> {
         let token = self.consume_or_error(Identifier, error)?;
 
-        let line = token.line();
         self.declare_variable(&token)?;
         if self.scope.inside_local() {
-            return Ok((0, line));
+            return Ok((0, token));
         }
 
-        let index = self
-            .current_chunk()
-            .add_constant(Value::string(token.lexeme().to_string()))
-            .ok_or_else(|| -> RloxError {
-                CompilerError::new(CompilerErrorType::TooManyConstants, token.clone()).into()
-            })?;
+        let index = self.add_constant(Value::string(token.lexeme()), &token)?;
 
-        Ok((index, line))
+        Ok((index, token))
     }
 
     fn declare_variable(&mut self, name: &Token<'a>) -> Result<()> {
@@ -288,15 +407,15 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn add_identifier_constant(&mut self, token: &Token<'a>) -> Result<u8> {
-        self.current_chunk().add_constant(Value::string(token.lexeme().to_string())).ok_or_else(
-            || CompilerError::new(CompilerErrorType::TooManyConstants, token.clone()).into(),
-        )
+    fn mark_initialized(&mut self) {
+        if self.scope.inside_local() {
+            self.locals.last_mut().unwrap().depth = Some(self.scope.depth());
+        }
     }
 
     fn define_variable(&mut self, constant_index: u8, line: Line) -> Result<()> {
         if self.scope.inside_local() {
-            self.locals.last_mut().unwrap().depth = Some(self.scope.depth());
+            self.mark_initialized();
             return Ok(());
         }
         self.current_chunk().write_instruction(Instruction::DefineGlobal { constant_index }, line);
@@ -308,6 +427,8 @@ impl<'a> Compiler<'a> {
             self.print_statement()
         } else if self.consume(If)?.is_ok() {
             self.if_statement()
+        } else if self.consume(Return)?.is_ok() {
+            self.return_statement()
         } else if self.consume(LeftBrace)?.is_ok() {
             self.scope.begin_scope();
             let right_brace_line = self.block()?.line();
@@ -318,10 +439,30 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn return_statement(&mut self) -> Result<()> {
+        if self.current_function.ty == FunctionType::Script {
+            return Err(CompilerError::new(
+                CompilerErrorType::ReturnOutsideFunction,
+                self.peek_token().unwrap().unwrap().clone(),
+            )
+            .into());
+        }
+
+        if let Ok(token) = self.consume(Semicolon)? {
+            self.return_nil(token.line());
+        } else {
+            self.expression()?;
+            let token = self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?;
+            self.current_chunk().write_instruction(Instruction::Return, token.line());
+        }
+        Ok(())
+    }
+
     fn if_statement(&mut self) -> Result<()> {
         self.consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("if"))?;
         self.expression()?;
-        let token = self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("if"))?;
+        let token =
+            self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("if"))?;
 
         let then_jump = self.write_jump(Instruction::JumpIfFalse(Jump(0)), token.line());
         self.current_chunk().write_instruction(Instruction::Pop, token.line());
@@ -350,9 +491,10 @@ impl<'a> Compiler<'a> {
 
         self.current_chunk().patch_jump(
             offset,
-            Jump(jump.try_into().map_err(|_| {
-                CompilerError::new(CompilerErrorType::TooLargeJump, token)
-            })?),
+            Jump(
+                jump.try_into()
+                    .map_err(|_| CompilerError::new(CompilerErrorType::TooLargeJump, token))?,
+            ),
         );
         Ok(())
     }
@@ -424,9 +566,8 @@ impl<'a> Compiler<'a> {
             TokenData::Number(n) => n,
             _ => unreachable!(),
         };
-        let index = self.current_chunk().add_constant(Value::Number(value)).ok_or_else(|| {
-            CompilerError::new(CompilerErrorType::TooManyConstants, prefix_token.clone())
-        })?;
+        let index = self.add_constant(Value::Number(value), prefix_token)?;
+
         self.current_chunk()
             .write_instruction(Instruction::Constant { index }, prefix_token.line());
         Ok(())
@@ -439,12 +580,7 @@ impl<'a> Compiler<'a> {
         }
         .to_string();
 
-        let index = self
-            .current_chunk()
-            .add_constant(Value::Object(Box::new(Object::string(s))))
-            .ok_or_else(|| {
-                CompilerError::new(CompilerErrorType::TooManyConstants, prefix_token.clone())
-            })?;
+        let index = self.add_constant(Value::Object(Box::new(Object::string(s))), prefix_token)?;
         self.current_chunk()
             .write_instruction(Instruction::Constant { index }, prefix_token.line());
 
@@ -532,6 +668,7 @@ impl<'a> Compiler<'a> {
         match token.ty() {
             Plus | Minus | Slash | Star | EqualEqual | BangEqual | Greater | GreaterEqual
             | Less | LessEqual => self.binary(&token),
+            LeftParen => self.call(&token),
             _ => {
                 Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
             }
@@ -544,6 +681,7 @@ impl<'a> Compiler<'a> {
             Slash | Star => Precedence::Factor,
             EqualEqual | BangEqual => Precedence::Equality,
             Greater | GreaterEqual | Less | LessEqual => Precedence::Comparison,
+            LeftParen => Precedence::Call,
             _ => Precedence::None,
         }
     }
@@ -621,7 +759,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn peek_token(&mut self) -> Option<Result<Token<'a>>> {
-        self.token_stream.peek().cloned()
+        self.token_stream.peek().cloned().map(|t| t.map_err(|e| e.into()))
     }
 
     fn peek(&mut self) -> Option<Result<TokenType>> {
@@ -629,14 +767,12 @@ impl<'a> Compiler<'a> {
     }
 
     fn advance(&mut self) -> Result<Token<'a>> {
-        self.token_stream.next().unwrap()
+        self.token_stream.next().unwrap().map_err(|e| e.into())
     }
 
-    fn is_at_end(&mut self) -> bool {
-        match self.peek() {
-            Some(Ok(Eof)) => true,
-            Some(_) => false,
-            None => true,
-        }
+    fn add_constant(&mut self, value: Value, token: &Token<'a>) -> Result<u8> {
+        self.current_chunk()
+            .add_constant(value)
+            .ok_or(CompilerError::new(CompilerErrorType::TooManyConstants, token.clone()).into())
     }
 }

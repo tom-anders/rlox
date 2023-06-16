@@ -4,9 +4,15 @@ pub struct Scope {
 }
 
 impl Scope {
-    pub fn new() -> Self {
+    pub fn global() -> Self {
         Scope {
             depth: 0
+        }
+    }
+
+    pub fn local() -> Self {
+        Scope {
+            depth: 1
         }
     }
 

@@ -15,7 +15,7 @@ use errors::{Result, RloxError};
 use token::TokenData::{self, *};
 pub use token::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Scanner<'a> {
     start: Cursor<'a>,
     cursor: Cursor<'a>,
@@ -234,7 +234,7 @@ impl<'a> Scanner<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TokenStream<'a> {
     scanner: Scanner<'a>,
     eof: bool,

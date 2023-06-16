@@ -8,7 +8,7 @@ use crate::{
     value::{ObjectData, Value, RloxString},
 };
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct Chunk {
     code: Vec<u8>,
     constants: Vec<Value>,
@@ -86,22 +86,24 @@ impl Chunk {
             format!("{:4}", line)
         };
 
+        let get_constant = |index: u8| {
+            format!("{index} -> {}", self.constants
+                .get(index as usize)
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "??".to_string()))
+        };
+
         let op_args = match instr {
             Instruction::PopN(n) => format!("'{n}'"),
-            Instruction::Constant { index } => format!(
-                "{index} '{}'",
-                self.constants
-                    .get(index as usize)
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "??".to_string())
-            ),
-            Instruction::DefineGlobal { constant_index } => format!("'{constant_index}'"),
-            Instruction::SetGlobal { constant_index } => format!("'{constant_index}'"),
-            Instruction::GetGlobal { constant_index } => format!("'{constant_index}'"),
+            Instruction::Constant { index } => get_constant(index),
+            Instruction::DefineGlobal { constant_index } => get_constant(constant_index),
+            Instruction::SetGlobal { constant_index } => get_constant(constant_index),
+            Instruction::GetGlobal { constant_index } => get_constant(constant_index),
             Instruction::SetLocal { stack_slot } => format!("'{stack_slot}'"),
             Instruction::GetLocal { stack_slot } => format!("'{stack_slot}'"),
             Instruction::JumpIfFalse(jump) => format!("'{}'", jump.0),
             Instruction::Jump(jump) => format!("'{}'", jump.0),
+            Instruction::Call { arg_count } => format!("'{}'", arg_count),
             Instruction::Return
             | Instruction::Negate
             | Instruction::Not
