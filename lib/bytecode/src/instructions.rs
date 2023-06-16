@@ -1,6 +1,16 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Jump(pub u16);
 
+impl Jump {
+    pub fn from_ne_bytes(bytes: [u8; 2]) -> Self {
+        Jump(u16::from_ne_bytes(bytes))
+    }
+
+    pub fn to_ne_bytes(self) -> [u8; 2] {
+        self.0.to_ne_bytes()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, bytecode_derive::Instruction)]
 pub enum Instruction {
     Return,
@@ -29,39 +39,31 @@ pub enum Instruction {
     Jump(Jump),
 }
 
-impl Instruction {
-    // TODO we could move this back to a proc_macro
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        let opcode: OpCode = bytes[0].into();
-        match opcode {
-            OpCode::Return => Instruction::Return,
-            OpCode::Negate => Instruction::Negate,
-            OpCode::Not => Instruction::Not,
-            OpCode::Add => Instruction::Add,
-            OpCode::Subtract => Instruction::Subtract,
-            OpCode::Multiply => Instruction::Multiply,
-            OpCode::Divide => Instruction::Divide,
-            OpCode::Nil => Instruction::Nil,
-            OpCode::True => Instruction::True,
-            OpCode::False => Instruction::False,
-            OpCode::Equal => Instruction::Equal,
-            OpCode::Greater => Instruction::Greater,
-            OpCode::Less => Instruction::Less,
-            OpCode::Print => Instruction::Print,
-            OpCode::Pop => Instruction::Pop,
-            OpCode::PopN => Instruction::PopN(bytes[1]),
-            OpCode::Constant => Instruction::Constant { index: bytes[1] },
-            OpCode::DefineGlobal => Instruction::DefineGlobal { constant_index: bytes[1] },
-            OpCode::SetGlobal => Instruction::SetGlobal { constant_index: bytes[1] },
-            OpCode::GetGlobal => Instruction::GetGlobal { constant_index: bytes[1] },
-            OpCode::SetLocal => Instruction::SetLocal { stack_slot: bytes[1] },
-            OpCode::GetLocal => Instruction::GetLocal { stack_slot: bytes[1] },
-            OpCode::JumpIfFalse => Instruction::JumpIfFalse (
-                Jump(u16::from_ne_bytes(bytes[1..3].try_into().unwrap())),
-            ),
-            OpCode::Jump => Instruction::Jump (
-                Jump(u16::from_ne_bytes(bytes[1..3].try_into().unwrap())),
-            ),
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_and_from_bytes() {
+        let instructions = vec![
+            Instruction::Return,
+            Instruction::GetLocal { stack_slot: 0x33 },
+            Instruction::Jump(Jump(0x1122)),
+        ];
+
+        let mut bytes = Vec::new();
+        for instruction in &instructions {
+            instruction.write_to(&mut bytes);
         }
+
+        bytes.extend_from_slice(&123_u8.to_ne_bytes());
+
+        let decoded = vec![
+            Instruction::from_bytes(&bytes[0..1]),
+            Instruction::from_bytes(&bytes[1..3]),
+            Instruction::from_bytes(&bytes[3..6]),
+        ];
+
+        assert_eq!(instructions, decoded);
     }
 }
