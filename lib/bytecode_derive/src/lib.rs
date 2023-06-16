@@ -1,8 +1,118 @@
 use proc_macro2::{Ident, TokenStream};
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::{
     parse_macro_input, punctuated::Punctuated, token::Comma, DataEnum, DeriveInput, Field, Fields,
+    Variant,
 };
+
+fn variant_fields(variant: &Variant) -> syn::punctuated::IntoIter<Field> {
+    match &variant.fields {
+        Fields::Named(fields) => fields.named.clone().into_iter(),
+        Fields::Unnamed(fields) => fields.unnamed.clone().into_iter(),
+        Fields::Unit => Punctuated::<Field, syn::Token![,]>::new().into_iter(),
+    }
+}
+
+fn impl_write_to(ident: &Ident, data_enum: &DataEnum) -> proc_macro2::TokenStream {
+    let match_arms = data_enum.variants.iter().map(|variant| {
+        let fields = variant_fields(variant);
+        let arg_names = fields.enumerate().map(|(i, _)| {
+            let arg = format_ident!("arg_{}", i);
+            quote! { #arg }
+        });
+
+        let opcode = &variant.ident;
+        let match_lhs = match &variant.fields {
+            Fields::Named(fields) => {
+                let bindings = fields
+                    .named
+                    .iter()
+                    .map(|f| f.ident.as_ref().unwrap())
+                    .zip(arg_names.clone())
+                    .map(|(ident, name)| quote! { #ident: #name });
+                quote! { #ident::#opcode { #(#bindings),* } }
+            }
+            Fields::Unnamed(_) => {
+                let arg_names = arg_names.clone();
+                quote! { #ident::#opcode(#(#arg_names),*) }
+            }
+            Fields::Unit => quote! { #ident::#opcode },
+        };
+
+        quote! {
+            #match_lhs => {
+                bytes.push(self.opcode() as u8);
+                #(bytes.extend_from_slice(&#arg_names.to_ne_bytes()));*
+            }
+        }
+    });
+
+    quote! {
+        impl #ident {
+            pub fn write_to(&self, bytes: &mut Vec<u8>) {
+                match &self {
+                    #(#match_arms)*
+                }
+            }
+        }
+    }
+}
+
+fn impl_from_bytes(ident: &Ident, data_enum: &DataEnum) -> proc_macro2::TokenStream {
+    let match_arms = data_enum.variants.iter().map(|variant| {
+        let opcode = variant.ident.clone();
+
+        let fields = variant_fields(variant);
+
+        let field_sizes: Vec<_> = fields.clone().map(|field| {
+            let ty = &field.ty;
+            quote! { std::mem::size_of::<#ty>() }
+        }).collect();
+
+        let field_bytes = fields.enumerate().map(|(i, field)| {
+            let previous_field_sizes = &field_sizes[..i];
+            let offset = quote! {
+                1 #(+#previous_field_sizes)*
+            };
+            let ty = &field.ty;
+            quote! {
+                #ty::from_ne_bytes(bytes[#offset.. #offset + std::mem::size_of::<#ty>()].try_into().unwrap())
+            }
+        });
+
+        match &variant.fields {
+            Fields::Named(fields) => {
+                let idents = fields.named.iter().map(|f| f.ident.as_ref().unwrap());
+
+                quote! {
+                    OpCode::#opcode => #ident::#opcode {
+                        #(#idents: #field_bytes),*
+                    },
+                }
+            },
+            Fields::Unnamed(_) => {
+                quote! {
+                    OpCode::#opcode => #ident::#opcode(#(#field_bytes),*),
+                }
+
+            },
+            Fields::Unit => quote! {
+                OpCode::#opcode => #ident::#opcode,
+            },
+        }
+    });
+
+    quote! {
+        impl #ident {
+            pub fn from_bytes(bytes: &[u8]) -> Self {
+                let opcode: OpCode = bytes[0].into();
+                match opcode {
+                    #(#match_arms)*
+                }
+            }
+        }
+    }
+}
 
 fn impl_num_bytes(ident: &Ident, data_enum: &DataEnum) -> proc_macro2::TokenStream {
     // This computes the number of bytes each enum variant takes up in memory.
@@ -154,11 +264,15 @@ pub fn derive_instruction(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     let impl_opcode = impl_opcode(&data_enum);
     let impl_len = impl_num_bytes(&ident, &data_enum);
     let impl_opcode_from_instr = impl_opcode_from_instr(&ident, &data_enum);
+    let impl_from_bytes = impl_from_bytes(&ident, &data_enum);
+    let impl_write_to = impl_write_to(&ident, &data_enum);
 
     quote! {
         #impl_len
         #impl_opcode
         #impl_opcode_from_instr
+        #impl_from_bytes
+        #impl_write_to
     }
     .into()
 }
