@@ -71,10 +71,7 @@ impl Chunk {
 
     pub fn get_string_constant(&self, index: u8) -> Option<&RloxString> {
         self.constants.get(index as usize).and_then(|v| match v {
-            Value::Object(o) => match o.data() {
-                ObjectData::String(s) => Some(s),
-                _ => None,
-            },
+            Value::Object(o) => o.try_as_string(),
             _ => None,
         })
     }

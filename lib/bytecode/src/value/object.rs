@@ -1,4 +1,4 @@
-use std::{fmt::Display, ops::Add, rc::Rc};
+use std::{fmt::Display, ops::{Add, Deref}, rc::Rc};
 
 use crate::chunk::{StringInterner, Chunk};
 
@@ -12,6 +12,14 @@ pub struct Object {
 impl PartialEq for Object {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
+    }
+}
+
+impl Deref for Object {
+    type Target = ObjectData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
     }
 }
 
@@ -35,21 +43,6 @@ impl Object {
 
     pub fn string(s: impl Into<RloxString>) -> Self {
         Self::new(ObjectData::String(s.into()))
-    }
-
-    pub fn try_as_string(&self) -> Option<&RloxString> {
-        match &self.data {
-            ObjectData::String(s) => Some(s),
-            _ => None,
-        }
-    }
-
-    pub fn data(&self) -> &ObjectData {
-        &self.data
-    }
-
-    pub fn data_mut(&mut self) -> &mut ObjectData {
-        &mut self.data
     }
 }
 
@@ -84,6 +77,22 @@ pub use function::Function;
 pub enum ObjectData {
     String(RloxString),
     Function(Function),
+}
+
+impl ObjectData {
+    pub fn try_as_string(&self) -> Option<&RloxString> {
+        match self {
+            ObjectData::String(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn unwrap_function(&self) -> Option<&Function> {
+        match self {
+            ObjectData::Function(f) => Some(f),
+            _ => None,
+        }
+    }
 }
 
 impl Drop for Object {
