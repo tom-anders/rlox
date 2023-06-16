@@ -12,3 +12,4 @@ bytecode_derive = { path = "../bytecode_derive" }
 cursor = { path = "../cursor" }
 strum = { version = "0.24.1", features = ["derive"] }
 strum_macros = "0.24.3"
+derive_more = "0.99.17"

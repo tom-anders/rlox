@@ -426,7 +426,7 @@ impl<'a> Compiler<'a> {
 
         let index = self
             .current_chunk()
-            .add_constant(Value::Object(Box::new(Object::new(ObjectData::String(Rc::new(s))))))
+            .add_constant(Value::Object(Box::new(Object::string(s))))
             .ok_or_else(|| {
                 CompilerError::new(CompilerErrorType::TooManyConstants, prefix_token.clone())
             })?;

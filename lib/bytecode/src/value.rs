@@ -38,8 +38,8 @@ impl Value {
         Value::Object(Box::new(Object::string(s)))
     }
 
-    pub fn try_as_string(&self) -> Option<Rc<String>> {
-        match self {
+    pub fn try_as_string(&self) -> Option<&RloxString> {
+        match &self {
             Value::Object(o) => o.try_as_string(),
             _ => None,
         }
