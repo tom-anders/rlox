@@ -10,7 +10,7 @@ use std::{
 use bytecode::{
     chunk::Chunk,
     instructions::{Instruction, Jump},
-    value::{ObjectData, Value},
+    value::{ObjectData, Value, RloxString},
 };
 use compiler::Compiler;
 use errors::RloxErrors;
@@ -19,8 +19,8 @@ use errors::RloxErrors;
 pub struct Vm {
     chunk: Chunk,
     stack: Vec<Value>,
-    strings: HashSet<Rc<String>>,
-    globals: HashMap<Rc<String>, Value>,
+    strings: HashSet<RloxString>,
+    globals: HashMap<RloxString, Value>,
     // FIXME: Using a raw pointer would be a bit more performant, but would also require `unsafe`.
     // So let's leave it like this for now and maybe optimize later.
     ip: usize,
@@ -47,7 +47,7 @@ pub enum RuntimeError {
 pub type Result<T> = std::result::Result<T, InterpretError>;
 
 impl bytecode::chunk::StringInterner for Vm {
-    fn intern_string(&mut self, string: &mut Rc<String>) {
+    fn intern_string(&mut self, string: &mut RloxString) {
         match self.strings.get(string) {
             Some(s) => *string = s.clone(),
             None => {

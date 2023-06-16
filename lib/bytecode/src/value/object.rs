@@ -1,6 +1,6 @@
 use std::{fmt::Display, ops::Add, rc::Rc};
 
-use crate::chunk::StringInterner;
+use crate::chunk::{StringInterner, Chunk};
 
 use super::Value;
 
@@ -30,13 +30,13 @@ impl Object {
         }
     }
 
-    pub fn string(s: impl Into<Rc<String>>) -> Self {
+    pub fn string(s: impl Into<RloxString>) -> Self {
         Self::new(ObjectData::String(s.into()))
     }
 
-    pub fn try_as_string(&self) -> Option<Rc<String>> {
+    pub fn try_as_string(&self) -> Option<&RloxString> {
         match &self.data {
-            ObjectData::String(s) => Some(s.clone()),
+            ObjectData::String(s) => Some(s),
             _ => None,
         }
     }
@@ -55,10 +55,10 @@ impl Add for Box<Object> {
     fn add(self, other: Self) -> Self::Output {
         match (&*self, &*other) {
             (Object { data: ObjectData::String(a) }, Object { data: ObjectData::String(b) }) => {
-                Ok(Value::Object(Box::new(Object::new(ObjectData::String(Rc::new(format!(
+                Ok(Value::Object(Box::new(Object::string(format!(
                     "{}{}",
                     a, b
-                )))))))
+                )))))
             }
             _ => Err((Value::Object(self), Value::Object(other))),
         }
@@ -71,27 +71,13 @@ impl Display for Object {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, derive_more::Display)]
 pub enum ObjectData {
-    String(Rc<String>),
+    String(RloxString),
 }
 
-impl PartialEq for ObjectData {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            // Strings are interned via reference counting, so comparing by pointer is enough.
-            (ObjectData::String(a), ObjectData::String(b)) => Rc::ptr_eq(a, b),
-        }
-    }
-}
-
-impl std::fmt::Display for ObjectData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ObjectData::String(s) => write!(f, "{}", s),
-        }
-    }
-}
+mod rlox_string;
+pub use rlox_string::RloxString;
 
 impl Drop for Object {
     fn drop(&mut self) {
