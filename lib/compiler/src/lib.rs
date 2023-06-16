@@ -5,7 +5,7 @@ use std::{
 use bytecode::{
     chunk::Chunk,
     instructions::{Instruction, Jump, OpCode},
-    value::{Object, ObjectData, Value},
+    value::{Object, ObjectData, Value, Function},
 };
 use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
@@ -115,28 +115,42 @@ mod scope;
 use scope::Scope;
 
 #[derive(Debug)]
+enum FunctionType {
+    Function,
+    Script,
+}
+
+#[derive(Debug)]
+struct CurrentFunction {
+    ty: FunctionType,
+    function: Function,
+}
+
+#[derive(Debug)]
 pub struct Compiler<'a> {
     token_stream: Peekable<TokenStream<'a>>,
-    chunk: Chunk,
+    current_function: CurrentFunction,
     locals: Vec<Local<'a>>,
     scope: Scope,
 }
 
 impl<'a> Compiler<'a> {
     pub fn new(source: &'a str) -> Self {
+        let mut locals = Vec::with_capacity(u8::MAX as usize + 1);
+        locals.push(Local { name: "", depth: Some(0) });
         Self {
             token_stream: TokenStream::new(source).peekable(),
-            chunk: Chunk::default(),
-            locals: Vec::with_capacity(u8::MAX as usize + 1),
+            current_function: CurrentFunction { ty: FunctionType::Script, function: Function::default() },
+            locals,
             scope: Scope::new(),
         }
     }
 
     fn current_chunk(&mut self) -> &mut Chunk {
-        &mut self.chunk
+        &mut self.current_function.function.chunk
     }
 
-    pub fn compile(mut self) -> std::result::Result<Chunk, RloxErrors> {
+    pub fn compile(mut self) -> std::result::Result<Function, RloxErrors> {
         let mut errors = RloxErrors(Vec::new());
 
         while !self.is_at_end() {
@@ -159,8 +173,9 @@ impl<'a> Compiler<'a> {
         self.current_chunk().write_instruction(Instruction::Return, Line(0));
 
         if errors.is_empty() {
+            // TODO add output if <script> or <func>
             log::trace!("Compiled chunk: {:?}", self.current_chunk());
-            Ok(self.chunk)
+            Ok(self.current_function.function)
         } else {
             Err(errors)
         }
@@ -194,9 +209,9 @@ impl<'a> Compiler<'a> {
 
         if can_assign && self.consume(Equal)?.is_ok() {
             self.expression()?;
-            self.chunk.write_instruction(set_instr, identifier.line());
+            self.current_chunk().write_instruction(set_instr, identifier.line());
         } else {
-            self.chunk.write_instruction(get_instr, identifier.line());
+            self.current_chunk().write_instruction(get_instr, identifier.line());
         }
         Ok(())
     }
@@ -214,7 +229,7 @@ impl<'a> Compiler<'a> {
         if self.consume(Equal)?.is_ok() {
             self.expression()?;
         } else {
-            self.chunk.write_instruction(Instruction::Nil, line);
+            self.current_chunk().write_instruction(Instruction::Nil, line);
         }
         self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?;
         self.define_variable(global_constant_index, line)
@@ -284,7 +299,7 @@ impl<'a> Compiler<'a> {
             self.locals.last_mut().unwrap().depth = Some(self.scope.depth());
             return Ok(());
         }
-        self.chunk.write_instruction(Instruction::DefineGlobal { constant_index }, line);
+        self.current_chunk().write_instruction(Instruction::DefineGlobal { constant_index }, line);
         Ok(())
     }
 
@@ -373,14 +388,14 @@ impl<'a> Compiler<'a> {
     fn print_statement(&mut self) -> Result<()> {
         self.expression()?;
         let line = self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?.line();
-        self.chunk.write_instruction(Instruction::Print, line);
+        self.current_chunk().write_instruction(Instruction::Print, line);
         Ok(())
     }
 
     fn expression_statement(&mut self) -> Result<()> {
         self.expression()?;
         let line = self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?.line();
-        self.chunk.write_instruction(Instruction::Pop, line);
+        self.current_chunk().write_instruction(Instruction::Pop, line);
         Ok(())
     }
 
@@ -390,7 +405,7 @@ impl<'a> Compiler<'a> {
 
     fn literal(&mut self, prefix_token: &Token<'a>) -> Result<()> {
         trace!("Compiling literal: {:?}", prefix_token);
-        self.chunk.write_instruction(
+        self.current_chunk().write_instruction(
             match prefix_token.ty() {
                 True => Instruction::True,
                 False => Instruction::False,

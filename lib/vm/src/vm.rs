@@ -10,20 +10,26 @@ use std::{
 use bytecode::{
     chunk::Chunk,
     instructions::{Instruction, Jump},
-    value::{ObjectData, Value, RloxString},
+    value::{Function, Object, ObjectData, RloxString, Value},
 };
 use compiler::Compiler;
 use errors::RloxErrors;
 
 #[derive(Debug, Clone)]
-pub struct Vm {
-    chunk: Chunk,
-    stack: Vec<Value>,
-    strings: HashSet<RloxString>,
-    globals: HashMap<RloxString, Value>,
+struct CallFrame {
+    function: Function,
     // FIXME: Using a raw pointer would be a bit more performant, but would also require `unsafe`.
     // So let's leave it like this for now and maybe optimize later.
     ip: usize,
+    base_slot: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct Vm {
+    stack: Vec<Value>,
+    string_interner: Interner,
+    globals: HashMap<Rc<String>, Value>,
+    frames: Vec<CallFrame>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -46,12 +52,17 @@ pub enum RuntimeError {
 
 pub type Result<T> = std::result::Result<T, InterpretError>;
 
-impl bytecode::chunk::StringInterner for Vm {
+#[derive(Debug, Clone, Default)]
+struct Interner {
+    strings: HashSet<Rc<String>>,
+}
+
+impl bytecode::chunk::StringInterner for Interner {
     fn intern_string(&mut self, string: &mut RloxString) {
-        match self.strings.get(string) {
-            Some(s) => *string = s.clone(),
+        match self.strings.get(&string.0) {
+            Some(s) => string.0 = s.clone(),
             None => {
-                self.strings.insert(string.clone());
+                self.strings.insert(string.0.clone());
             }
         }
     }
@@ -61,10 +72,9 @@ impl Vm {
     pub fn new() -> Self {
         Self {
             stack: Vec::with_capacity(256),
-            ip: 0,
-            strings: HashSet::new(),
-            chunk: Chunk::default(),
+            string_interner: Interner::default(),
             globals: HashMap::new(),
+            frames: Vec::with_capacity(64),
         }
     }
 
@@ -77,11 +87,13 @@ impl Vm {
     }
 
     fn stack_at(&self, index: u8) -> &Value {
-        self.stack.get(index as usize).unwrap_or_else(|| panic!("Invalid stack index: {}", index))
+        let index = self.frame().base_slot + index as usize;
+        self.stack.get(index).unwrap_or_else(|| panic!("Invalid stack index: {}", index))
     }
 
     fn stack_at_mut(&mut self, index: u8) -> &mut Value {
-        self.stack.get_mut(index as usize).unwrap_or_else(|| panic!("Invalid stack index: {}", index))
+        let index = self.frame().base_slot + index as usize;
+        self.stack.get_mut(index).unwrap_or_else(|| panic!("Invalid stack index: {}", index))
     }
 
     fn pop_n(&mut self, n: usize) {
@@ -93,22 +105,53 @@ impl Vm {
     }
 
     fn runtime_error(&self, error: RuntimeError) -> InterpretError {
-        InterpretError::RuntimeError { line: self.chunk.lines()[self.ip], error: error.to_string() }
+        InterpretError::RuntimeError {
+            line: self.frame().function.chunk.lines()[self.frame().ip],
+            error: error.to_string(),
+        }
     }
 
-    pub fn run(&mut self, source: &str) -> Result<()> {
-        let mut chunk = Compiler::new(source).compile()?;
-        chunk.intern_strings(self);
-        self.chunk = chunk;
-        self.ip = 0;
+    fn frame_mut(&mut self) -> &mut CallFrame {
+        self.frames.last_mut().unwrap()
+    }
 
+    fn frame(&self) -> &CallFrame {
+        self.frames.last().unwrap()
+    }
+
+    fn frame_chunk(&self) -> &Chunk {
+        &self.frame().function.chunk
+    }
+
+    pub fn run_source(&mut self, source: &str) -> Result<()> {
+        let mut function = Compiler::new(source).compile()?;
+        function.intern_strings(&mut self.string_interner);
+
+        let frame = CallFrame { function, ip: 0, base_slot: self.stack.len() };
+        self.push_frame(frame);
+        self.run()?;
+        self.pop_frame();
+        Ok(())
+    }
+
+    fn push_frame(&mut self, mut frame: CallFrame) {
+        frame.function.intern_strings(&mut self.string_interner);
+        self.push(Value::function(frame.function.clone()));
+        self.frames.push(frame);
+    }
+
+    fn pop_frame(&mut self) -> CallFrame {
+        self.frames.pop().unwrap()
+    }
+
+    fn run(&mut self) -> Result<()> {
         loop {
-            let bytes = &self.chunk.code()[self.ip..];
+            let bytes = &self.frame_chunk().code()[self.frame().ip..];
             let op = Instruction::from_bytes(bytes);
 
             log::trace!("Stack: {:?}", self.stack);
             log::trace!("Globals: {:?}", self.globals);
-            log::trace!("{}", self.chunk.disassemble_instruction(self.ip).0);
+            log::trace!("{}", self.frame_chunk().disassemble_instruction(self.frame().ip).0);
 
             match op {
                 Instruction::Return => {
@@ -125,26 +168,27 @@ impl Vm {
                     self.pop_n(n as usize);
                 }
                 Instruction::Constant { index } => {
-                    let constant = self.chunk.constants().get(index as usize).unwrap();
+                    let constant = self.frame_chunk().constants().get(index as usize).unwrap();
                     self.push(constant.clone());
                 }
                 Instruction::DefineGlobal { constant_index } => {
                     let name = self
-                        .chunk
+                        .frame_chunk()
                         .get_string_constant(constant_index)
                         .expect("Missing string constant for global");
 
-                    self.globals.insert(name.clone(), self.peek().clone());
+                    self.globals.insert(name.0.clone(), self.peek().clone());
                     self.pop();
                 }
                 Instruction::SetGlobal { constant_index } => {
                     let name = self
-                        .chunk
+                        .frame_chunk()
                         .get_string_constant(constant_index)
-                        .expect("Missing string constant for global");
+                        .expect("Missing string constant for global")
+                        .clone();
 
                     let val = self.peek().clone();
-                    match self.globals.entry(name.clone()) {
+                    match self.globals.entry(name.0.clone()) {
                         Entry::Occupied(mut entry) => {
                             *entry.get_mut() = val;
                         }
@@ -156,11 +200,14 @@ impl Vm {
                 }
                 Instruction::GetGlobal { constant_index } => {
                     let name = self
-                        .chunk
+                        .frame_chunk()
                         .get_string_constant(constant_index)
                         .expect("Missing string constant for global");
 
-                    let value = self.globals.get(name).ok_or(
+                    // println!("Globals: {:?}", self.globals);
+                    // println!("Globals: {:?}", self.globals.contains_key(name));
+
+                    let value = self.globals.get(&name.0).ok_or(
                         self.runtime_error(RuntimeError::UndefinedVariable(name.to_string())),
                     )?;
 
@@ -212,7 +259,7 @@ impl Vm {
                     let mut result = (a + b).map_err(|(a, b)| {
                         self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
                     })?;
-                    result.intern_strings(self);
+                    result.intern_strings(&mut self.string_interner);
                     self.push(result);
                 }
                 Instruction::Subtract => {
@@ -238,22 +285,16 @@ impl Vm {
                 }
                 Instruction::JumpIfFalse(Jump(jump)) => {
                     if self.peek().is_falsey() {
-                        self.ip += jump as usize;
+                        self.frame_mut().ip += jump as usize;
                     }
                 }
                 Instruction::Jump(Jump(jump)) => {
-                    self.ip += jump as usize;
+                    self.frame_mut().ip += jump as usize;
                 }
             }
 
-            self.ip += op.num_bytes();
+            self.frame_mut().ip += op.num_bytes();
         }
-    }
-}
-
-impl Default for Vm {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -261,7 +302,6 @@ impl Default for Vm {
 mod tests {
     use std::println;
 
-    use bytecode::value::Value;
     use env_logger::Env;
 
     use super::*;
@@ -271,6 +311,6 @@ mod tests {
         env_logger::init_from_env(Env::new().default_filter_or("trace"));
         println!();
 
-        Vm::new().run("print 1 + 2;").unwrap();
+        Vm::new().run_source("print 1 + 2;").unwrap();
     }
 }
