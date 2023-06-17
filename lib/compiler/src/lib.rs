@@ -508,10 +508,10 @@ impl<'a> Compiler<'a> {
             .find_map(|(index, local)| (local.depth != Some(self.scope.depth())).then_some(index))
             .unwrap_or(0);
 
-        let num_locals_to_pop = (self.locals.len() - last_local_in_scope) as u8;
+        let num_locals_to_pop = last_local_in_scope as u8;
         self.current_chunk().write_instruction(Instruction::PopN(num_locals_to_pop), line);
 
-        self.locals.truncate(last_local_in_scope);
+        self.locals.truncate(self.locals.len() - last_local_in_scope);
 
         self.scope.end_scope();
     }
