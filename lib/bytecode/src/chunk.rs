@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 use crate::{
     instructions::*,
-    value::{ObjectData, Value, RloxString},
+    value::{Value, RloxString},
 };
 
 #[derive(Clone, Default, PartialEq)]
@@ -16,7 +16,7 @@ pub struct Chunk {
 }
 
 pub trait StringInterner {
-    fn intern_string(&mut self, string: &mut RloxString);
+    fn intern_string(&self, string: &str) -> Rc<str>;
 }
 
 impl Chunk {
@@ -44,12 +44,6 @@ impl Chunk {
 
     pub fn patch_jump(&mut self, offset: usize, jump: Jump) {
         self.code[offset..offset + size_of::<Jump>()].copy_from_slice(&jump.0.to_ne_bytes());
-    }
-
-    pub fn intern_strings<Interner: StringInterner>(&mut self, interner: &mut Interner) {
-        for constant in self.constants.iter_mut() {
-            constant.intern_strings(interner);
-        }
     }
 
     pub fn add_constant(&mut self, value: Value) -> Option<u8> {

@@ -3,9 +3,9 @@ use std::{
 };
 
 use bytecode::{
-    chunk::Chunk,
+    chunk::{Chunk, StringInterner},
     instructions::{Instruction, Jump, OpCode},
-    value::{Function, Object, ObjectData, Value},
+    value::{Function, Object, Value},
 };
 use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
@@ -137,8 +137,8 @@ struct CurrentFunction {
 }
 
 impl CurrentFunction {
-    fn script() -> Self {
-        Self { ty: FunctionType::Script, function: Function::default() }
+    fn script(interner: &impl StringInterner) -> Self {
+        Self { ty: FunctionType::Script, function: Function::new(0, "", interner) }
     }
 
     fn new(ty: FunctionType, function: Function) -> Self {
@@ -147,29 +147,32 @@ impl CurrentFunction {
 }
 
 #[derive(Debug)]
-pub struct Compiler<'a> {
+pub struct Compiler<'a, 'b, Interner: StringInterner> {
     token_stream: Peekable<TokenStream<'a>>,
     current_function: CurrentFunction,
     locals: Vec<Local<'a>>,
     scope: Scope,
+    interner: &'b Interner,
 }
 
-impl<'a> Compiler<'a> {
+impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
     fn new(
         token_stream: Peekable<TokenStream<'a>>,
         current_function: CurrentFunction,
         scope: Scope,
+        interner: &'b Interner,
     ) -> Self {
         let mut locals = Vec::with_capacity(u8::MAX as usize + 1);
         locals.push(Local { name: "", depth: Some(0) });
-        Self { token_stream, current_function, locals, scope }
+        Self { token_stream, current_function, locals, scope, interner }
     }
 
-    pub fn from_source(source: &'a str) -> Self {
+    pub fn from_source(source: &'a str, interner: &'b Interner) -> Self {
         Self::new(
             TokenStream::new(source).peekable(),
-            CurrentFunction::script(),
+            CurrentFunction::script(interner),
             Scope::global(),
+            interner,
         )
     }
 
@@ -271,7 +274,7 @@ impl<'a> Compiler<'a> {
             .consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("function name"))?;
 
         let compiler =
-            Self::new(self.token_stream.clone(), CurrentFunction::new(ty, Function::new(0, name.to_string())), Scope::local());
+            Self::new(self.token_stream.clone(), CurrentFunction::new(ty, Function::new(0, name, self.interner)), Scope::local(), self.interner);
 
         let (function, token_stream) = compiler.compile_function(function_token.clone())?;
         self.token_stream = token_stream;
@@ -322,7 +325,7 @@ impl<'a> Compiler<'a> {
                 (Instruction::GetLocal { stack_slot }, Instruction::SetLocal { stack_slot })
             }
             None => {
-                let name = Value::string(identifier.lexeme().to_string());
+                let name = Value::string(identifier.lexeme(), self.interner);
                 let constant_index = self.add_constant(name, identifier)?;
                 (
                     Instruction::GetGlobal { constant_index },
@@ -368,7 +371,7 @@ impl<'a> Compiler<'a> {
             return Ok((0, token));
         }
 
-        let index = self.add_constant(Value::string(token.lexeme()), &token)?;
+        let index = self.add_constant(Value::string(token.lexeme(), self.interner), &token)?;
 
         Ok((index, token))
     }
@@ -577,10 +580,9 @@ impl<'a> Compiler<'a> {
         let s = match prefix_token.data {
             TokenData::Str(s) => s,
             _ => unreachable!(),
-        }
-        .to_string();
+        };
 
-        let index = self.add_constant(Value::Object(Box::new(Object::string(s))), prefix_token)?;
+        let index = self.add_constant(Value::string(s, self.interner), prefix_token)?;
         self.current_chunk()
             .write_instruction(Instruction::Constant { index }, prefix_token.line());
 
@@ -734,7 +736,7 @@ impl<'a> Compiler<'a> {
 }
 
 // Helpers
-impl<'a> Compiler<'a> {
+impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
     fn consume(
         &mut self,
         token_type: TokenType,

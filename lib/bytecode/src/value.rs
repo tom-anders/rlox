@@ -14,9 +14,7 @@ pub enum Value {
     Number(f64),
     Boolean(bool),
     Nil,
-    // FIXME: Box is probably not correct here, clox just uses a raw pointer of course.
-    // We'll have to see how this works out when we add GC.
-    Object(Box<Object>),
+    Object(Rc<Object>),
 }
 
 impl Value {
@@ -28,22 +26,16 @@ impl Value {
         !self.is_truthy()
     }
 
-    pub fn intern_strings<Interner: StringInterner>(&mut self, interner: &mut Interner) {
-        if let Value::Object(o) = self {
-            o.intern_strings(interner)
-        }
-    }
-
-    pub fn string(s: impl ToString) -> Value {
-        Value::Object(Box::new(Object::string(s.to_string())))
+    pub fn string(s: &str, interner: &impl StringInterner) -> Value {
+        Value::Object(Rc::new(Object::String(RloxString::new(s, interner))))
     }
 
     pub fn function(f: Function) -> Value {
-        Value::Object(Box::new(Object::new(ObjectData::Function(f))))
+        Value::Object(Rc::new(Object::Function(f)))
     }
 
     pub fn native_function(f: NativeFun) -> Value {
-        Value::Object(Box::new(Object::new(ObjectData::NativeFun(f))))
+        Value::Object(Rc::new(Object::NativeFun(f)))
     }
 
     pub fn try_as_string(&self) -> Option<&RloxString> {
@@ -90,13 +82,11 @@ impl Neg for Value {
     }
 }
 
-impl Add for Value {
-    type Output = Result<Self, (Self, Self)>;
-
-    fn add(self, rhs: Self) -> Self::Output {
+impl Value {
+    pub fn add(self, rhs: Self, interner: &impl StringInterner) -> Result<Value, (Value, Value)> {
         match (self, rhs) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
-            (Value::Object(a), Value::Object(b)) => a + b,
+            (Value::Object(a), Value::Object(b)) => a.add(b, interner),
             (a, b) => Err((a, b)),
         }
     }
