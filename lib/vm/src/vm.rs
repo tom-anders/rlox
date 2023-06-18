@@ -307,8 +307,8 @@ impl Vm {
                         .get_string_constant(constant_index)
                         .expect("Missing string constant for global");
 
-                    let value = self.globals.get(&name.0).ok_or(
-                        self.runtime_error(RuntimeError::UndefinedVariable(name.to_string())),
+                    let value = self.globals.get(&name.0).ok_or_else(
+                        || self.runtime_error(RuntimeError::UndefinedVariable(name.to_string())),
                     )?;
 
                     self.push(value.clone());
