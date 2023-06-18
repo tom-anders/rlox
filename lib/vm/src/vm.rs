@@ -5,7 +5,7 @@ use std::{
     ops::{DerefMut, Neg},
     pin::Pin,
     println, ptr,
-    rc::Rc,
+    rc::Rc, io::Write,
 };
 
 use bytecode::{
@@ -178,12 +178,12 @@ impl Vm {
         &self.frame().function.chunk
     }
 
-    pub fn run_source(&mut self, source: &str) -> Result<()> {
+    pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> Result<()> {
         let mut function = Compiler::from_source(source, &self.string_interner).compile()?;
 
         self.push(function.clone().into());
         self.call(function.into(), 0).unwrap();
-        self.run()?;
+        self.run(stdout)?;
         Ok(())
     }
 
@@ -236,7 +236,7 @@ impl Vm {
         self.pop();
     }
 
-    fn run(&mut self) -> Result<()> {
+    fn run(&mut self, stdout: &mut impl Write) -> Result<()> {
         loop {
             let bytes = &self.frame_chunk().code()[self.frame().ip..];
             let op = Instruction::from_bytes(bytes);
@@ -258,7 +258,7 @@ impl Vm {
                     self.push(result);
                 }
                 Instruction::Print => {
-                    println!("{}", self.pop());
+                    writeln!(stdout, "{}", self.pop()).unwrap();
                 }
                 Instruction::Pop => {
                     self.pop();
@@ -411,13 +411,15 @@ mod tests {
     #[test]
     fn string_interning() {
         let source = r#"
+            print "a" == "a";
+
             var a = "a";
             var b = "b";
-            print a == b;
-
             var ab = a + b;
             print ab == "ab";
         "#;
-        Vm::new().run_source(source).unwrap();
+        let mut output = Vec::new();
+        Vm::new().run_source(source, &mut output).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap(), "true\ntrue\n");
     }
 }
