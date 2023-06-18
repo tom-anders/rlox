@@ -407,7 +407,22 @@ mod tests {
 
     #[ctor::ctor]
     fn init() {
-        env_logger::init_from_env(Env::new().default_filter_or("trace"));
+        env_logger::init_from_env(Env::new());
+    }
+
+    #[test]
+    fn recursion() {
+        let source = r#"
+            fun fib(n) {
+                if (n <= 1) return n;
+                return fib(n - 2) + fib(n - 1);
+            }
+
+            print fib(10);
+        "#;
+        let mut output = Vec::new();
+        Vm::new().run_source(source, &mut output).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap(), "55\n");
     }
 
     #[test]
