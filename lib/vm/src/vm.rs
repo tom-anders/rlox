@@ -49,8 +49,8 @@ pub struct Vm {
 pub enum InterpretError {
     #[error(transparent)]
     CompileError(#[from] RloxErrors),
-    #[error("line {line}: {error}\n{stack_trace}")]
-    RuntimeError { line: usize, error: String, stack_trace: String },
+    #[error("line {line}: {error}")]
+    RuntimeError { line: usize, error: String },
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -142,7 +142,7 @@ impl Vm {
         self.stack.get(self.stack.len() - 1 - n).expect("Stack underflow")
     }
 
-    fn stack_trace(&self) -> String {
+    pub fn stack_trace(&self) -> String {
         self.frames
             .iter()
             .rev()
@@ -162,7 +162,6 @@ impl Vm {
         InterpretError::RuntimeError {
             line: self.frame().function.chunk.lines()[self.frame().ip],
             error: error.to_string(),
-            stack_trace: self.stack_trace(),
         }
     }
 
