@@ -4,7 +4,7 @@ use std::{
     println,
 };
 
-use anyhow::bail;
+use anyhow::{bail, anyhow};
 use clap::Parser;
 
 use scanner::TokenStream;
@@ -33,8 +33,15 @@ fn run_prompt(vm: &mut Vm) -> anyhow::Result<()> {
 }
 
 fn run(source: String, vm: &mut Vm) -> anyhow::Result<()> {
-    vm.run_source(&source, &mut stdout())?;
-    Ok(())
+    match vm.run_source(&source, &mut stdout()) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            match e {
+                vm::InterpretError::CompileError(_) => Err(e.into()),
+                vm::InterpretError::RuntimeError{..} => Err(anyhow!("{e}\n{}", vm.stack_trace())),
+            }
+        }
+    }
 }
 
 fn main() -> anyhow::Result<()> {
