@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     collections::{hash_map::Entry, HashMap, HashSet},
     marker::PhantomPinned,
     ops::{DerefMut, Neg},
@@ -10,7 +11,7 @@ use std::{
 use bytecode::{
     chunk::{Chunk, StringInterner},
     instructions::{Instruction, Jump},
-    value::{Function, NativeFun, Object, ObjectData, RloxString, Value},
+    value::{Function, NativeFun, Object, RloxString, Value},
 };
 use compiler::Compiler;
 use errors::RloxErrors;
@@ -40,7 +41,7 @@ impl CallFrame {
 pub struct Vm {
     stack: Vec<Value>,
     string_interner: Interner,
-    globals: HashMap<Rc<String>, Value>,
+    globals: HashMap<Rc<str>, Value>,
     frames: Vec<CallFrame>,
 }
 
@@ -70,15 +71,18 @@ pub type Result<T> = std::result::Result<T, InterpretError>;
 
 #[derive(Debug, Clone, Default)]
 struct Interner {
-    strings: HashSet<Rc<String>>,
+    strings: RefCell<HashSet<Rc<str>>>,
 }
 
 impl bytecode::chunk::StringInterner for Interner {
-    fn intern_string(&mut self, string: &mut RloxString) {
-        match self.strings.get(&string.0) {
-            Some(s) => string.0 = s.clone(),
+    fn intern_string(&self, string: &str) -> Rc<str> {
+        let mut strings = self.strings.borrow_mut();
+        match strings.get(string) {
+            Some(s) => s.clone(),
             None => {
-                self.strings.insert(string.0.clone());
+                let s = Rc::from(string);
+                strings.insert(Rc::clone(&s));
+                s
             }
         }
     }
@@ -175,8 +179,7 @@ impl Vm {
     }
 
     pub fn run_source(&mut self, source: &str) -> Result<()> {
-        let mut function = Compiler::from_source(source).compile()?;
-        function.intern_strings(&mut self.string_interner);
+        let mut function = Compiler::from_source(source, &self.string_interner).compile()?;
 
         self.push(function.clone().into());
         self.call(function.into(), 0).unwrap();
@@ -186,7 +189,6 @@ impl Vm {
 
     fn push_frame(&mut self, mut frame: CallFrame) {
         trace!("Pushing frame: {:?}", frame);
-        frame.function.intern_strings(&mut self.string_interner);
         self.frames.push(frame);
     }
 
@@ -195,9 +197,9 @@ impl Vm {
     }
 
     fn call(&mut self, value: Value, arg_count: usize) -> Result<()> {
-        match value {
-            Value::Object(ref o) => match &o.data {
-                ObjectData::Function(function) => {
+        match &value {
+            Value::Object(ref o) => match o.as_ref() {
+                Object::Function(function) => {
                     if function.arity != arg_count {
                         return Err(self.runtime_error(RuntimeError::InvalidArgumentCount {
                             expected: function.arity,
@@ -211,7 +213,7 @@ impl Vm {
                     ));
                     Ok(())
                 }
-                ObjectData::NativeFun(native_fun) => {
+                Object::NativeFun(native_fun) => {
                     let args = self.stack.split_off(self.stack.len() - arg_count);
                     let result = native_fun.0(args);
                     self.pop_n(arg_count);
@@ -225,10 +227,8 @@ impl Vm {
     }
 
     fn define_native(&mut self, name: &str, native_fun: fn(Vec<Value>) -> Value) {
-        self.push(Value::string(name));
+        self.push(Value::string(name, &self.string_interner));
         self.push(Value::native_function(NativeFun(native_fun)));
-
-        self.stack.last_mut().unwrap().intern_strings(&mut self.string_interner);
 
         self.globals.insert(self.peek_n(1).try_as_string().unwrap().clone().0, self.peek().clone());
 
@@ -354,10 +354,9 @@ impl Vm {
                 Instruction::Add => {
                     let b = self.pop();
                     let a = self.pop();
-                    let mut result = (a + b).map_err(|(a, b)| {
+                    let mut result = (a.add(b, &self.string_interner)).map_err(|(a, b)| {
                         self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
                     })?;
-                    result.intern_strings(&mut self.string_interner);
                     self.push(result);
                 }
                 Instruction::Subtract => {
@@ -407,5 +406,18 @@ mod tests {
     #[ctor::ctor]
     fn init() {
         env_logger::init_from_env(Env::new().default_filter_or("trace"));
+    }
+
+    #[test]
+    fn string_interning() {
+        let source = r#"
+            var a = "a";
+            var b = "b";
+            print a == b;
+
+            var ab = a + b;
+            print ab == "ab";
+        "#;
+        Vm::new().run_source(source).unwrap();
     }
 }

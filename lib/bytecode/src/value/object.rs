@@ -4,67 +4,24 @@ use crate::chunk::{StringInterner, Chunk};
 
 use super::Value;
 
-#[derive(Debug, Clone)]
-pub struct Object {
-    pub data: ObjectData,
-}
-
-impl PartialEq for Object {
-    fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
-    }
-}
-
-impl Deref for Object {
-    type Target = ObjectData;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
+#[derive(Debug, Clone, PartialEq, derive_more::Display)]
+pub enum Object {
+    String(RloxString),
+    Function(Function),
+    NativeFun(NativeFun),
 }
 
 impl Object {
-    pub fn new(data: ObjectData) -> Self {
-        let obj = Object { data };
-        log::trace!("Allocated new object: {:?}", obj);
-        obj
-    }
-
-    pub fn intern_strings<Interner: StringInterner>(&mut self, interner: &mut Interner) {
-        match &mut self.data {
-            ObjectData::String(s) => {
-                interner.intern_string(s);
-            }
-            ObjectData::Function(f) => {
-                f.intern_strings(interner);
-            }
-            ObjectData::NativeFun(_) => {}
-        }
-    }
-
-    pub fn string(s: impl Into<RloxString>) -> Self {
-        Self::new(ObjectData::String(s.into()))
-    }
-}
-
-impl Add for Box<Object> {
-    type Output = Result<Value, (Value, Value)>;
-    fn add(self, other: Self) -> Self::Output {
+    pub fn add(self: Rc<Self>, other: Rc<Self>, interner: &impl StringInterner) -> Result<Value, (Value, Value)> {
         match (&*self, &*other) {
-            (Object { data: ObjectData::String(a) }, Object { data: ObjectData::String(b) }) => {
-                Ok(Value::Object(Box::new(Object::string(format!(
+            (Object::String(a), Object::String(b) ) => {
+                Ok(Value::string(&format!(
                     "{}{}",
                     a, b
-                )))))
+                ), interner))
             }
             _ => Err((Value::Object(self), Value::Object(other))),
         }
-    }
-}
-
-impl Display for Object {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.data)
     }
 }
 
@@ -74,24 +31,17 @@ pub use rlox_string::RloxString;
 mod function;
 pub use function::*;
 
-#[derive(Debug, Clone, PartialEq, derive_more::Display)]
-pub enum ObjectData {
-    String(RloxString),
-    Function(Function),
-    NativeFun(NativeFun),
-}
-
-impl ObjectData {
+impl Object {
     pub fn try_as_string(&self) -> Option<&RloxString> {
         match self {
-            ObjectData::String(s) => Some(s),
+            Object::String(s) => Some(s),
             _ => None,
         }
     }
 
-    pub fn unwrap_function(&self) -> Option<&Function> {
+    pub fn try_as_function(&self) -> Option<&Function> {
         match self {
-            ObjectData::Function(f) => Some(f),
+            Object::Function(f) => Some(f),
             _ => None,
         }
     }

@@ -1,11 +1,17 @@
-use std::{rc::Rc, str::FromStr};
+use std::rc::Rc;
 
-#[derive(Debug, Clone, Default, Eq)]
-pub struct RloxString(pub Rc<String>);
+use crate::chunk::StringInterner;
 
-impl<S> From<S> for RloxString where S: Into<Rc<String>> {
-    fn from(s: S) -> Self {
-        Self(s.into())
+#[derive(Debug, Clone, Eq)]
+pub struct RloxString(pub Rc<str>);
+
+impl RloxString {
+    pub fn new(s: &str, interner: &impl StringInterner) -> Self {
+        Self(interner.intern_string(s))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
