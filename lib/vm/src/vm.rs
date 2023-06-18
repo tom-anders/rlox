@@ -192,8 +192,10 @@ impl Vm {
         self.frames.push(frame);
     }
 
-    fn pop_frame(&mut self) -> CallFrame {
-        self.frames.pop().expect("callstack underflow")
+    fn pop_frame(&mut self) {
+        let popped_frame = self.frames.pop().expect("callstack underflow");
+        // +1 for the function itself
+        self.pop_n(popped_frame.function.arity + 1);
     }
 
     fn call(&mut self, value: Value, arg_count: usize) -> Result<()> {
