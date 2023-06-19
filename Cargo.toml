@@ -11,3 +11,6 @@ pretty_assertions = "1.2"
 log = "0.4"
 env_logger = "0.10"
 ctor = "0.2"
+
+[profile.release]
+lto = "thin"
