@@ -5,7 +5,7 @@ use std::{
 use bytecode::{
     chunk::{Chunk, StringInterner},
     instructions::{Instruction, Jump, OpCode},
-    value::{Function, Object, Value},
+    value::{Function, Value, RloxString},
 };
 use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
@@ -279,7 +279,7 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
         let (function, token_stream) = compiler.compile_function(function_token.clone())?;
         self.token_stream = token_stream;
 
-        let index = self.add_constant(Value::function(function), &function_token)?;
+        let index = self.add_constant(Rc::from(function).into(), &function_token)?;
 
         self.current_chunk().write_instruction(Instruction::Constant { index }, Line(0));
 
@@ -325,8 +325,8 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
                 (Instruction::GetLocal { stack_slot }, Instruction::SetLocal { stack_slot })
             }
             None => {
-                let name = Value::string(identifier.lexeme(), self.interner);
-                let constant_index = self.add_constant(name, identifier)?;
+                let name = RloxString::new(identifier.lexeme(), self.interner);
+                let constant_index = self.add_constant(name.into(), identifier)?;
                 (
                     Instruction::GetGlobal { constant_index },
                     Instruction::SetGlobal { constant_index },
@@ -371,7 +371,7 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
             return Ok((0, token));
         }
 
-        let index = self.add_constant(Value::string(token.lexeme(), self.interner), &token)?;
+        let index = self.add_constant(RloxString::new(token.lexeme(), self.interner).into(), &token)?;
 
         Ok((index, token))
     }
@@ -582,7 +582,7 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
             _ => unreachable!(),
         };
 
-        let index = self.add_constant(Value::string(s, self.interner), prefix_token)?;
+        let index = self.add_constant(RloxString::new(s, self.interner).into(), prefix_token)?;
         self.current_chunk()
             .write_instruction(Instruction::Constant { index }, prefix_token.line());
 

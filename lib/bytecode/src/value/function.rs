@@ -5,7 +5,7 @@ use crate::{
     value::Value,
 };
 
-use super::{RloxString, Object};
+use super::RloxString;
 
 #[derive(Clone, PartialEq)]
 pub struct Function {
@@ -39,12 +39,6 @@ impl Debug for Function {
             .field("chunk", if alternate { &self.chunk } else { &"<chunk>" })
             .field("name", &self.name)
             .finish()
-    }
-}
-
-impl From<Function> for Value {
-    fn from(value: Function) -> Self {
-        Value::Object(Rc::new(Object::Function(value)))
     }
 }
 

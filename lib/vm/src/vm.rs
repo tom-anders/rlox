@@ -11,7 +11,7 @@ use std::{
 use bytecode::{
     chunk::{Chunk, StringInterner},
     instructions::{Instruction, Jump},
-    value::{Function, NativeFun, Object, RloxString, Value},
+    value::{Function, NativeFun, RloxString, Value},
 };
 use compiler::Compiler;
 use errors::RloxErrors;
@@ -20,7 +20,7 @@ use log::trace;
 
 #[derive(Debug, Clone)]
 struct CallFrame {
-    function: Function,
+    function: Rc<Function>,
     // FIXME: Using a raw pointer would be a bit more performant, but would also require `unsafe`.
     // So let's leave it like this for now and maybe optimize later.
     ip: usize,
@@ -28,7 +28,7 @@ struct CallFrame {
 }
 
 impl CallFrame {
-    pub fn new(function: Function, base_slot: usize) -> Self {
+    pub fn new(function: Rc<Function>, base_slot: usize) -> Self {
         Self { function, ip: 0, base_slot }
     }
 
@@ -178,7 +178,7 @@ impl Vm {
     }
 
     pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> Result<()> {
-        let mut function = Compiler::from_source(source, &self.string_interner).compile()?;
+        let mut function = Rc::from(Compiler::from_source(source, &self.string_interner).compile()?);
 
         self.push(function.clone().into());
         self.call(function.into(), 0).unwrap();
@@ -198,43 +198,34 @@ impl Vm {
     }
 
     fn call(&mut self, value: Value, arg_count: usize) -> Result<()> {
-        match &value {
-            Value::Object(ref o) => match o.as_ref() {
-                Object::Function(function) => {
-                    if function.arity != arg_count {
-                        return Err(self.runtime_error(RuntimeError::InvalidArgumentCount {
-                            expected: function.arity,
-                            got: arg_count,
-                        }));
-                    }
-                    trace!("stack: {}, len {}", self.stack.len(), arg_count);
-                    self.push_frame(CallFrame::new(
-                        function.clone(),
+        match value {
+            Value::Function(function) => {
+                if function.arity != arg_count {
+                    return Err(self.runtime_error(RuntimeError::InvalidArgumentCount {
+                        expected: function.arity,
+                        got: arg_count,
+                    }));
+                }
+                trace!("stack: {}, len {}", self.stack.len(), arg_count);
+                self.push_frame(CallFrame::new(
+                        function,
                         self.stack.len() - arg_count - 1,
-                    ));
-                    Ok(())
-                }
-                Object::NativeFun(native_fun) => {
-                    let args = self.stack.split_off(self.stack.len() - arg_count);
-                    let result = native_fun.0(args);
-                    self.pop_n(arg_count);
-                    self.push(result);
-                    Ok(())
-                }
-                _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
-            },
+                        ));
+                Ok(())
+            }
+            Value::NativeFun(native_fun) => {
+                let args = self.stack.split_off(self.stack.len() - arg_count);
+                let result = native_fun.0(args);
+                self.pop_n(arg_count);
+                self.push(result);
+                Ok(())
+            }
             _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
         }
     }
 
     fn define_native(&mut self, name: &str, native_fun: fn(Vec<Value>) -> Value) {
-        self.push(Value::string(name, &self.string_interner));
-        self.push(Value::native_function(NativeFun(native_fun)));
-
-        self.globals.insert(self.peek_n(1).try_as_string().unwrap().clone().0, self.peek().clone());
-
-        self.pop();
-        self.pop();
+        self.globals.insert(RloxString::new(name, &self.string_interner).0, NativeFun(native_fun).into());
     }
 
     fn run(&mut self, stdout: &mut impl Write) -> Result<()> {

@@ -64,10 +64,7 @@ impl Chunk {
     }
 
     pub fn get_string_constant(&self, index: u8) -> Option<&RloxString> {
-        self.constants.get(index as usize).and_then(|v| match v {
-            Value::Object(o) => o.try_as_string(),
-            _ => None,
-        })
+        self.constants.get(index as usize).and_then(|v| v.try_into().ok())
     }
 
     pub fn disassemble_instruction(&self, offset: usize) -> (String, usize) {
