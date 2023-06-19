@@ -16,31 +16,15 @@ use errors::RloxErrors;
 use itertools::Itertools;
 use log::trace;
 
-#[derive(Debug, Clone)]
-struct CallFrame {
-    function: Rc<Function>,
-    // FIXME: Using a raw pointer would be a bit more performant, but would also require `unsafe`.
-    // So let's leave it like this for now and maybe optimize later.
-    ip: usize,
-    base_slot: usize,
-}
+use self::stack::Stack;
 
-impl CallFrame {
-    pub fn new(function: Rc<Function>, base_slot: usize) -> Self {
-        Self { function, ip: 0, base_slot }
-    }
+mod stack;
 
-    fn line(&self) -> usize {
-        self.function.chunk.lines()[self.ip]
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Vm {
-    stack: Vec<Value>,
+    stack: Stack,
     string_interner: Interner,
     globals: HashMap<Rc<str>, Value>,
-    frames: Vec<CallFrame>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -95,10 +79,9 @@ impl Default for Vm {
 impl Vm {
     pub fn new() -> Self {
         let mut vm = Self {
-            stack: Vec::with_capacity(256),
+            stack: Stack::new(),
             string_interner: Interner::default(),
             globals: HashMap::new(),
-            frames: Vec::with_capacity(64),
         };
         vm.define_native("clock", |_| {
             let now = std::time::SystemTime::now();
@@ -113,66 +96,15 @@ impl Vm {
         self.stack.push(value);
     }
 
-    fn pop(&mut self) -> Value {
-        trace!("Popping {:?}", self.stack.last());
-        self.stack.pop().expect("Stack underflow")
-    }
-
-    fn stack_at(&self, index: u8) -> &Value {
-        let index = self.frame().base_slot + index as usize;
-        self.stack.get(index).unwrap_or_else(|| panic!("Invalid stack index: {}", index))
-    }
-
-    fn stack_at_mut(&mut self, index: u8) -> &mut Value {
-        let index = self.frame().base_slot + index as usize;
-        self.stack.get_mut(index).unwrap_or_else(|| panic!("Invalid stack index: {}", index))
-    }
-
-    fn pop_n(&mut self, n: usize) {
-        self.stack.truncate(self.stack.len() - n)
-    }
-
-    fn peek(&self) -> &Value {
-        self.stack.last().expect("Stack underflow")
-    }
-
-    fn peek_n(&self, n: usize) -> &Value {
-        self.stack.get(self.stack.len() - 1 - n).expect("Stack underflow")
-    }
-
     pub fn stack_trace(&self) -> String {
-        self.frames
-            .iter()
-            .rev()
-            .map(|frame| {
-                let name = if frame.function.name.0.is_empty() {
-                    "script".to_string()
-                } else {
-                    format!("{}()", frame.function.name)
-                };
-                format!("[line {}] in {}", frame.line(), name)
-            })
-            .collect_vec()
-            .join("\n")
+        self.stack.stack_trace()
     }
 
     fn runtime_error(&self, error: RuntimeError) -> InterpretError {
         InterpretError::RuntimeError {
-            line: self.frame().function.chunk.lines()[self.frame().ip],
+            line: self.stack.current_line(),
             error: error.to_string(),
         }
-    }
-
-    fn frame_mut(&mut self) -> &mut CallFrame {
-        self.frames.last_mut().unwrap()
-    }
-
-    fn frame(&self) -> &CallFrame {
-        self.frames.last().unwrap()
-    }
-
-    fn frame_chunk(&self) -> &Chunk {
-        &self.frame().function.chunk
     }
 
     pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> Result<()> {
@@ -184,17 +116,6 @@ impl Vm {
         Ok(())
     }
 
-    fn push_frame(&mut self, frame: CallFrame) {
-        trace!("Pushing frame: {:?}", frame);
-        self.frames.push(frame);
-    }
-
-    fn pop_frame(&mut self) {
-        let popped_frame = self.frames.pop().expect("callstack underflow");
-        // +1 for the function itself
-        self.pop_n(popped_frame.function.arity + 1);
-    }
-
     fn call(&mut self, value: Value, arg_count: usize) -> Result<()> {
         match value {
             Value::Function(function) => {
@@ -204,14 +125,13 @@ impl Vm {
                         got: arg_count,
                     }));
                 }
-                trace!("stack: {}, len {}", self.stack.len(), arg_count);
-                self.push_frame(CallFrame::new(function, self.stack.len() - arg_count - 1));
+                self.stack.push_frame(function);
                 Ok(())
             }
             Value::NativeFun(native_fun) => {
-                let args = self.stack.split_off(self.stack.len() - arg_count);
-                let result = native_fun.0(args);
-                self.pop_n(arg_count);
+                let args = self.stack.peek_n(arg_count);
+                let result = native_fun.0(args.cloned().collect());
+                self.stack.pop_n(arg_count);
                 self.push(result);
                 Ok(())
             }
@@ -226,57 +146,59 @@ impl Vm {
 
     fn run(&mut self, stdout: &mut impl Write) -> Result<()> {
         loop {
-            let bytes = &self.frame_chunk().code()[self.frame().ip..];
+            let bytes = &self.stack.frame_chunk().code()[self.stack.frame().ip()..];
             let op = Instruction::from_bytes(bytes);
 
-            log::trace!("Stack: {:?}", self.stack);
+            log::trace!("Stack: {}", self.stack);
             log::trace!("Globals: {:?}", self.globals);
-            log::trace!("Constants: {:?}", self.frame_chunk().constants());
-            log::trace!("{}", self.frame_chunk().disassemble_instruction(self.frame().ip).0);
+            log::trace!("Constants: {:?}", self.stack.frame_chunk().constants());
+            log::trace!("{}", self.stack.frame_chunk().disassemble_instruction(self.stack.frame().ip()).0);
 
-            self.frame_mut().ip += op.num_bytes();
+            self.stack.frame_mut().inc_ip(op.num_bytes());
 
             match op {
                 Instruction::Return => {
-                    let result = self.pop();
-                    self.pop_frame();
-                    if self.frames.is_empty() {
+                    let result = self.stack.pop();
+                    self.stack.pop_frame();
+                    if self.stack.frames().is_empty() {
                         return Ok(());
                     }
-                    self.push(result);
+                    self.stack.push(result);
                 }
                 Instruction::Print => {
-                    writeln!(stdout, "{}", self.pop()).unwrap();
+                    writeln!(stdout, "{}", self.stack.pop()).unwrap();
                 }
                 Instruction::Pop => {
-                    self.pop();
+                    self.stack.pop();
                 }
                 Instruction::PopN(n) => {
-                    self.pop_n(n as usize);
+                    self.stack.pop_n(n as usize);
                 }
                 Instruction::Constant { index } => {
-                    let constant = self.frame_chunk().constants().get(index as usize).unwrap();
+                    let constant = self.stack.frame_chunk().constants().get(index as usize).unwrap();
                     trace!("Pushed constant: {:?}", constant);
                     self.push(constant.clone());
                 }
                 Instruction::DefineGlobal { constant_index } => {
                     let name = self
+                        .stack
                         .frame_chunk()
                         .get_string_constant(constant_index)
                         .expect("Missing string constant for global");
 
-                    trace!("Defining global: {:?} {:?}", name, self.peek());
-                    self.globals.insert(name.0.clone(), self.peek().clone());
-                    self.pop();
+                    trace!("Defining global: {:?} {:?}", name, self.stack.peek());
+                    self.globals.insert(name.0.clone(), self.stack.peek().clone());
+                    self.stack.pop();
                 }
                 Instruction::SetGlobal { constant_index } => {
                     let name = self
+                        .stack
                         .frame_chunk()
                         .get_string_constant(constant_index)
                         .expect("Missing string constant for global")
                         .clone();
 
-                    let val = self.peek().clone();
+                    let val = self.stack.peek().clone();
                     match self.globals.entry(name.0.clone()) {
                         Entry::Occupied(mut entry) => {
                             *entry.get_mut() = val;
@@ -289,6 +211,7 @@ impl Vm {
                 }
                 Instruction::GetGlobal { constant_index } => {
                     let name = self
+                        .stack
                         .frame_chunk()
                         .get_string_constant(constant_index)
                         .expect("Missing string constant for global");
@@ -300,16 +223,16 @@ impl Vm {
                     self.push(value.clone());
                 }
                 Instruction::GetLocal { stack_slot } => {
-                    self.push(self.stack_at(stack_slot).clone());
+                    self.push(self.stack.stack_at(stack_slot).clone());
                 }
                 Instruction::SetLocal { stack_slot } => {
-                    *self.stack_at_mut(stack_slot) = self.peek().clone();
+                    *self.stack.stack_at_mut(stack_slot) = self.stack.peek().clone();
                 }
                 Instruction::Nil => self.push(Value::Nil),
                 Instruction::True => self.push(Value::Boolean(true)),
                 Instruction::False => self.push(Value::Boolean(false)),
                 Instruction::Negate => {
-                    let v = self.pop();
+                    let v = self.stack.pop();
                     let neg = v
                         .clone()
                         .neg()
@@ -317,68 +240,68 @@ impl Vm {
                     self.push(neg);
                 }
                 Instruction::Not => {
-                    let v = self.pop();
+                    let v = self.stack.pop();
                     self.push(Value::Boolean(!v.is_truthy()));
                 }
                 Instruction::Equal => {
-                    let b = self.pop();
-                    let a = self.pop();
+                    let b = self.stack.pop();
+                    let a = self.stack.pop();
                     self.push(Value::Boolean(a == b));
                 }
                 Instruction::Less => {
-                    let b = self.pop();
-                    let a = self.pop();
+                    let b = self.stack.pop();
+                    let a = self.stack.pop();
                     self.push(a.less_than(b).map_err(|(a, b)| {
                         self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
                     })?);
                 }
                 Instruction::Greater => {
-                    let b = self.pop();
-                    let a = self.pop();
+                    let b = self.stack.pop();
+                    let a = self.stack.pop();
                     self.push(a.greater_than(b).map_err(|(a, b)| {
                         self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
                     })?);
                 }
                 Instruction::Add => {
-                    let b = self.pop();
-                    let a = self.pop();
+                    let b = self.stack.pop();
+                    let a = self.stack.pop();
                     let result = (a.add(b, &self.string_interner)).map_err(|(a, b)| {
                         self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
                     })?;
                     self.push(result);
                 }
                 Instruction::Subtract => {
-                    let b = self.pop();
-                    let a = self.pop();
+                    let b = self.stack.pop();
+                    let a = self.stack.pop();
                     self.push((a - b).map_err(|(a, b)| {
                         self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
                     })?);
                 }
                 Instruction::Multiply => {
-                    let b = self.pop();
-                    let a = self.pop();
+                    let b = self.stack.pop();
+                    let a = self.stack.pop();
                     self.push((a * b).map_err(|(a, b)| {
                         self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
                     })?);
                 }
                 Instruction::Divide => {
-                    let b = self.pop();
-                    let a = self.pop();
+                    let b = self.stack.pop();
+                    let a = self.stack.pop();
                     self.push((a / b).map_err(|(a, b)| {
                         self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
                     })?);
                 }
                 Instruction::JumpIfFalse(Jump(jump)) => {
-                    if self.peek().is_falsey() {
-                        self.frame_mut().ip += jump as usize;
+                    if self.stack.peek().is_falsey() {
+                        self.stack.frame_mut().inc_ip(jump as usize);
                     }
                 }
                 Instruction::Jump(Jump(jump)) => {
-                    self.frame_mut().ip += jump as usize;
+                    self.stack.frame_mut().inc_ip(jump as usize);
                 }
                 Instruction::Call { arg_count } => {
-                    let callee = self.peek_n(arg_count as usize).clone();
-                    self.call(callee, arg_count as usize)?;
+                    let callee = self.stack.peek_n(arg_count as usize).next().unwrap();
+                    self.call(callee.clone(), arg_count as usize)?;
                 }
             }
         }
