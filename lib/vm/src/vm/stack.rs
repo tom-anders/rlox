@@ -24,6 +24,10 @@ impl CallFrame {
         Self { function, ip: 0, base_slot }
     }
 
+    pub fn decr_ip(&mut self, offset: usize) {
+        self.ip -= offset;
+    }
+
     pub fn inc_ip(&mut self, offset: usize) {
         self.ip += offset;
     }

@@ -299,6 +299,9 @@ impl Vm {
                 Instruction::Jump(Jump(jump)) => {
                     self.stack.frame_mut().inc_ip(jump as usize);
                 }
+                Instruction::Loop(Jump(jump)) => {
+                    self.stack.frame_mut().decr_ip(jump as usize);
+                }
                 Instruction::Call { arg_count } => {
                     let callee = self.stack.peek_n(arg_count as usize).next().unwrap();
                     self.call(callee.clone(), arg_count as usize)?;

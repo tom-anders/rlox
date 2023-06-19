@@ -444,6 +444,8 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
             self.print_statement()
         } else if self.consume(If)?.is_ok() {
             self.if_statement()
+        } else if self.consume(While)?.is_ok() {
+            self.while_statement()
         } else if self.consume(Return)?.is_ok() {
             self.return_statement()
         } else if self.consume(LeftBrace)?.is_ok() {
@@ -472,6 +474,35 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
             let token = self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?;
             self.current_chunk().write_instruction(Instruction::Return, token.line());
         }
+        Ok(())
+    }
+
+    fn while_statement(&mut self) -> Result<()> {
+        let loop_start = self.current_chunk().code().len() - 1;
+        self.consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("while"))?;
+        self.expression()?;
+        let token =
+            self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("while"))?;
+        let line = token.line();
+
+        let exit_jump = self.write_jump(Instruction::JumpIfFalse(Jump(0)), line);
+        self.current_chunk().write_instruction(Instruction::Pop, line);
+        self.statement()?;
+        self.write_loop(loop_start, &token)?;
+
+        self.patch_jump(exit_jump, token)?;
+        self.current_chunk().write_instruction(Instruction::Pop, line);
+
+        Ok(())
+    }
+
+    fn write_loop(&mut self, loop_start: usize, token: &Token) -> Result<()> {
+        let jump = Jump(
+            (self.current_chunk().code().len() - loop_start + size_of::<Jump>())
+                .try_into()
+                .map_err(|_| CompilerError::new(CompilerErrorType::TooLargeJump, token.clone()))?,
+        );
+        self.current_chunk().write_instruction(Instruction::Loop(jump), token.line());
         Ok(())
     }
 
@@ -792,4 +823,3 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
             .ok_or(CompilerError::new(CompilerErrorType::TooManyConstants, token.clone()).into())
     }
 }
-

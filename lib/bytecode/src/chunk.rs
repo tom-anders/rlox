@@ -94,6 +94,7 @@ impl Chunk {
             Instruction::GetLocal { stack_slot } => format!("'{stack_slot}'"),
             Instruction::JumpIfFalse(jump) => format!("'{}'", jump.0),
             Instruction::Jump(jump) => format!("'{}'", jump.0),
+            Instruction::Loop(jump) => format!("'{}'", jump.0),
             Instruction::Call { arg_count } => format!("'{}'", arg_count),
             Instruction::Return
             | Instruction::Negate
