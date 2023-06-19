@@ -11,7 +11,9 @@ pub use function::*;
 
 use crate::chunk::StringInterner;
 
-#[derive(Debug, Clone, PartialEq, derive_more::From, derive_more::TryInto, derive_more::Display)]
+#[derive(
+    Debug, Clone, PartialEq, derive_more::From, derive_more::TryInto, derive_more::Display,
+)]
 #[try_into(owned, ref, ref_mut)]
 pub enum Value {
     Number(f64),

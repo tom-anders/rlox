@@ -4,9 +4,8 @@ use std::{
     println,
 };
 
-use anyhow::{anyhow};
+use anyhow::anyhow;
 use clap::Parser;
-
 
 use vm::Vm;
 
@@ -35,12 +34,10 @@ fn run_prompt(vm: &mut Vm) -> anyhow::Result<()> {
 fn run(source: String, vm: &mut Vm) -> anyhow::Result<()> {
     match vm.run_source(&source, &mut stdout()) {
         Ok(()) => Ok(()),
-        Err(e) => {
-            match e {
-                vm::InterpretError::CompileError(_) => Err(e.into()),
-                vm::InterpretError::RuntimeError{..} => Err(anyhow!("{e}\n{}", vm.stack_trace())),
-            }
-        }
+        Err(e) => match e {
+            vm::InterpretError::CompileError(_) => Err(e.into()),
+            vm::InterpretError::RuntimeError { .. } => Err(anyhow!("{e}\n{}", vm.stack_trace())),
+        },
     }
 }
 

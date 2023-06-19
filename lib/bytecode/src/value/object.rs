@@ -1,12 +1,15 @@
-use std::{fmt::Display, ops::{Add, Deref}, rc::Rc};
+use std::{
+    fmt::Display,
+    ops::{Add, Deref},
+    rc::Rc,
+};
 
-use crate::chunk::{StringInterner, Chunk};
+use crate::chunk::{Chunk, StringInterner};
 
 use super::Value;
 
 #[derive(Debug, Clone, PartialEq, derive_more::Display)]
-pub enum Object {
-}
+pub enum Object {}
 
 impl Object {
     pub fn try_as_string(&self) -> Option<&RloxString> {
