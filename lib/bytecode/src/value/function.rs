@@ -1,4 +1,4 @@
-use std::{fmt::{Debug, Display}, rc::Rc};
+use std::{fmt::{Debug, Display}};
 
 use crate::{
     chunk::{Chunk, StringInterner},

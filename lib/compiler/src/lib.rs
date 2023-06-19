@@ -1,15 +1,15 @@
 use std::{
-    cell::RefCell, debug_assert, iter::Peekable, mem::size_of, println, rc::Rc, unreachable,
+    iter::Peekable, mem::size_of, rc::Rc, unreachable,
 };
 
 use bytecode::{
     chunk::{Chunk, StringInterner},
-    instructions::{Instruction, Jump, OpCode},
+    instructions::{Instruction, Jump},
     value::{Function, Value, RloxString},
 };
 use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
-use log::{debug, info, trace};
+use log::trace;
 use scanner::{token::TokenData, Token, TokenStream, TokenType};
 
 use TokenType::*;
@@ -103,11 +103,6 @@ impl Precedence {
     pub fn next_higher_precedence(self) -> Self {
         let prim: u8 = self.into();
         (prim + 1).try_into().unwrap()
-    }
-
-    pub fn next_lower_precedence(self) -> Self {
-        let prim: u8 = self.into();
-        (prim - 1).try_into().unwrap()
     }
 
     pub fn lower_or_equal(self, other: Self) -> bool {

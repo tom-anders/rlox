@@ -1,6 +1,5 @@
 use std::{
-    fmt::{Display, Formatter},
-    ops::{Add, Div, Mul, Neg, Sub},
+    ops::{Div, Mul, Neg, Sub},
     rc::Rc,
 };
 

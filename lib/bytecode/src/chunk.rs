@@ -1,7 +1,7 @@
-use std::{collections::HashSet, fmt::Debug, println, rc::Rc, writeln, mem::size_of};
+use std::{fmt::Debug, rc::Rc, writeln, mem::size_of};
 
-use cursor::Line;
-use itertools::Itertools;
+
+
 
 use crate::{
     instructions::*,
