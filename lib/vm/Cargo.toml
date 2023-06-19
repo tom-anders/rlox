@@ -16,4 +16,4 @@ itertools.workspace = true
 
 [dev-dependencies]
 env_logger.workspace = true
-ctor.wokspace = true
+ctor.workspace = true
