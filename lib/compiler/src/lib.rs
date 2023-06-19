@@ -1,11 +1,9 @@
-use std::{
-    iter::Peekable, mem::size_of, rc::Rc, unreachable,
-};
+use std::{iter::Peekable, mem::size_of, rc::Rc, unreachable};
 
 use bytecode::{
     chunk::{Chunk, StringInterner},
     instructions::{Instruction, Jump},
-    value::{Function, Value, RloxString},
+    value::{Function, RloxString, Value},
 };
 use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
@@ -180,16 +178,24 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
         Ok(function)
     }
 
-    fn compile_function(mut self, function_token: Token<'a>) -> std::result::Result<(Function, Peekable<TokenStream<'a>>), RloxErrors> {
+    fn compile_function(
+        mut self,
+        function_token: Token<'a>,
+    ) -> std::result::Result<(Function, Peekable<TokenStream<'a>>), RloxErrors> {
         let mut arity = 0;
         if self.peek().unwrap()? != RightParen {
             loop {
                 arity += 1;
                 if arity > 255 {
-                    return Err(CompilerError::new(CompilerErrorType::TooManyArguments, function_token).into());
+                    return Err(CompilerError::new(
+                        CompilerErrorType::TooManyArguments,
+                        function_token,
+                    )
+                    .into());
                 }
 
-                let (constant_index, token) = self.parse_variable(CompilerErrorType::ExpectedParameterName)?;
+                let (constant_index, token) =
+                    self.parse_variable(CompilerErrorType::ExpectedParameterName)?;
                 self.define_variable(constant_index, token.line())?;
 
                 if self.consume(Comma)?.is_err() {
@@ -232,9 +238,11 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
         self.return_nil(final_token.line());
 
         if errors.is_empty() {
-            log::trace!("Compiled chunk [{:?}]: {:?}", 
+            log::trace!(
+                "Compiled chunk [{:?}]: {:?}",
                 self.current_function.ty.clone(),
-                self.current_chunk());
+                self.current_chunk()
+            );
             Ok((self.current_function.function, self.token_stream))
         } else {
             Err(errors)
@@ -268,8 +276,12 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
         let function_token = self
             .consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("function name"))?;
 
-        let compiler =
-            Self::new(self.token_stream.clone(), CurrentFunction::new(ty, Function::new(0, name, self.interner)), Scope::local(), self.interner);
+        let compiler = Self::new(
+            self.token_stream.clone(),
+            CurrentFunction::new(ty, Function::new(0, name, self.interner)),
+            Scope::local(),
+            self.interner,
+        );
 
         let (function, token_stream) = compiler.compile_function(function_token.clone())?;
         self.token_stream = token_stream;
@@ -295,7 +307,11 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
                 self.expression()?;
 
                 if arg_count == 255 {
-                    return Err(CompilerError::new(CompilerErrorType::TooManyArguments, self.peek_token().unwrap()?).into());
+                    return Err(CompilerError::new(
+                        CompilerErrorType::TooManyArguments,
+                        self.peek_token().unwrap()?,
+                    )
+                    .into());
                 }
 
                 arg_count += 1;
@@ -305,7 +321,10 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
                 }
             }
         }
-        self.consume_or_error(TokenType::RightParen, CompilerErrorType::ExpectedRightParen("arguments"))?;
+        self.consume_or_error(
+            TokenType::RightParen,
+            CompilerErrorType::ExpectedRightParen("arguments"),
+        )?;
 
         Ok(arg_count)
     }
@@ -366,7 +385,8 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
             return Ok((0, token));
         }
 
-        let index = self.add_constant(RloxString::new(token.lexeme(), self.interner).into(), &token)?;
+        let index =
+            self.add_constant(RloxString::new(token.lexeme(), self.interner).into(), &token)?;
 
         Ok((index, token))
     }

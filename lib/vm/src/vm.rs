@@ -1,12 +1,13 @@
 use std::{
     cell::RefCell,
     collections::{hash_map::Entry, HashMap, HashSet},
-    ops::{Neg},
-    rc::Rc, io::Write,
+    io::Write,
+    ops::Neg,
+    rc::Rc,
 };
 
 use bytecode::{
-    chunk::{Chunk},
+    chunk::Chunk,
     instructions::{Instruction, Jump},
     value::{Function, NativeFun, RloxString, Value},
 };
@@ -204,10 +205,7 @@ impl Vm {
                     }));
                 }
                 trace!("stack: {}, len {}", self.stack.len(), arg_count);
-                self.push_frame(CallFrame::new(
-                        function,
-                        self.stack.len() - arg_count - 1,
-                        ));
+                self.push_frame(CallFrame::new(function, self.stack.len() - arg_count - 1));
                 Ok(())
             }
             Value::NativeFun(native_fun) => {
@@ -222,7 +220,8 @@ impl Vm {
     }
 
     fn define_native(&mut self, name: &str, native_fun: fn(Vec<Value>) -> Value) {
-        self.globals.insert(RloxString::new(name, &self.string_interner).0, NativeFun(native_fun).into());
+        self.globals
+            .insert(RloxString::new(name, &self.string_interner).0, NativeFun(native_fun).into());
     }
 
     fn run(&mut self, stdout: &mut impl Write) -> Result<()> {
@@ -294,9 +293,9 @@ impl Vm {
                         .get_string_constant(constant_index)
                         .expect("Missing string constant for global");
 
-                    let value = self.globals.get(&name.0).ok_or_else(
-                        || self.runtime_error(RuntimeError::UndefinedVariable(name.to_string())),
-                    )?;
+                    let value = self.globals.get(&name.0).ok_or_else(|| {
+                        self.runtime_error(RuntimeError::UndefinedVariable(name.to_string()))
+                    })?;
 
                     self.push(value.clone());
                 }

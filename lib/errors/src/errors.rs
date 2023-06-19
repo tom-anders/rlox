@@ -16,7 +16,10 @@ pub struct RloxError {
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub struct RloxErrors(pub Vec<RloxError>);
 
-impl<E> From<E> for RloxErrors where E: Into<RloxError> {
+impl<E> From<E> for RloxErrors
+where
+    E: Into<RloxError>,
+{
     fn from(e: E) -> Self {
         Self(vec![e.into()])
     }

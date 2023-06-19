@@ -1,4 +1,4 @@
-use std::{fmt::{Debug, Display}};
+use std::fmt::{Debug, Display};
 
 use crate::{
     chunk::{Chunk, StringInterner},
@@ -43,7 +43,7 @@ impl Debug for Function {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct NativeFun (pub fn(Vec<Value>) -> Value);
+pub struct NativeFun(pub fn(Vec<Value>) -> Value);
 
 impl Display for NativeFun {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

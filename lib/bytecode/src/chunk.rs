@@ -1,11 +1,8 @@
-use std::{fmt::Debug, rc::Rc, writeln, mem::size_of};
-
-
-
+use std::{fmt::Debug, mem::size_of, rc::Rc, writeln};
 
 use crate::{
     instructions::*,
-    value::{Value, RloxString},
+    value::{RloxString, Value},
 };
 
 #[derive(Clone, Default, PartialEq)]
@@ -78,10 +75,13 @@ impl Chunk {
         };
 
         let get_constant = |index: u8| {
-            format!("{index} -> {}", self.constants
-                .get(index as usize)
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "??".to_string()))
+            format!(
+                "{index} -> {}",
+                self.constants
+                    .get(index as usize)
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "??".to_string())
+            )
         };
 
         let op_args = match instr {

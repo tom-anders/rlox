@@ -5,15 +5,11 @@ pub struct Scope {
 
 impl Scope {
     pub fn global() -> Self {
-        Scope {
-            depth: 0
-        }
+        Scope { depth: 0 }
     }
 
     pub fn local() -> Self {
-        Scope {
-            depth: 1
-        }
+        Scope { depth: 1 }
     }
 
     pub fn depth(&self) -> usize {
@@ -36,4 +32,3 @@ impl Scope {
         self.depth -= 1;
     }
 }
-
