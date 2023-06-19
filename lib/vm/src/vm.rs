@@ -1,15 +1,12 @@
 use std::{
     cell::RefCell,
     collections::{hash_map::Entry, HashMap, HashSet},
-    marker::PhantomPinned,
-    ops::{DerefMut, Neg},
-    pin::Pin,
-    println, ptr,
+    ops::{Neg},
     rc::Rc, io::Write,
 };
 
 use bytecode::{
-    chunk::{Chunk, StringInterner},
+    chunk::{Chunk},
     instructions::{Instruction, Jump},
     value::{Function, NativeFun, RloxString, Value},
 };
@@ -178,7 +175,7 @@ impl Vm {
     }
 
     pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> Result<()> {
-        let mut function = Rc::from(Compiler::from_source(source, &self.string_interner).compile()?);
+        let function = Rc::from(Compiler::from_source(source, &self.string_interner).compile()?);
 
         self.push(function.clone().into());
         self.call(function.into(), 0).unwrap();
@@ -186,7 +183,7 @@ impl Vm {
         Ok(())
     }
 
-    fn push_frame(&mut self, mut frame: CallFrame) {
+    fn push_frame(&mut self, frame: CallFrame) {
         trace!("Pushing frame: {:?}", frame);
         self.frames.push(frame);
     }
@@ -346,7 +343,7 @@ impl Vm {
                 Instruction::Add => {
                     let b = self.pop();
                     let a = self.pop();
-                    let mut result = (a.add(b, &self.string_interner)).map_err(|(a, b)| {
+                    let result = (a.add(b, &self.string_interner)).map_err(|(a, b)| {
                         self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
                     })?;
                     self.push(result);

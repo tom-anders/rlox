@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use cursor::{Col, Cursor, Line, SourceRange};
+use cursor::{Col, Line, SourceRange};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token<'a> {

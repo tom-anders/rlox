@@ -4,10 +4,10 @@ use std::{
     println,
 };
 
-use anyhow::{bail, anyhow};
+use anyhow::{anyhow};
 use clap::Parser;
 
-use scanner::TokenStream;
+
 use vm::Vm;
 
 #[derive(clap::Parser)]
