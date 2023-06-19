@@ -4,17 +4,24 @@ use std::{
     rc::Rc,
 };
 
-mod object;
-pub use object::*;
+mod rlox_string;
+pub use rlox_string::RloxString;
+
+mod function;
+pub use function::*;
 
 use crate::chunk::StringInterner;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, derive_more::From, derive_more::TryInto, derive_more::Display)]
+#[try_into(owned, ref, ref_mut)]
 pub enum Value {
     Number(f64),
     Boolean(bool),
+    #[display(fmt = "nil")]
     Nil,
-    Object(Rc<Object>),
+    String(RloxString),
+    Function(Rc<Function>),
+    NativeFun(NativeFun),
 }
 
 impl Value {
@@ -24,25 +31,6 @@ impl Value {
 
     pub fn is_falsey(&self) -> bool {
         !self.is_truthy()
-    }
-
-    pub fn string(s: &str, interner: &impl StringInterner) -> Value {
-        Value::Object(Rc::new(Object::String(RloxString::new(s, interner))))
-    }
-
-    pub fn function(f: Function) -> Value {
-        Value::Object(Rc::new(Object::Function(f)))
-    }
-
-    pub fn native_function(f: NativeFun) -> Value {
-        Value::Object(Rc::new(Object::NativeFun(f)))
-    }
-
-    pub fn try_as_string(&self) -> Option<&RloxString> {
-        match &self {
-            Value::Object(o) => o.try_as_string(),
-            _ => None,
-        }
     }
 
     pub fn less_than(self, other: Value) -> Result<Value, (Value, Value)> {
@@ -56,17 +44,6 @@ impl Value {
         match (&self, &other) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a > b)),
             _ => Err((self, other)),
-        }
-    }
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Value::Number(n) => write!(f, "{}", n),
-            Value::Nil => write!(f, "nil"),
-            Value::Boolean(b) => write!(f, "{}", b),
-            Value::Object(o) => write!(f, "{}", o),
         }
     }
 }
@@ -86,7 +63,9 @@ impl Value {
     pub fn add(self, rhs: Self, interner: &impl StringInterner) -> Result<Value, (Value, Value)> {
         match (self, rhs) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
-            (Value::Object(a), Value::Object(b)) => a.add(b, interner),
+            (Value::String(a), Value::String(b)) => {
+                Ok(Value::String(RloxString::new(&format!("{}{}", a, b), interner)))
+            }
             (a, b) => Err((a, b)),
         }
     }
