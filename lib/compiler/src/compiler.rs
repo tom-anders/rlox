@@ -1,9 +1,9 @@
 use std::{iter::Peekable, mem::size_of, rc::Rc, unreachable};
 
 use bytecode::{
-    chunk::{Chunk, StringInterner},
+    chunk::Chunk,
     instructions::{Instruction, Jump},
-    value::{Function, RloxString, Value},
+    value::{Function, RloxString, Value}, string_interner::StringInterner,
 };
 use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
@@ -16,7 +16,6 @@ use crate::scope::Scope;
 
 pub type Result<T> = std::result::Result<T, RloxErrors>;
 
-#[derive(Debug)]
 pub struct CompilerError {
     error: CompilerErrorType,
     line: Line,
@@ -129,7 +128,7 @@ struct CurrentFunction {
 }
 
 impl CurrentFunction {
-    fn script(interner: &impl StringInterner) -> Self {
+    fn script(interner: &mut StringInterner) -> Self {
         Self { ty: FunctionType::Script, function: Function::new(0, "", interner) }
     }
 
@@ -139,16 +138,16 @@ impl CurrentFunction {
 }
 
 #[derive(Debug)]
-pub struct Compiler<'a, 'b, Interner: StringInterner> {
+pub struct Compiler<'a, 'b> {
     token_stream: Peekable<TokenStream<'a>>,
     functions: Vec<CurrentFunction>,
     locals: Vec<Local<'a>>,
     scope: Scope,
-    interner: &'b Interner,
+    interner: &'b mut StringInterner,
 }
 
-impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
-    pub fn new(source: &'a str, interner: &'b Interner) -> Self {
+impl<'a, 'b> Compiler<'a, 'b> {
+    pub fn new(source: &'a str, interner: &'b mut StringInterner) -> Self {
         let mut locals = Vec::with_capacity(u8::MAX as usize + 1);
         locals.push(Local { name: "", depth: Some(0) });
         // Don't think anyone will nest more than 8 functions in the real world
@@ -375,8 +374,9 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
             return Ok((0, token));
         }
 
+        let name = RloxString::new(token.lexeme(), self.interner);
         let index =
-            self.add_constant(RloxString::new(token.lexeme(), self.interner).into(), &token)?;
+            self.add_constant(name.into(), &token)?;
 
         Ok((index, token))
     }
@@ -618,7 +618,8 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
             _ => unreachable!(),
         };
 
-        let index = self.add_constant(RloxString::new(s, self.interner).into(), prefix_token)?;
+        let name = RloxString::new(s, self.interner);
+        let index = self.add_constant(name.into(), prefix_token)?;
         self.current_chunk()
             .write_instruction(Instruction::Constant { index }, prefix_token.line());
 
@@ -772,7 +773,7 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
 }
 
 // Helpers
-impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
+impl<'a, 'b> Compiler<'a, 'b> {
     fn consume(
         &mut self,
         token_type: TokenType,

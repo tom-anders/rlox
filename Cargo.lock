@@ -160,6 +160,7 @@ version = "0.1.0"
 dependencies = [
  "bytecode",
  "cursor",
+ "derive_more",
  "errors",
  "log",
  "num_enum",
