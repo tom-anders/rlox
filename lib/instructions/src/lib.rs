@@ -11,7 +11,21 @@ impl Jump {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, bytecode_derive::Instruction)]
+#[derive(Clone, Copy, Debug, PartialEq, derive_more::Display, derive_more::From)]
+pub struct Arity(pub u8);
+
+impl Arity {
+    pub fn from_ne_bytes(bytes: [u8; 1]) -> Self {
+        Arity(bytes[0])
+    }
+
+    pub fn to_ne_bytes(self) -> [u8; 1] {
+        [self.0]
+    }
+}
+
+
+#[derive(Debug, Clone, PartialEq, instructions_derive::Instruction)]
 pub enum Instruction {
     Return,
     Negate,
@@ -38,7 +52,7 @@ pub enum Instruction {
     JumpIfFalse(Jump),
     Jump(Jump),
     Loop(Jump),
-    Call { arg_count: u8 },
+    Call { arg_count: Arity },
 }
 
 #[cfg(test)]

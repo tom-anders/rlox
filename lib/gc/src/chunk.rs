@@ -1,10 +1,8 @@
-use std::{fmt::Debug, mem::size_of, rc::Rc, writeln};
+use std::{fmt::Debug, mem::size_of, writeln, ops::Deref};
 
-use crate::{
-    instructions::*,
-    string_interner::StringInterner,
-    value::{RloxString, Value},
-};
+use instructions::{Instruction, Jump, OpCode};
+
+use crate::{Value, StringRef, ObjectRef, StringInterner};
 
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct Chunk {
@@ -57,8 +55,9 @@ impl Chunk {
         &self.constants
     }
 
-    pub fn get_string_constant(&self, index: u8) -> Option<&RloxString> {
-        self.constants.get(index as usize).and_then(|v| v.try_into().ok())
+    pub fn get_string_constant(&self, index: u8) -> StringRef {
+        self.constants().get(index as usize).expect("Missing string constant")
+            .unwrap_object().unwrap_string()
     }
 
     pub fn disassemble_instruction(
@@ -80,7 +79,7 @@ impl Chunk {
                 "{index} -> {}",
                 self.constants
                     .get(index as usize)
-                    .map(|c| c.with_interner(interner).to_string())
+                    .map(|c| c.resolve(interner).to_string())
                     .unwrap_or_else(|| "??".to_string())
             )
         };
@@ -119,14 +118,14 @@ impl Chunk {
         (format!("{offset:04} {line_str} {opcode:16} {op_args}"), offset + instr.num_bytes())
     }
 
-    pub fn with_interner<'a, 'b>(&'a self, interner: &'b StringInterner) -> ChunkWithInterner<'a, 'b> {
-        ChunkWithInterner(self, interner)
+    pub fn resolve<'a, 'b>(&'a self, interner: &'b StringInterner) -> ResolvedChunk<'a, 'b> {
+        ResolvedChunk(self, interner)
     }
 }
 
-pub struct ChunkWithInterner<'a, 'b>(&'a Chunk, &'b StringInterner);
+pub struct ResolvedChunk<'a, 'b>(&'a Chunk, &'b StringInterner);
 
-impl Debug for ChunkWithInterner<'_, '_> {
+impl Debug for ResolvedChunk<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut offset = 0;
 
