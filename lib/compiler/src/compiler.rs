@@ -141,86 +141,47 @@ impl CurrentFunction {
 #[derive(Debug)]
 pub struct Compiler<'a, 'b, Interner: StringInterner> {
     token_stream: Peekable<TokenStream<'a>>,
-    current_function: CurrentFunction,
+    functions: Vec<CurrentFunction>,
     locals: Vec<Local<'a>>,
     scope: Scope,
     interner: &'b Interner,
 }
 
 impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
-    fn new(
-        token_stream: Peekable<TokenStream<'a>>,
-        current_function: CurrentFunction,
-        scope: Scope,
-        interner: &'b Interner,
-    ) -> Self {
+    pub fn new(source: &'a str, interner: &'b Interner) -> Self {
         let mut locals = Vec::with_capacity(u8::MAX as usize + 1);
         locals.push(Local { name: "", depth: Some(0) });
-        Self { token_stream, current_function, locals, scope, interner }
+        // Don't think anyone will nest more than 8 functions in the real world
+        let mut functions = Vec::with_capacity(8);
+        functions.push(CurrentFunction::script(interner));
+        Self {
+            token_stream: TokenStream::new(source).peekable(),
+            functions,
+            locals,
+            scope: Scope::global(),
+            interner,
+        }
     }
 
-    pub fn from_source(source: &'a str, interner: &'b Interner) -> Self {
-        Self::new(
-            TokenStream::new(source).peekable(),
-            CurrentFunction::script(interner),
-            Scope::global(),
-            interner,
-        )
+    fn current_function_type(&self) -> FunctionType {
+        self.functions.last().unwrap().ty
+    }
+
+    fn current_function_mut(&mut self) -> &mut Function {
+        &mut self.functions.last_mut().unwrap().function
     }
 
     fn current_chunk(&mut self) -> &mut Chunk {
-        &mut self.current_function.function.chunk
+        &mut self.current_function_mut().chunk
     }
 
-    pub fn compile(self) -> std::result::Result<Function, RloxErrors> {
-        let (function, _) = self.compile_until_token(Eof)?;
-        Ok(function)
-    }
-
-    fn compile_function(
+    pub fn compile(
         mut self,
-        function_token: Token<'a>,
-    ) -> std::result::Result<(Function, Peekable<TokenStream<'a>>), RloxErrors> {
-        let mut arity = 0;
-        if self.peek().unwrap()? != RightParen {
-            loop {
-                arity += 1;
-                if arity > 255 {
-                    return Err(CompilerError::new(
-                        CompilerErrorType::TooManyArguments,
-                        function_token,
-                    )
-                    .into());
-                }
-
-                let (constant_index, token) =
-                    self.parse_variable(CompilerErrorType::ExpectedParameterName)?;
-                self.define_variable(constant_index, token.line())?;
-
-                if self.consume(Comma)?.is_err() {
-                    break;
-                }
-            }
-        }
-        self.current_function.function.arity = arity;
-
-        self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("parameters"))?;
-        self.consume_or_error(
-            LeftBrace,
-            CompilerErrorType::ExpectedLeftBrace { after: "parameters" },
-        )?;
-
-        self.compile_until_token(RightBrace)
-    }
-
-    fn compile_until_token(
-        mut self,
-        until_token: TokenType,
-    ) -> std::result::Result<(Function, Peekable<TokenStream<'a>>), RloxErrors> {
+    ) -> std::result::Result<Function, RloxErrors> {
         let mut errors = RloxErrors(Vec::new());
 
         let final_token = loop {
-            if let Ok(token) = self.consume(until_token)? {
+            if let Ok(token) = self.consume(Eof)? {
                 break token;
             }
 
@@ -239,10 +200,11 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
         if errors.is_empty() {
             log::trace!(
                 "Compiled chunk [{:?}]: {:?}",
-                self.current_function.ty.clone(),
+                self.current_function_type(),
                 self.current_chunk()
             );
-            Ok((self.current_function.function, self.token_stream))
+            assert!(self.functions.len() == 1);
+            Ok(self.functions.pop().unwrap().function)
         } else {
             Err(errors)
         }
@@ -275,19 +237,48 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
         let function_token = self
             .consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("function name"))?;
 
-        let compiler = Self::new(
-            self.token_stream.clone(),
-            CurrentFunction::new(ty, Function::new(0, name, self.interner)),
-            Scope::local(),
-            self.interner,
-        );
+        self.functions.push(CurrentFunction::new(ty, Function::new(0, name, self.interner)));
 
-        let (function, token_stream) = compiler.compile_function(function_token.clone())?;
-        self.token_stream = token_stream;
+        self.scope.begin_scope();
 
-        let index = self.add_constant(Rc::from(function).into(), &function_token)?;
+        let mut arity = 0;
+        if self.peek().unwrap()? != RightParen {
+            loop {
+                arity += 1;
+                if arity > 255 {
+                    return Err(CompilerError::new(
+                        CompilerErrorType::TooManyArguments,
+                        function_token,
+                    )
+                    .into());
+                }
 
-        self.current_chunk().write_instruction(Instruction::Constant { index }, Line(0));
+                let (constant_index, token) =
+                    self.parse_variable(CompilerErrorType::ExpectedParameterName)?;
+                self.define_variable(constant_index, token.line())?;
+
+                if self.consume(Comma)?.is_err() {
+                    break;
+                }
+            }
+        }
+
+        self.current_function_mut().arity = arity;
+
+        self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("parameters"))?;
+
+        self.consume_or_error(
+            LeftBrace,
+            CompilerErrorType::ExpectedLeftBrace { after: "parameters" },
+        )?;
+
+        let end_fun_line = self.block()?.line();
+
+        self.end_scope(end_fun_line);
+
+        let function = Rc::from(self.functions.pop().unwrap().function).into();
+        let index = self.add_constant(function, &function_token)?;
+        self.current_chunk().write_instruction(Instruction::Constant { index }, function_token.line());
 
         Ok(())
     }
@@ -459,7 +450,7 @@ impl<'a, 'b, Interner: StringInterner> Compiler<'a, 'b, Interner> {
     }
 
     fn return_statement(&mut self) -> Result<()> {
-        if self.current_function.ty == FunctionType::Script {
+        if self.current_function_type() == FunctionType::Script {
             return Err(CompilerError::new(
                 CompilerErrorType::ReturnOutsideFunction,
                 self.peek_token().unwrap().unwrap().clone(),
