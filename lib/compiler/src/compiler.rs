@@ -1,12 +1,9 @@
-use std::{iter::Peekable, mem::size_of, rc::Rc, unreachable};
+use std::{iter::Peekable, mem::size_of, unreachable};
 
-use bytecode::{
-    chunk::Chunk,
-    instructions::{Instruction, Jump},
-    value::{Function, RloxString, Value}, string_interner::StringInterner,
-};
 use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
+use gc::{Heap, Function, StringInterner, Chunk, Value, RloxString};
+use instructions::{Instruction, Jump, Arity};
 use log::trace;
 use scanner::{token::TokenData, Token, TokenStream, TokenType};
 
@@ -129,7 +126,7 @@ struct CurrentFunction {
 
 impl CurrentFunction {
     fn script(interner: &mut StringInterner) -> Self {
-        Self { ty: FunctionType::Script, function: Function::new(0, "", interner) }
+        Self { ty: FunctionType::Script, function: Function::new(Arity(0), "", interner) }
     }
 
     fn new(ty: FunctionType, function: Function) -> Self {
@@ -144,10 +141,11 @@ pub struct Compiler<'a, 'b> {
     locals: Vec<Local<'a>>,
     scope: Scope,
     interner: &'b mut StringInterner,
+    heap: &'b mut Heap,
 }
 
 impl<'a, 'b> Compiler<'a, 'b> {
-    pub fn new(source: &'a str, interner: &'b mut StringInterner) -> Self {
+    pub fn new(source: &'a str, interner: &'b mut StringInterner, heap: &'b mut Heap) -> Self {
         let mut locals = Vec::with_capacity(u8::MAX as usize + 1);
         locals.push(Local { name: "", depth: Some(0) });
         // Don't think anyone will nest more than 8 functions in the real world
@@ -159,6 +157,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             locals,
             scope: Scope::global(),
             interner,
+            heap,
         }
     }
 
@@ -236,21 +235,16 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let function_token = self
             .consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("function name"))?;
 
-        self.functions.push(CurrentFunction::new(ty, Function::new(0, name, self.interner)));
+        self.functions.push(CurrentFunction::new(ty, Function::new(Arity(0), name, self.interner)));
 
         self.scope.begin_scope();
 
-        let mut arity = 0;
+        let mut arity = Arity(0);
         if self.peek().unwrap()? != RightParen {
             loop {
-                arity += 1;
-                if arity > 255 {
-                    return Err(CompilerError::new(
-                        CompilerErrorType::TooManyArguments,
-                        function_token,
-                    )
-                    .into());
-                }
+                arity.0 = arity.0.checked_add(1).ok_or_else(|| {
+                    CompilerError::new(CompilerErrorType::TooManyArguments, function_token.clone())
+                })?;
 
                 let (constant_index, token) =
                     self.parse_variable(CompilerErrorType::ExpectedParameterName)?;
@@ -275,15 +269,15 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.end_scope(end_fun_line);
 
-        let function = Rc::from(self.functions.pop().unwrap().function).into();
-        let index = self.add_constant(function, &function_token)?;
+        let function = self.functions.pop().unwrap().function;
+        let index = self.add_constant(function.into(), &function_token)?;
         self.current_chunk().write_instruction(Instruction::Constant { index }, function_token.line());
 
         Ok(())
     }
 
     fn call(&mut self, token: &Token) -> Result<()> {
-        let arg_count = self.argument_list()?;
+        let arg_count = self.argument_list()?.into();
         self.current_chunk().write_instruction(Instruction::Call { arg_count }, token.line());
         Ok(())
     }
@@ -810,6 +804,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn add_constant(&mut self, value: Value, token: &Token<'a>) -> Result<u8> {
+        let value = self.heap.alloc(value);
         self.current_chunk()
             .add_constant(value)
             .ok_or(CompilerError::new(CompilerErrorType::TooManyConstants, token.clone()).into())

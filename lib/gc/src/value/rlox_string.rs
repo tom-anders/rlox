@@ -8,7 +8,7 @@ impl RloxString {
         Self(interner.intern(s))
     }
 
-    pub fn as_str<'a>(&self, interner: &'a StringInterner) -> &'a str {
+    pub fn resolve<'a>(&self, interner: &'a StringInterner) -> &'a str {
         interner.lookup(self.0)
     }
 }

@@ -1,15 +1,17 @@
 use std::fmt::{Debug, Display};
 
+use instructions::Arity;
+
 use crate::{
     chunk::Chunk,
-    value::Value, string_interner::StringInterner,
+    value::Value, string_interner::StringInterner, FunctionRef, TypedValueRef,
 };
 
 use super::RloxString;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
-    pub arity: usize,
+    pub arity: Arity,
     pub chunk: Chunk,
     pub name: RloxString,
 }
@@ -18,7 +20,7 @@ pub struct FunctionDisplay<'a, 'b>(pub &'a Function, pub &'b StringInterner);
 
 impl<'a, 'b> Display for FunctionDisplay<'a, 'b> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.0.name.as_str(self.1) {
+        match self.0.name.resolve(self.1) {
             "" => write!(f, "<script>"),
             name => write!(f, "<fn {}>", name),
         }
@@ -26,7 +28,7 @@ impl<'a, 'b> Display for FunctionDisplay<'a, 'b> {
 }
 
 impl Function {
-    pub fn new(arity: usize, name: &str, interner: &mut StringInterner) -> Function {
+    pub fn new(arity: Arity, name: &str, interner: &mut StringInterner) -> Function {
         Function { arity, chunk: Chunk::default(), name: RloxString::new(name, interner) }
     }
 
@@ -39,14 +41,11 @@ pub struct FunctionDebug<'a, 'b>(pub &'a Function, pub &'b StringInterner);
 
 impl Debug for FunctionDebug<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let alternate = f.alternate();
-        let chunk_debug = self.0.chunk.with_interner(self.1);
+        // Intenionally ignoring the chunk here, since we'd need a heap ref to resolve it,
+        // but it would make the output too verbose anyway.
         f.debug_struct("Function")
             .field("arity", &self.0.arity)
-            // Printing out the chunk makes output to verbose,
-            // do don't to it by default
-            .field("chunk", if alternate { &chunk_debug } else { &"<chunk>" })
-            .field("name", &self.0.name.as_str(self.1))
+            .field("name", &self.0.name.resolve(self.1))
             .finish()
     }
 }

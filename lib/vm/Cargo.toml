@@ -6,10 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bytecode = { path = "../bytecode" }
+cursor = { path = "../cursor" }
+instructions = { path = "../instructions" }
 scanner = { path = "../scanner" }
 compiler = { path = "../compiler" }
 errors = { path = "../errors" }
+gc = { path = "../gc" }
 log.workspace = true
 thiserror.workspace = true
 itertools.workspace = true
