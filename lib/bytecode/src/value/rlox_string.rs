@@ -1,29 +1,14 @@
-use std::rc::Rc;
+use crate::string_interner::{StrId, StringInterner};
 
-use crate::chunk::StringInterner;
-
-#[derive(Debug, Clone, Eq)]
-pub struct RloxString(pub Rc<str>);
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
+pub struct RloxString(StrId);
 
 impl RloxString {
-    pub fn new(s: &str, interner: &impl StringInterner) -> Self {
-        Self(interner.intern_string(s))
+    pub fn new(s: &str, interner: &mut StringInterner) -> Self {
+        Self(interner.intern(s))
     }
 
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl PartialEq for RloxString {
-    fn eq(&self, other: &Self) -> bool {
-        // Strings are interned via reference counting, so comparing by pointer is enough.
-        Rc::ptr_eq(&self.0, &other.0)
-    }
-}
-
-impl std::fmt::Display for RloxString {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+    pub fn as_str<'a>(&self, interner: &'a StringInterner) -> &'a str {
+        interner.lookup(self.0)
     }
 }

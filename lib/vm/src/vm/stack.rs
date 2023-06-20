@@ -1,8 +1,8 @@
 use std::{array, fmt::Display, rc::Rc, debug_assert};
 
 use bytecode::{
-    chunk::{Chunk, StringInterner},
-    value::{Function, Value},
+    chunk::Chunk,
+    value::{Function, Value}, string_interner::StringInterner,
 };
 use itertools::Itertools;
 use log::trace;
@@ -47,17 +47,19 @@ pub struct Stack {
     frames: Vec<CallFrame>,
 }
 
-impl Display for Stack {
+pub struct StackWithInterner<'a, 'b>(&'a Stack, &'b StringInterner);
+
+impl<'a, 'b> Display for StackWithInterner<'a, 'b> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "Stack {{ stack: [{}], call_frames: [{}] }}",
-            self.stack
+            self.0.stack
                 .iter()
-                .map(|v| v.to_string())
+                .map(|v| v.with_interner(self.1).to_string())
                 .collect_vec()
                 .join(", "),
-            self.frames().iter().map(|frame| format!("{:?}", frame)).collect_vec().join(", ")
+            self.0.frames().iter().map(|frame| format!("{:?}", frame)).collect_vec().join(", ")
         )
     }
 }
@@ -68,6 +70,10 @@ impl Stack {
             stack: Vec::with_capacity(MAX_STACK),
             frames: Vec::with_capacity(MAX_FRAMES),
         }
+    }
+
+    pub fn with_interner<'a, 'b>(&'a self, interner: &'b StringInterner) -> StackWithInterner<'a, 'b> {
+        StackWithInterner(self, interner)
     }
 
     pub fn frame(&self) -> &CallFrame {
@@ -141,15 +147,15 @@ impl Stack {
         self.stack[self.stack.len() - 1 - n..].iter()
     }
 
-    pub fn stack_trace(&self) -> String {
+    pub fn stack_trace(&self, interner: &StringInterner) -> String {
         self.frames()
             .iter()
             .rev()
             .map(|frame| {
-                let name = if frame.function.name.0.is_empty() {
+                let name = if frame.function.name.as_str(&interner).is_empty() {
                     "script".to_string()
                 } else {
-                    format!("{}()", frame.function.name)
+                    format!("{}()", frame.function.name.as_str(&interner))
                 };
                 format!("[line {}] in {}", frame.line(), name)
             })

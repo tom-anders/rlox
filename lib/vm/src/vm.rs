@@ -7,9 +7,8 @@ use std::{
 };
 
 use bytecode::{
-    chunk::Chunk,
     instructions::{Instruction, Jump},
-    value::{Function, NativeFun, RloxString, Value},
+    value::{Function, NativeFun, RloxString, Value, ValueWithInterner}, string_interner::StringInterner,
 };
 use compiler::Compiler;
 use errors::RloxErrors;
@@ -23,8 +22,8 @@ mod stack;
 #[derive(Debug)]
 pub struct Vm {
     stack: Stack,
-    string_interner: Interner,
-    globals: HashMap<Rc<str>, Value>,
+    string_interner: StringInterner,
+    globals: HashMap<RloxString, Value>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -36,39 +35,20 @@ pub enum InterpretError {
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
-pub enum RuntimeError {
+pub enum RuntimeError<'a, 'b> {
     #[error("Invalid negate operant: {0}")]
-    InvalidNegateOperant(Value),
+    InvalidNegateOperant(ValueWithInterner<'a, 'b>),
     #[error("Invalid binary operants: ({0}, {1})")]
-    InvalidBinaryOperants(Value, Value),
+    InvalidBinaryOperants(ValueWithInterner<'a, 'b>, ValueWithInterner<'a, 'b>),
     #[error("Undefined variable: '{0}'")]
-    UndefinedVariable(String),
+    UndefinedVariable(&'a str),
     #[error("{0} is not a function, can only call functions and classes")]
-    NotAFunction(Value),
+    NotAFunction(ValueWithInterner<'a, 'b>),
     #[error("Invalid argument count: expected {expected}, got {got}")]
     InvalidArgumentCount { expected: usize, got: usize },
 }
 
 pub type Result<T> = std::result::Result<T, InterpretError>;
-
-#[derive(Debug, Clone, Default)]
-struct Interner {
-    strings: RefCell<HashSet<Rc<str>>>,
-}
-
-impl bytecode::chunk::StringInterner for Interner {
-    fn intern_string(&self, string: &str) -> Rc<str> {
-        let mut strings = self.strings.borrow_mut();
-        match strings.get(string) {
-            Some(s) => s.clone(),
-            None => {
-                let s = Rc::from(string);
-                strings.insert(Rc::clone(&s));
-                s
-            }
-        }
-    }
-}
 
 impl Default for Vm {
     fn default() -> Self {
@@ -80,7 +60,7 @@ impl Vm {
     pub fn new() -> Self {
         let mut vm = Self {
             stack: Stack::new(),
-            string_interner: Interner::default(),
+            string_interner: StringInterner::with_capacity(1024),
             globals: HashMap::new(),
         };
         vm.define_native("clock", |_| {
@@ -97,7 +77,7 @@ impl Vm {
     }
 
     pub fn stack_trace(&self) -> String {
-        self.stack.stack_trace()
+        self.stack.stack_trace(&self.string_interner)
     }
 
     fn runtime_error(&self, error: RuntimeError) -> InterpretError {
@@ -108,7 +88,7 @@ impl Vm {
     }
 
     pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> Result<()> {
-        let function = Rc::from(Compiler::new(source, &self.string_interner).compile()?);
+        let function = Rc::from(Compiler::new(source, &mut self.string_interner).compile()?);
 
         self.push(function.clone().into());
         self.call(function.into(), 0).unwrap();
@@ -135,13 +115,13 @@ impl Vm {
                 self.push(result);
                 Ok(())
             }
-            _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
+            _ => Err(self.runtime_error(RuntimeError::NotAFunction(value.with_interner(&self.string_interner)))),
         }
     }
 
     fn define_native(&mut self, name: &str, native_fun: fn(Vec<Value>) -> Value) {
         self.globals
-            .insert(RloxString::new(name, &self.string_interner).0, NativeFun(native_fun).into());
+            .insert(RloxString::new(name, &mut self.string_interner), NativeFun(native_fun).into());
     }
 
     fn run(&mut self, stdout: &mut impl Write) -> Result<()> {
@@ -149,10 +129,10 @@ impl Vm {
             let bytes = &self.stack.frame_chunk().code()[self.stack.frame().ip()..];
             let op = Instruction::from_bytes(bytes);
 
-            log::trace!("Stack: {}", self.stack);
+            log::trace!("Stack: {}", self.stack.with_interner(&self.string_interner));
             log::trace!("Globals: {:?}", self.globals);
             log::trace!("Constants: {:?}", self.stack.frame_chunk().constants());
-            log::trace!("{}", self.stack.frame_chunk().disassemble_instruction(self.stack.frame().ip()).0);
+            log::trace!("{}", self.stack.frame_chunk().disassemble_instruction(self.stack.frame().ip(), &self.string_interner).0);
 
             self.stack.frame_mut().inc_ip(op.num_bytes());
 
@@ -166,7 +146,7 @@ impl Vm {
                     self.stack.push(result);
                 }
                 Instruction::Print => {
-                    writeln!(stdout, "{}", self.stack.pop()).unwrap();
+                    writeln!(stdout, "{}", self.stack.pop().with_interner(&self.string_interner)).unwrap();
                 }
                 Instruction::Pop => {
                     self.stack.pop();
@@ -187,7 +167,7 @@ impl Vm {
                         .expect("Missing string constant for global");
 
                     trace!("Defining global: {:?} {:?}", name, self.stack.peek());
-                    self.globals.insert(name.0.clone(), self.stack.peek().clone());
+                    self.globals.insert(*name, self.stack.peek().clone());
                     self.stack.pop();
                 }
                 Instruction::SetGlobal { constant_index } => {
@@ -199,13 +179,13 @@ impl Vm {
                         .clone();
 
                     let val = self.stack.peek().clone();
-                    match self.globals.entry(name.0.clone()) {
+                    match self.globals.entry(name) {
                         Entry::Occupied(mut entry) => {
                             *entry.get_mut() = val;
                         }
                         Entry::Vacant(_) => {
                             return Err(self
-                                .runtime_error(RuntimeError::UndefinedVariable(name.to_string())))
+                                .runtime_error(RuntimeError::UndefinedVariable(name.as_str(&self.string_interner))))
                         }
                     };
                 }
@@ -216,8 +196,8 @@ impl Vm {
                         .get_string_constant(constant_index)
                         .expect("Missing string constant for global");
 
-                    let value = self.globals.get(&name.0).ok_or_else(|| {
-                        self.runtime_error(RuntimeError::UndefinedVariable(name.to_string()))
+                    let value = self.globals.get(name).ok_or_else(|| {
+                        self.runtime_error(RuntimeError::UndefinedVariable(name.as_str(&self.string_interner)))
                     })?;
 
                     self.push(value.clone());
@@ -236,7 +216,7 @@ impl Vm {
                     let neg = v
                         .clone()
                         .neg()
-                        .map_err(|v| self.runtime_error(RuntimeError::InvalidNegateOperant(v)))?;
+                        .map_err(|v| self.runtime_error(RuntimeError::InvalidNegateOperant(v.with_interner(&self.string_interner))))?;
                     self.push(neg);
                 }
                 Instruction::Not => {
@@ -252,21 +232,21 @@ impl Vm {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
                     self.push(a.less_than(b).map_err(|(a, b)| {
-                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a.with_interner(&self.string_interner), b.with_interner(&self.string_interner)))
                     })?);
                 }
                 Instruction::Greater => {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
                     self.push(a.greater_than(b).map_err(|(a, b)| {
-                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a.with_interner(&self.string_interner), b.with_interner(&self.string_interner)))
                     })?);
                 }
                 Instruction::Add => {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
-                    let result = (a.add(b, &self.string_interner)).map_err(|(a, b)| {
-                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                    let result = (a.add(b, &mut self.string_interner)).map_err(|(a, b)| {
+                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a.with_interner(&self.string_interner), b.with_interner(&self.string_interner)))
                     })?;
                     self.push(result);
                 }
@@ -274,21 +254,21 @@ impl Vm {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
                     self.push((a - b).map_err(|(a, b)| {
-                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a.with_interner(&self.string_interner), b.with_interner(&self.string_interner)))
                     })?);
                 }
                 Instruction::Multiply => {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
                     self.push((a * b).map_err(|(a, b)| {
-                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a.with_interner(&self.string_interner), b.with_interner(&self.string_interner)))
                     })?);
                 }
                 Instruction::Divide => {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
                     self.push((a / b).map_err(|(a, b)| {
-                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a.with_interner(&self.string_interner), b.with_interner(&self.string_interner)))
                     })?);
                 }
                 Instruction::JumpIfFalse(Jump(jump)) => {

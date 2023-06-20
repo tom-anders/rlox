@@ -13,3 +13,4 @@ errors = { path = "../errors" }
 thiserror.workspace = true
 log.workspace = true
 num_enum = "0.6.1"
+derive_more.workspace = true

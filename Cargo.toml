@@ -11,6 +11,7 @@ pretty_assertions = "1.2"
 log = { version = "0.4", features = ["release_max_level_off"] }
 env_logger = "0.10"
 ctor = "0.2"
+derive_more = "0.99.17"
 
 [profile.release]
 lto = "thin"

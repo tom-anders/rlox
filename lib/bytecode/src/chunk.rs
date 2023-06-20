@@ -2,18 +2,15 @@ use std::{fmt::Debug, mem::size_of, rc::Rc, writeln};
 
 use crate::{
     instructions::*,
+    string_interner::StringInterner,
     value::{RloxString, Value},
 };
 
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct Chunk {
     code: Vec<u8>,
     constants: Vec<Value>,
     lines: Vec<usize>,
-}
-
-pub trait StringInterner {
-    fn intern_string(&self, string: &str) -> Rc<str>;
 }
 
 impl Chunk {
@@ -64,7 +61,11 @@ impl Chunk {
         self.constants.get(index as usize).and_then(|v| v.try_into().ok())
     }
 
-    pub fn disassemble_instruction(&self, offset: usize) -> (String, usize) {
+    pub fn disassemble_instruction(
+        &self,
+        offset: usize,
+        interner: &StringInterner,
+    ) -> (String, usize) {
         let instr = Instruction::from_bytes(&self.code[offset..]);
 
         let line = self.lines[offset];
@@ -79,7 +80,7 @@ impl Chunk {
                 "{index} -> {}",
                 self.constants
                     .get(index as usize)
-                    .map(|c| c.to_string())
+                    .map(|c| c.with_interner(interner).to_string())
                     .unwrap_or_else(|| "??".to_string())
             )
         };
@@ -117,16 +118,22 @@ impl Chunk {
 
         (format!("{offset:04} {line_str} {opcode:16} {op_args}"), offset + instr.num_bytes())
     }
+
+    pub fn with_interner<'a, 'b>(&'a self, interner: &'b StringInterner) -> ChunkWithInterner<'a, 'b> {
+        ChunkWithInterner(self, interner)
+    }
 }
 
-impl Debug for Chunk {
+pub struct ChunkWithInterner<'a, 'b>(&'a Chunk, &'b StringInterner);
+
+impl Debug for ChunkWithInterner<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut offset = 0;
 
         writeln!(f)?;
         writeln!(f, "================ Chunk ================")?;
-        while offset < self.code.len() {
-            let (debug, new_offset) = self.disassemble_instruction(offset);
+        while offset < self.0.code.len() {
+            let (debug, new_offset) = self.0.disassemble_instruction(offset, self.1);
             writeln!(f, "{}", debug)?;
             offset = new_offset;
         }
