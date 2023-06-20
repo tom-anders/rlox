@@ -108,7 +108,7 @@ impl Vm {
     }
 
     pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> Result<()> {
-        let function = Rc::from(Compiler::from_source(source, &self.string_interner).compile()?);
+        let function = Rc::from(Compiler::new(source, &self.string_interner).compile()?);
 
         self.push(function.clone().into());
         self.call(function.into(), 0).unwrap();
