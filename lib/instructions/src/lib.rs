@@ -24,7 +24,6 @@ impl Arity {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq, instructions_derive::Instruction)]
 pub enum Instruction {
     Return,

@@ -1,13 +1,12 @@
 use std::{
     collections::{hash_map::Entry, HashMap},
-    io::Write, ops::Deref,
+    io::Write,
+    ops::Deref,
 };
 
 use compiler::Compiler;
 use errors::RloxErrors;
-use gc::{
-    Chunk, FunctionRef, Heap, NativeFun, RloxString, StringInterner, StringRef, Value, ValueRef,
-};
+use gc::{Chunk, FunctionRef, Heap, NativeFun, RloxString, StringInterner, Value, ValueRef};
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
 use log::trace;
@@ -82,17 +81,15 @@ impl Vm {
         InterpretError::RuntimeError {
             line: self.stack.current_line(),
             error: match error {
-                RuntimeError::NotAFunction(v) => format!(
-                    "Expected a function, got {}",
-                    v.resolve(&self.string_interner)
-                ),
+                RuntimeError::NotAFunction(v) => {
+                    format!("Expected a function, got {}", v.resolve(&self.string_interner))
+                }
                 RuntimeError::InvalidArgumentCount { expected, got } => {
                     format!("Expected {} arguments, got {}", expected, got)
                 }
-                RuntimeError::InvalidNegateOperant(v) => format!(
-                    "Expected a number, got {}",
-                    v.resolve(&self.string_interner)
-                ),
+                RuntimeError::InvalidNegateOperant(v) => {
+                    format!("Expected a number, got {}", v.resolve(&self.string_interner))
+                }
                 RuntimeError::InvalidBinaryOperants(l, r) => format!(
                     "Expected two numbers, got {} and {}",
                     l.resolve(&self.string_interner),
@@ -127,8 +124,7 @@ impl Vm {
                 Ok(())
             }
             Value::NativeFun(native_fun) => {
-                let args =
-                    self.stack.peek_n(arg_count.0 as usize).map(|value| value.deref());
+                let args = self.stack.peek_n(arg_count.0 as usize).map(|value| value.deref());
                 let result = native_fun.0(args.cloned().collect());
                 self.stack.pop_n(arg_count.0 as usize);
                 self.push(result);
@@ -140,10 +136,7 @@ impl Vm {
 
     fn define_native(&mut self, name: &str, native_fun: fn(Vec<Value>) -> Value) {
         let native_fun = self.heap.alloc(NativeFun(native_fun).into());
-        self.globals.insert(
-            RloxString::new(name, &mut self.string_interner),
-            native_fun,
-        );
+        self.globals.insert(RloxString::new(name, &mut self.string_interner), native_fun);
     }
 
     fn frame_chunk(&self) -> &Chunk {
@@ -161,10 +154,7 @@ impl Vm {
                 self.globals
                     .iter()
                     .map(|(name, value)| {
-                        (
-                            name.resolve(&self.string_interner),
-                            value.resolve(&self.string_interner),
-                        )
+                        (name.resolve(&self.string_interner), value.resolve(&self.string_interner))
                     })
                     .collect_vec()
             );
@@ -172,10 +162,7 @@ impl Vm {
             log::trace!(
                 "{}",
                 self.frame_chunk()
-                    .disassemble_instruction(
-                        self.stack.frame().ip(),
-                        &self.string_interner,
-                    )
+                    .disassemble_instruction(self.stack.frame().ip(), &self.string_interner,)
                     .0
             );
 
@@ -190,12 +177,9 @@ impl Vm {
                     }
                     self.stack.push(result);
                 }
-                Instruction::Print => writeln!(
-                    stdout,
-                    "{}",
-                    self.stack.pop().resolve(&self.string_interner)
-                )
-                .unwrap(),
+                Instruction::Print => {
+                    writeln!(stdout, "{}", self.stack.pop().resolve(&self.string_interner)).unwrap()
+                }
                 Instruction::Pop => {
                     self.stack.pop();
                 }
@@ -208,8 +192,7 @@ impl Vm {
                     self.push_ref(*constant);
                 }
                 Instruction::DefineGlobal { constant_index } => {
-                    let name =
-                        self.stack.frame_chunk().get_string_constant(constant_index);
+                    let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
                     trace!(
                         "Defining global: {:?} {:?}",
@@ -220,8 +203,7 @@ impl Vm {
                     self.stack.pop();
                 }
                 Instruction::SetGlobal { constant_index } => {
-                    let name =
-                        self.stack.frame_chunk().get_string_constant(constant_index);
+                    let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
                     let val = self.stack.peek();
                     match self.globals.entry(*name) {
@@ -236,8 +218,7 @@ impl Vm {
                     };
                 }
                 Instruction::GetGlobal { constant_index } => {
-                    let name =
-                        self.stack.frame_chunk().get_string_constant(constant_index);
+                    let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
                     let value = self.globals.get(&name).ok_or_else(|| {
                         self.runtime_error(RuntimeError::UndefinedVariable(

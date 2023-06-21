@@ -2,7 +2,7 @@ use std::{marker::PhantomData, ops::Deref, pin::Pin};
 
 use instructions::Arity;
 
-use crate::{Function, Value, RloxString, StringInterner, ValueWithInterner};
+use crate::{Function, RloxString, StringInterner, Value};
 
 #[derive(Debug)]
 pub struct Heap {
@@ -16,21 +16,21 @@ impl Deref for ValueRef {
     type Target = Value;
 
     fn deref(&self) -> &Self::Target {
-        // SAFETY: 
+        // SAFETY:
         // # Lifetime / validity
         // The only way to obtain a ValueRef is through Heap::alloc.
-        // Since values are stored as a Pin<Box<Value>>, the pointer will remain valid 
+        // Since values are stored as a Pin<Box<Value>>, the pointer will remain valid
         // for the lifetime of the heap, even if the vector reallocates.
         //
         // While removing an object from the heap would lead to a dangling pointer,
-        // if the garbage collector is implemented correctly, it will never remove an 
+        // if the garbage collector is implemented correctly, it will never remove an
         // object that is still reachable.
         //
         // # Aliasing
-        // Right now, ValueRef contains a const pointer and only implements Deref, 
+        // Right now, ValueRef contains a const pointer and only implements Deref,
         // but not DerefMut. The heap does not provide any way to mutate values after allocation
         // either. This means currently only immutable references can ever coexist, but no mutable
-        // ones. 
+        // ones.
         // TODO: Revisit this once we have objects
         unsafe { &*self.0 }
     }
@@ -112,7 +112,7 @@ pub struct TypedValueRef<T, Data>(ValueRef, PhantomData<T>, Data);
 
 pub type FunctionRef = TypedValueRef<Function, Arity>;
 
-impl<T, Data> Deref for TypedValueRef<T, Data> 
+impl<T, Data> Deref for TypedValueRef<T, Data>
 where
     for<'a> &'a T: TryFrom<&'a Value>,
     for<'a> &'a mut T: TryFrom<&'a mut Value>,

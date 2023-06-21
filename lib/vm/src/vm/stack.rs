@@ -1,6 +1,6 @@
-use std::{array, fmt::Display, rc::Rc, debug_assert, ops::Deref};
+use std::{debug_assert, fmt::Display};
 
-use gc::{FunctionRef, ValueRef, StringInterner, Heap, Chunk};
+use gc::{Chunk, FunctionRef, StringInterner, ValueRef};
 use instructions::Arity;
 use itertools::Itertools;
 use log::trace;
@@ -48,11 +48,7 @@ impl Display for StackResolved<'_, '_> {
         write!(
             f,
             "Stack {{ stack: [{}], call_frames: [{}] }}",
-            self.0.stack
-                .iter()
-                .map(|v| v.resolve(self.1).to_string())
-                .collect_vec()
-                .join(", "),
+            self.0.stack.iter().map(|v| v.resolve(self.1).to_string()).collect_vec().join(", "),
             self.0.frames().iter().map(|frame| format!("{:?}", frame)).collect_vec().join(", ")
         )
     }
@@ -60,10 +56,7 @@ impl Display for StackResolved<'_, '_> {
 
 impl Stack {
     pub fn new() -> Self {
-        Self {
-            stack: Vec::with_capacity(MAX_STACK),
-            frames: Vec::with_capacity(MAX_FRAMES),
-        }
+        Self { stack: Vec::with_capacity(MAX_STACK), frames: Vec::with_capacity(MAX_FRAMES) }
     }
 
     pub fn resolve<'a, 'b>(&'a self, interner: &'b StringInterner) -> StackResolved<'a, 'b> {
@@ -115,16 +108,12 @@ impl Stack {
 
     pub fn stack_at(&self, index: u8) -> &ValueRef {
         let index = self.frame().base_slot + index as usize;
-        self.stack
-            .get(index)
-            .unwrap_or_else(|| panic!("Invalid stack index: {}", index))
+        self.stack.get(index).unwrap_or_else(|| panic!("Invalid stack index: {}", index))
     }
 
     pub fn stack_at_mut(&mut self, index: u8) -> &mut ValueRef {
         let index = self.frame().base_slot + index as usize;
-        self.stack
-            .get_mut(index)
-            .unwrap_or_else(|| panic!("Invalid stack index: {}", index))
+        self.stack.get_mut(index).unwrap_or_else(|| panic!("Invalid stack index: {}", index))
     }
 
     pub fn pop_n(&mut self, n: usize) {

@@ -2,10 +2,7 @@ use std::fmt::{Debug, Display};
 
 use instructions::Arity;
 
-use crate::{
-    chunk::Chunk,
-    value::Value, string_interner::StringInterner, FunctionRef, TypedValueRef,
-};
+use crate::{chunk::Chunk, string_interner::StringInterner, value::Value};
 
 use super::RloxString;
 

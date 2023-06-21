@@ -2,8 +2,8 @@ use std::{iter::Peekable, mem::size_of, unreachable};
 
 use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
-use gc::{Heap, Function, StringInterner, Chunk, Value, RloxString};
-use instructions::{Instruction, Jump, Arity};
+use gc::{Chunk, Function, Heap, RloxString, StringInterner, Value};
+use instructions::{Arity, Instruction, Jump};
 use log::trace;
 use scanner::{token::TokenData, Token, TokenStream, TokenType};
 
@@ -173,9 +173,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         &mut self.current_function_mut().chunk
     }
 
-    pub fn compile(
-        mut self,
-    ) -> std::result::Result<Function, RloxErrors> {
+    pub fn compile(mut self) -> std::result::Result<Function, RloxErrors> {
         let mut errors = RloxErrors(Vec::new());
 
         let final_token = loop {
@@ -271,7 +269,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         let function = self.functions.pop().unwrap().function;
         let index = self.add_constant(function.into(), &function_token)?;
-        self.current_chunk().write_instruction(Instruction::Constant { index }, function_token.line());
+        self.current_chunk()
+            .write_instruction(Instruction::Constant { index }, function_token.line());
 
         Ok(())
     }
@@ -369,8 +368,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }
 
         let name = RloxString::new(token.lexeme(), self.interner);
-        let index =
-            self.add_constant(name.into(), &token)?;
+        let index = self.add_constant(name.into(), &token)?;
 
         Ok((index, token))
     }

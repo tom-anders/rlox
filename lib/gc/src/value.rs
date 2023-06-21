@@ -1,5 +1,3 @@
-use std::ops::{Div, Mul, Neg, Sub};
-
 mod rlox_string;
 pub use rlox_string::RloxString;
 
@@ -34,7 +32,9 @@ impl std::fmt::Debug for ValueWithInterner<'_, '_> {
             ValueWithInterner(Value::Number(n), _) => write!(f, "Number({})", n),
             ValueWithInterner(Value::Boolean(b), _) => write!(f, "Boolean({})", b),
             ValueWithInterner(Value::Nil, _) => write!(f, "Nil"),
-            ValueWithInterner(Value::String(s), interner) => write!(f, "String({})", s.resolve(interner)),
+            ValueWithInterner(Value::String(s), interner) => {
+                write!(f, "String({})", s.resolve(interner))
+            }
             ValueWithInterner(Value::Function(fun), interner) => {
                 write!(f, "Function({:?})", FunctionDebug(fun, interner))
             }

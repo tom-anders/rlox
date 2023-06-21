@@ -2,10 +2,7 @@ use std::{fmt::Debug, mem::size_of, writeln};
 
 use instructions::{Instruction, Jump, OpCode};
 
-use crate::{
-    string_interner::StringInterner,
-    value::RloxString, ValueRef, Heap, StringRef,
-};
+use crate::{string_interner::StringInterner, StringRef, ValueRef};
 
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct Chunk {
