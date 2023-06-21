@@ -1,8 +1,6 @@
 use std::{marker::PhantomData, ops::Deref, pin::Pin};
 
-use instructions::Arity;
-
-use crate::{Function, RloxString, StringInterner, Value};
+use crate::{Function, RloxString, StringInterner, Value, Closure};
 
 #[derive(Debug)]
 pub struct Heap {
@@ -37,10 +35,6 @@ impl Deref for ValueRef {
 }
 
 impl ValueRef {
-    pub fn as_string(&self) -> StringRef {
-        TypedValueRef::<RloxString, ()>(*self, PhantomData, ())
-    }
-
     pub fn is_truthy(&self) -> bool {
         !matches!(self.deref(), Value::Nil | Value::Boolean(false))
     }
@@ -108,16 +102,16 @@ impl ValueRef {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TypedValueRef<T, Data>(ValueRef, PhantomData<T>, Data);
+pub struct TypedValueRef<T>(ValueRef, PhantomData<T>);
 
-pub type FunctionRef = TypedValueRef<Function, Arity>;
+pub type FunctionRef = TypedValueRef<Function>;
 
-impl<T, Data> Deref for TypedValueRef<T, Data>
+pub type ClosureRef = TypedValueRef<Closure>;
+
+impl<T> Deref for TypedValueRef<T>
 where
     for<'a> &'a T: TryFrom<&'a Value>,
-    for<'a> &'a mut T: TryFrom<&'a mut Value>,
     for<'a> <&'a T as std::convert::TryFrom<&'a Value>>::Error: std::fmt::Debug,
-    for<'a> <&'a mut T as std::convert::TryFrom<&'a mut Value>>::Error: std::fmt::Debug,
 {
     type Target = T;
 
@@ -126,13 +120,13 @@ where
     }
 }
 
-impl FunctionRef {
-    pub fn new(value: ValueRef, arity: Arity) -> Self {
-        Self(value, PhantomData, arity)
+impl <T> From<ValueRef> for TypedValueRef<T> {
+    fn from(value: ValueRef) -> Self {
+        Self(value, PhantomData)
     }
 }
 
-pub type StringRef = TypedValueRef<RloxString, ()>;
+pub type StringRef = TypedValueRef<RloxString>;
 
 impl StringRef {
     pub fn resolve<'a>(&self, interner: &'a StringInterner) -> &'a str {

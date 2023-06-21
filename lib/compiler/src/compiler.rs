@@ -118,44 +118,55 @@ enum FunctionType {
     Script,
 }
 
-#[derive(Debug)]
-struct CurrentFunction {
-    ty: FunctionType,
-    function: Function,
+#[derive(Debug, PartialEq)]
+enum Upvalue {
+    Local(u8),
+    Upvalue(u8),
 }
 
-impl CurrentFunction {
+// This corresponds to the stack of compilers in clox
+#[derive(Debug)]
+struct FunctionToCompile<'a> {
+    ty: FunctionType,
+    function: Function,
+    locals: Vec<Local<'a>>,
+    scope: Scope,
+    upvalues: Vec<Upvalue>,
+}
+
+impl FunctionToCompile<'_> {
     fn script(interner: &mut StringInterner) -> Self {
-        Self { ty: FunctionType::Script, function: Function::new(Arity(0), "", interner) }
+        Self::new(
+            FunctionType::Script,
+            Function::new(Arity(0), "", interner),
+            Scope::global(),
+        )
     }
 
-    fn new(ty: FunctionType, function: Function) -> Self {
-        Self { ty, function }
+    fn new(ty: FunctionType, function: Function, scope: Scope) -> Self {
+        let mut res = Self { ty, function, locals: Vec::with_capacity(u8::MAX as usize + 1), scope, upvalues: Vec::with_capacity(8) };
+
+        res.locals.push(Local { name: "", depth: Some(0) });
+        res
     }
 }
 
 #[derive(Debug)]
 pub struct Compiler<'a, 'b> {
     token_stream: Peekable<TokenStream<'a>>,
-    functions: Vec<CurrentFunction>,
-    locals: Vec<Local<'a>>,
-    scope: Scope,
+    functions: Vec<FunctionToCompile<'a>>,
     interner: &'b mut StringInterner,
     heap: &'b mut Heap,
 }
 
 impl<'a, 'b> Compiler<'a, 'b> {
     pub fn new(source: &'a str, interner: &'b mut StringInterner, heap: &'b mut Heap) -> Self {
-        let mut locals = Vec::with_capacity(u8::MAX as usize + 1);
-        locals.push(Local { name: "", depth: Some(0) });
         // Don't think anyone will nest more than 8 functions in the real world
-        let mut functions = Vec::with_capacity(8);
-        functions.push(CurrentFunction::script(interner));
+        let mut data_stack = Vec::with_capacity(8);
+        data_stack.push(FunctionToCompile::script(interner));
         Self {
             token_stream: TokenStream::new(source).peekable(),
-            functions,
-            locals,
-            scope: Scope::global(),
+            functions: data_stack,
             interner,
             heap,
         }
@@ -171,6 +182,34 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn current_chunk(&mut self) -> &mut Chunk {
         &mut self.current_function_mut().chunk
+    }
+
+    fn num_locals(&self) -> usize {
+        self.locals().len()
+    }
+
+    fn locals(&self) -> &[Local] {
+        &self.functions.last().unwrap().locals
+    }
+
+    fn locals_mut(&mut self) -> &mut Vec<Local<'a>> {
+        &mut self.functions.last_mut().unwrap().locals
+    }
+
+    fn current_scope(&self) -> &Scope {
+        &self.functions.last().unwrap().scope
+    }
+
+    fn current_scope_mut(&mut self) -> &mut Scope {
+        &mut self.functions.last_mut().unwrap().scope
+    }
+
+    fn upvalues(&self) -> &[Upvalue] {
+        &self.functions.last().unwrap().upvalues
+    }
+
+    fn upvalues_mut(&mut self) -> &mut Vec<Upvalue> {
+        &mut self.functions.last_mut().unwrap().upvalues
     }
 
     pub fn compile(mut self) -> std::result::Result<Function, RloxErrors> {
@@ -233,9 +272,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let function_token = self
             .consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("function name"))?;
 
-        self.functions.push(CurrentFunction::new(ty, Function::new(Arity(0), name, self.interner)));
-
-        self.scope.begin_scope();
+        self.functions.push(FunctionToCompile::new(ty, Function::new(Arity(0), name, self.interner), self.current_scope().next_depth()));
 
         let mut arity = Arity(0);
         if self.peek().unwrap()? != RightParen {
@@ -268,9 +305,9 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.end_scope(end_fun_line);
 
         let function = self.functions.pop().unwrap().function;
-        let index = self.add_constant(function.into(), &function_token)?;
+        let constant_index = self.add_constant(function.into(), &function_token)?;
         self.current_chunk()
-            .write_instruction(Instruction::Constant { index }, function_token.line());
+            .write_instruction(Instruction::Closure { constant_index }, function_token.line());
 
         Ok(())
     }
@@ -316,18 +353,14 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn named_variable(&mut self, identifier: &Token<'a>, can_assign: bool) -> Result<()> {
-        let (get_instr, set_instr) = match self.resolve_local(identifier) {
-            Some(stack_slot) => {
-                (Instruction::GetLocal { stack_slot }, Instruction::SetLocal { stack_slot })
-            }
-            None => {
-                let name = RloxString::new(identifier.lexeme(), self.interner);
-                let constant_index = self.add_constant(name.into(), identifier)?;
-                (
-                    Instruction::GetGlobal { constant_index },
-                    Instruction::SetGlobal { constant_index },
-                )
-            }
+        let (get_instr, set_instr) = if let Some(stack_slot) = Self::resolve_local(self.locals(), identifier) {
+            (Instruction::GetLocal { stack_slot }, Instruction::SetLocal { stack_slot })
+        } else if let Some(upvalue_index) = Self::resolve_upvalue(&mut self.functions, identifier) {
+            (Instruction::GetUpvalue { upvalue_index }, Instruction::SetUpvalue { upvalue_index })
+        } else {
+            let name = RloxString::new(identifier.lexeme(), self.interner);
+            let constant_index = self.add_constant(name.into(), identifier)?;
+            (Instruction::GetGlobal { constant_index }, Instruction::SetGlobal { constant_index })
         };
 
         if can_assign && self.consume(Equal)?.is_ok() {
@@ -339,11 +372,36 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Ok(())
     }
 
-    fn resolve_local(&self, identifier: &Token<'a>) -> Option<u8> {
-        trace!("Resolving local {:?} from {:?}", identifier.lexeme(), self.locals);
-        self.locals.iter().rev().enumerate().find_map(|(i, local)| {
+    fn resolve_upvalue(functions: &mut [FunctionToCompile], identifier: &Token<'a>) -> Option<u8> {
+        let previous = functions.iter().rev().nth(1)?;
+
+        if let Some(index) = Self::resolve_local(&previous.locals, identifier) {
+            return Some(Self::add_upvalue(&mut functions.last_mut().unwrap().upvalues, Upvalue::Local(index)));
+        }
+
+        let functions_len = functions.len();
+        if let Some(upvalue) = Self::resolve_upvalue(&mut functions[..functions_len-1], identifier) {
+            return Some(Self::add_upvalue(&mut functions.last_mut().unwrap().upvalues, Upvalue::Upvalue(upvalue)));
+        }
+
+        None
+    }
+
+    fn add_upvalue(upvalues: &mut Vec<Upvalue>, upvalue: Upvalue) -> u8 {
+        match upvalues.iter().position(|u| u == &upvalue) {
+            Some(index) => index as u8,
+            None => {
+                upvalues.push(upvalue);
+                upvalues.len() as u8 - 1
+            }
+        }
+    }
+
+    fn resolve_local(locals: &[Local], identifier: &Token<'a>) -> Option<u8> {
+        trace!("Resolving local {:?} from {:?}", identifier.lexeme(), locals);
+        locals.iter().rev().enumerate().find_map(|(i, local)| {
             (local.depth.is_some() && local.name == identifier.lexeme())
-                .then_some((self.locals.len() - i - 1) as u8)
+                .then_some((locals.len() - i - 1) as u8)
         })
     }
 
@@ -363,7 +421,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let token = self.consume_or_error(Identifier, error)?;
 
         self.declare_variable(&token)?;
-        if self.scope.inside_local() {
+        if self.current_scope().inside_local() {
             return Ok((0, token));
         }
 
@@ -374,16 +432,16 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn declare_variable(&mut self, name: &Token<'a>) -> Result<()> {
-        if self.scope.inside_global() {
+        if self.current_scope().inside_global() {
             return Ok(());
         }
 
         if self
-            .locals
+            .locals()
             .iter()
             .rev()
             .take_while(|local| match local.depth {
-                Some(depth) => depth == self.scope.depth(),
+                Some(depth) => depth == self.current_scope().depth(),
                 None => false,
             })
             .any(|local| local.name == name.lexeme())
@@ -399,22 +457,22 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn add_local(&mut self, name: &Token<'a>) -> Result<()> {
-        if self.locals.len() == self.locals.capacity() {
+        if self.num_locals() == self.functions.last().unwrap().locals.capacity() {
             return Err(CompilerError::new(CompilerErrorType::TooManyLocals, name.clone()).into());
         }
 
-        self.locals.push(Local { name: name.lexeme(), depth: None });
+        self.locals_mut().push(Local { name: name.lexeme(), depth: None });
         Ok(())
     }
 
     fn mark_initialized(&mut self) {
-        if self.scope.inside_local() {
-            self.locals.last_mut().unwrap().depth = Some(self.scope.depth());
+        if self.current_scope().inside_local() {
+            self.locals_mut().last_mut().unwrap().depth = Some(self.current_scope().depth());
         }
     }
 
     fn define_variable(&mut self, constant_index: u8, line: Line) -> Result<()> {
-        if self.scope.inside_local() {
+        if self.current_scope().inside_local() {
             self.mark_initialized();
             return Ok(());
         }
@@ -432,7 +490,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         } else if self.consume(Return)?.is_ok() {
             self.return_statement()
         } else if self.consume(LeftBrace)?.is_ok() {
-            self.scope.begin_scope();
+            self.current_scope_mut().begin_scope();
             let right_brace_line = self.block()?.line();
             self.end_scope(right_brace_line);
             Ok(())
@@ -532,19 +590,20 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn end_scope(&mut self, line: Line) {
         let last_local_in_scope = self
-            .locals
+            .locals()
             .iter()
             .rev()
             .enumerate()
-            .find_map(|(index, local)| (local.depth != Some(self.scope.depth())).then_some(index))
+            .find_map(|(index, local)| (local.depth != Some(self.current_scope().depth())).then_some(index))
             .unwrap_or(0);
 
         let num_locals_to_pop = last_local_in_scope as u8;
         self.current_chunk().write_instruction(Instruction::PopN(num_locals_to_pop), line);
 
-        self.locals.truncate(self.locals.len() - last_local_in_scope);
+        let num_locals = self.num_locals();
+        self.locals_mut().truncate(num_locals - last_local_in_scope);
 
-        self.scope.end_scope();
+        self.current_scope_mut().end_scope();
     }
 
     fn block(&mut self) -> Result<Token> {

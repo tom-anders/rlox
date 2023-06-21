@@ -8,6 +8,12 @@ impl Scope {
         Scope { depth: 0 }
     }
 
+    pub fn next_depth(&self) -> Self {
+        Scope {
+            depth: self.depth + 1,
+        }
+    }
+
     pub fn depth(&self) -> usize {
         self.depth
     }

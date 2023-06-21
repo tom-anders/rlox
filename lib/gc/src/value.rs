@@ -4,6 +4,9 @@ pub use rlox_string::RloxString;
 mod function;
 pub use function::*;
 
+mod closure;
+pub use closure::*;
+
 use crate::string_interner::StringInterner;
 
 #[derive(Clone, Debug, PartialEq, derive_more::From, derive_more::TryInto)]
@@ -14,6 +17,7 @@ pub enum Value {
     Nil,
     String(RloxString),
     Function(Function),
+    Closure(Closure),
     NativeFun(NativeFun),
 }
 
@@ -38,6 +42,9 @@ impl std::fmt::Debug for ValueWithInterner<'_, '_> {
             ValueWithInterner(Value::Function(fun), interner) => {
                 write!(f, "Function({:?})", FunctionDebug(fun, interner))
             }
+            ValueWithInterner(Value::Closure(closure), interner) => {
+                write!(f, "Function({:?})", FunctionDebug(&closure.function(), interner))
+            }
             ValueWithInterner(Value::NativeFun(fun), _) => write!(f, "NativeFun({})", fun),
         }
     }
@@ -52,6 +59,9 @@ impl std::fmt::Display for ValueWithInterner<'_, '_> {
             ValueWithInterner(Value::String(s), interner) => write!(f, "{}", s.resolve(interner)),
             ValueWithInterner(Value::Function(fun), interner) => {
                 write!(f, "{}", FunctionDisplay(fun, interner))
+            }
+            ValueWithInterner(Value::Closure(closure), interner) => {
+                write!(f, "{}", FunctionDisplay(&closure.function(), interner))
             }
             ValueWithInterner(Value::NativeFun(fun), _) => write!(f, "{}", fun),
         }

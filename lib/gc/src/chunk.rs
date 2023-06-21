@@ -2,7 +2,7 @@ use std::{fmt::Debug, mem::size_of, writeln};
 
 use instructions::{Instruction, Jump, OpCode};
 
-use crate::{string_interner::StringInterner, StringRef, ValueRef};
+use crate::{string_interner::StringInterner, StringRef, ValueRef, FunctionRef};
 
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct Chunk {
@@ -56,7 +56,11 @@ impl Chunk {
     }
 
     pub fn get_string_constant(&self, index: u8) -> StringRef {
-        self.constants().get(index as usize).expect("Missing string constant").as_string()
+        (*self.constants().get(index as usize).expect("Missing string constant")).into()
+    }
+
+    pub fn get_function_constant(&self, index: u8) -> FunctionRef {
+        (*self.constants().get(index as usize).expect("Missing function constant")).into()
     }
 
     pub fn disassemble_instruction(
@@ -86,11 +90,14 @@ impl Chunk {
         let op_args = match instr {
             Instruction::PopN(n) => format!("'{n}'"),
             Instruction::Constant { index } => get_constant(index),
+            Instruction::Closure { constant_index } => get_constant(constant_index),
             Instruction::DefineGlobal { constant_index } => get_constant(constant_index),
             Instruction::SetGlobal { constant_index } => get_constant(constant_index),
             Instruction::GetGlobal { constant_index } => get_constant(constant_index),
             Instruction::SetLocal { stack_slot } => format!("'{stack_slot}'"),
             Instruction::GetLocal { stack_slot } => format!("'{stack_slot}'"),
+            Instruction::GetUpvalue { upvalue_index } => format!("'{}'", upvalue_index),
+            Instruction::SetUpvalue { upvalue_index } => format!("'{}'", upvalue_index),
             Instruction::JumpIfFalse(jump) => format!("'{}'", jump.0),
             Instruction::Jump(jump) => format!("'{}'", jump.0),
             Instruction::Loop(jump) => format!("'{}'", jump.0),

@@ -6,7 +6,7 @@ use std::{
 
 use compiler::Compiler;
 use errors::RloxErrors;
-use gc::{Chunk, FunctionRef, Heap, NativeFun, RloxString, StringInterner, Value, ValueRef};
+use gc::{Chunk, Heap, NativeFun, RloxString, StringInterner, Value, ValueRef, Closure};
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
 use log::trace;
@@ -105,22 +105,24 @@ impl Vm {
             Compiler::new(source, &mut self.string_interner, &mut self.heap).compile()?;
 
         let function_ref = self.heap.alloc(function.into());
-        self.push_ref(function_ref);
-        self.call(function_ref, Arity(0)).unwrap();
+        let closure = self.heap.alloc(Closure::new(function_ref.into()).into());
+        self.push_ref(closure);
+        self.call(closure, Arity(0)).unwrap();
         self.run(stdout)?;
         Ok(())
     }
 
     fn call(&mut self, value: ValueRef, arg_count: Arity) -> Result<()> {
         match &*value {
-            Value::Function(function) => {
+            Value::Closure(closure) => {
+                let function = closure.function();
                 if function.arity != arg_count {
                     return Err(self.runtime_error(RuntimeError::InvalidArgumentCount {
                         expected: function.arity,
                         got: arg_count,
                     }));
                 }
-                self.stack.push_frame(FunctionRef::new(value, function.arity), arg_count);
+                self.stack.push_frame(value.into());
                 Ok(())
             }
             Value::NativeFun(native_fun) => {
@@ -316,6 +318,16 @@ impl Vm {
                 Instruction::Call { arg_count } => {
                     let callee = self.stack.peek_n(arg_count.0 as usize).next().unwrap();
                     self.call(*callee, arg_count)?;
+                }
+                Instruction::Closure { constant_index } => {
+                    let function = self.stack.frame_chunk().get_function_constant(constant_index);
+                    self.push(Closure::new(function).into());
+                }
+                Instruction::SetUpvalue { upvalue_index } => {
+                    todo!()
+                }
+                Instruction::GetUpvalue { upvalue_index } => {
+                    todo!()
                 }
             }
         }
