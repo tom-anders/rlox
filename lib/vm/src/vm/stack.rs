@@ -1,6 +1,6 @@
-use std::{fmt::Display, debug_assert};
+use std::fmt::Display;
 
-use gc::{StringInterner, FunctionRef, Value, Chunk};
+use gc::{Chunk, Value, StringInterner, ClosureRef};
 use instructions::Arity;
 use itertools::Itertools;
 use log::trace;
@@ -10,7 +10,7 @@ const MAX_STACK: usize = MAX_FRAMES * u8::MAX as usize;
 
 #[derive(Debug, Clone)]
 pub struct CallFrame {
-    function: FunctionRef,
+    closure: ClosureRef,
     // FIXME: Using a raw pointer would be a bit more performant, but would also require `unsafe`.
     // So let's leave it like this for now and maybe optimize later.
     ip: usize,
@@ -18,8 +18,8 @@ pub struct CallFrame {
 }
 
 impl CallFrame {
-    pub fn new(function: FunctionRef, base_slot: usize) -> Self {
-        Self { function, ip: 0, base_slot }
+    pub fn new(closure: ClosureRef, base_slot: usize) -> Self {
+        Self { closure, ip: 0, base_slot }
     }
 
     pub fn decr_ip(&mut self, offset: usize) {
@@ -79,7 +79,7 @@ impl Stack {
     }
 
     pub fn frame_chunk(&self) -> &Chunk {
-        &self.frame().function.chunk
+        self.frame().closure.chunk()
     }
 
     pub fn current_line(&self) -> usize {
@@ -90,15 +90,15 @@ impl Stack {
         &self.frames
     }
 
-    pub fn push_frame(&mut self, function: FunctionRef, arity: Arity) {
+    pub fn push_frame(&mut self, closure: ClosureRef) {
         assert!(self.frames.len() < MAX_FRAMES, "Stack overflow");
-        self.frames.push(CallFrame::new(function, self.stack.len() - arity.0 as usize - 1));
+        self.frames.push(CallFrame::new(closure.clone(), self.stack.len() - closure.arity().0 as usize - 1));
     }
 
     pub fn pop_frame(&mut self) {
         let popped_frame = self.frames.pop().expect("Stack underflow");
         // +1 for the function itself
-        self.pop_n(popped_frame.function.arity.0 as usize + 1);
+        self.pop_n(popped_frame.closure.arity().0 as usize + 1);
     }
 
     pub fn push(&mut self, value: Value) {
@@ -145,7 +145,7 @@ impl Stack {
             .iter()
             .rev()
             .map(|frame| {
-                let function = &*frame.function;
+                let function = &*frame.closure.function();
                 let name = if function.name.resolve(interner).is_empty() {
                     "script".to_string()
                 } else {

@@ -11,6 +11,9 @@ pub use object::*;
 mod function;
 pub use function::*;
 
+mod closure;
+pub use closure::*;
+
 #[derive(Clone, Copy, Debug, PartialEq, derive_more::From, derive_more::TryInto, derive_more::Unwrap)]
 #[try_into(owned, ref, ref_mut)]
 pub enum Value {
@@ -112,7 +115,8 @@ impl std::fmt::Debug for ValueWithInterner<'_, '_> {
             ValueWithInterner(Value::Nil, _) => write!(f, "Nil"),
             ValueWithInterner(Value::Object(o), _) => match o.deref() {
                 Object::String(s) => write!(f, "String({:?})", s.resolve(self.1)),
-                Object::Function(fun) => write!(f, "Function({:?})", fun.resolve(self.1)),
+                Object::Function(fun) => write!(f, "Function({:?})", fun.debug(self.1)),
+                Object::Closure(closure) => write!(f, "Closure({:?})", closure.function().debug(self.1)),
                 Object::NativeFun(fun) => write!(f, "NativeFun<{:?}>", fun),
             }
         }
@@ -128,6 +132,7 @@ impl std::fmt::Display for ValueWithInterner<'_, '_> {
             ValueWithInterner(Value::Object(o), _) => match o.deref() {
                 Object::String(s) => write!(f, "{}", s.resolve(self.1)),
                 Object::Function(fun) => write!(f, "<fn {}>", fun.name.resolve(self.1)),
+                Object::Closure(closure) => write!(f, "<fn {}>", closure.function().name.resolve(self.1)),
                 Object::NativeFun(native_fn) => write!(f, "<native fn {:?}>", native_fn),
             }
         }

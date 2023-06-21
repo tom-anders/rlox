@@ -5,9 +5,7 @@ use std::{
 
 use compiler::Compiler;
 use errors::RloxErrors;
-use gc::{
-    Chunk, FunctionRef, Heap, NativeFun, RloxString, StringInterner, Value, Object
-};
+use gc::{Object, Value, NativeFun, RloxString, Chunk, Closure, Heap, StringInterner};
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
 use log::trace;
@@ -101,10 +99,11 @@ impl Vm {
     pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> Result<()> {
         let function =
             Compiler::new(source, &mut self.string_interner, &mut self.heap).compile()?;
+        let function_ref = self.heap.alloc(function);
 
-        let function = Value::Object(self.heap.alloc(function.into()));
-        self.push(function);
-        self.call(function, Arity(0)).unwrap();
+        let closure = Value::Object(self.heap.alloc(Closure::new(function_ref.unwrap_function())));
+        self.push(closure);
+        self.call(closure, Arity(0)).unwrap();
         self.run(stdout)?;
         Ok(())
     }
@@ -112,14 +111,14 @@ impl Vm {
     fn call(&mut self, value: Value, arg_count: Arity) -> Result<()> {
         match value {
             Value::Object(obj) => match &*obj {
-                Object::Function(function) => {
-                    if function.arity != arg_count {
+                Object::Closure(closure) => {
+                    if closure.function().arity != arg_count {
                         return Err(self.runtime_error(RuntimeError::InvalidArgumentCount {
-                            expected: function.arity,
+                            expected: closure.function().arity,
                             got: arg_count,
                         }));
                     }
-                    self.stack.push_frame(obj.try_into().unwrap(), arg_count);
+                    self.stack.push_frame(obj.try_into().unwrap());
                     Ok(())
                 }
                 Object::NativeFun(native_fun) => {
@@ -130,14 +129,14 @@ impl Vm {
                     self.push(result);
                     Ok(())
                 }
-            _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
+                _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
             }
             _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
         }
     }
 
     fn define_native(&mut self, name: &str, native_fun: fn(Vec<Value>) -> Value) {
-        let native_fun = self.heap.alloc(NativeFun(native_fun).into());
+        let native_fun = self.heap.alloc(NativeFun(native_fun));
         self.globals.insert(
             RloxString::new(name, &mut self.string_interner),
             native_fun.into(),
@@ -332,6 +331,17 @@ impl Vm {
                 Instruction::Call { arg_count } => {
                     let callee = self.stack.peek_n(arg_count.0 as usize).next().unwrap();
                     self.call(*callee, arg_count)?;
+                }
+                Instruction::Closure { constant_index } => {
+                    let function = self.stack.frame_chunk().get_function_constant(constant_index);
+                    let closure = self.heap.alloc(Closure::new(function));
+                    self.push(closure);
+                }
+                Instruction::SetUpvalue { upvalue_index } => {
+                    todo!()
+                }
+                Instruction::GetUpvalue { upvalue_index } => {
+                    todo!()
                 }
             }
         }

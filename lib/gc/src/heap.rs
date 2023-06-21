@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, ops::{Deref, DerefMut}, pin::Pin};
 
-use crate::{RloxString, StringInterner, Object, Function};
+use crate::{Object, StringInterner, RloxString, Function, Closure};
 
 #[derive(Debug)]
 pub struct Heap {
@@ -54,6 +54,7 @@ impl ObjectRef {
 pub struct TypedObjectRef<T>(ObjectRef, PhantomData<T>);
 
 pub type FunctionRef = TypedObjectRef<Function>;
+pub type ClosureRef = TypedObjectRef<Closure>;
 
 impl<T> Deref for TypedObjectRef<T>
 where
@@ -98,8 +99,8 @@ impl Heap {
         Self { objects: Vec::with_capacity(cap) }
     }
 
-    pub fn alloc(&mut self, object: Object) -> ObjectRef {
-        self.objects.push(Box::pin(object));
+    pub fn alloc(&mut self, object: impl Into<Object>) -> ObjectRef {
+        self.objects.push(Box::pin(object.into()));
 
         ObjectRef(self.objects.last_mut().unwrap().deref_mut())
     }
