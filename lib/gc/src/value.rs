@@ -1,4 +1,6 @@
 mod rlox_string;
+use std::unreachable;
+
 pub use rlox_string::RloxString;
 
 mod function;
@@ -6,6 +8,9 @@ pub use function::*;
 
 mod closure;
 pub use closure::*;
+
+mod upvalue;
+pub use upvalue::*;
 
 use crate::string_interner::StringInterner;
 
@@ -18,6 +23,7 @@ pub enum Value {
     String(RloxString),
     Function(Function),
     Closure(Closure),
+    Upvalue(Upvalue),
     NativeFun(NativeFun),
 }
 
@@ -46,6 +52,7 @@ impl std::fmt::Debug for ValueWithInterner<'_, '_> {
                 write!(f, "Function({:?})", FunctionDebug(&closure.function(), interner))
             }
             ValueWithInterner(Value::NativeFun(fun), _) => write!(f, "NativeFun({})", fun),
+            ValueWithInterner(Value::Upvalue(upvalue), interner) => write!(f, "Upvalue({})", upvalue.location().resolve(interner)),
         }
     }
 }
@@ -64,6 +71,7 @@ impl std::fmt::Display for ValueWithInterner<'_, '_> {
                 write!(f, "{}", FunctionDisplay(&closure.function(), interner))
             }
             ValueWithInterner(Value::NativeFun(fun), _) => write!(f, "{}", fun),
+            ValueWithInterner(Value::Upvalue(fun), _) => unreachable!("Upvalues are implementation details and should be resolved before they're printed"),
         }
     }
 }

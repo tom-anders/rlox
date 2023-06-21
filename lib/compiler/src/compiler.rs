@@ -3,7 +3,7 @@ use std::{iter::Peekable, mem::size_of, unreachable};
 use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
 use gc::{Chunk, Function, Heap, RloxString, StringInterner, Value};
-use instructions::{Arity, Instruction, Jump};
+use instructions::{Arity, Instruction, Jump, CompiledUpvalue};
 use log::trace;
 use scanner::{token::TokenData, Token, TokenStream, TokenType};
 
@@ -118,12 +118,6 @@ enum FunctionType {
     Script,
 }
 
-#[derive(Debug, PartialEq)]
-enum Upvalue {
-    Local(u8),
-    Upvalue(u8),
-}
-
 // This corresponds to the stack of compilers in clox
 #[derive(Debug)]
 struct FunctionToCompile<'a> {
@@ -131,7 +125,7 @@ struct FunctionToCompile<'a> {
     function: Function,
     locals: Vec<Local<'a>>,
     scope: Scope,
-    upvalues: Vec<Upvalue>,
+    upvalues: Vec<CompiledUpvalue>,
 }
 
 impl FunctionToCompile<'_> {
@@ -202,14 +196,6 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn current_scope_mut(&mut self) -> &mut Scope {
         &mut self.functions.last_mut().unwrap().scope
-    }
-
-    fn upvalues(&self) -> &[Upvalue] {
-        &self.functions.last().unwrap().upvalues
-    }
-
-    fn upvalues_mut(&mut self) -> &mut Vec<Upvalue> {
-        &mut self.functions.last_mut().unwrap().upvalues
     }
 
     pub fn compile(mut self) -> std::result::Result<Function, RloxErrors> {
@@ -304,10 +290,19 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.end_scope(end_fun_line);
 
-        let function = self.functions.pop().unwrap().function;
-        let constant_index = self.add_constant(function.into(), &function_token)?;
+        self.return_nil(end_fun_line);
+
+        let compiled_function = self.functions.pop().unwrap();
+        let constant_index = self.add_constant(compiled_function.function.into(), &function_token)?;
         self.current_chunk()
-            .write_instruction(Instruction::Closure { constant_index }, function_token.line());
+            .write_instruction(Instruction::Closure { constant_index, upvalue_count: compiled_function.upvalues.len() as u8 }, function_token.line());
+
+        self.current_chunk().write_bytes(compiled_function.upvalues.iter().flat_map(|u| {
+            match u {
+                CompiledUpvalue::Local(index) => [0_u8, *index],
+                CompiledUpvalue::Upvalue(index) => [1_u8, *index],
+            }
+        }), function_token.line());
 
         Ok(())
     }
@@ -376,18 +371,18 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let previous = functions.iter().rev().nth(1)?;
 
         if let Some(index) = Self::resolve_local(&previous.locals, identifier) {
-            return Some(Self::add_upvalue(&mut functions.last_mut().unwrap().upvalues, Upvalue::Local(index)));
+            return Some(Self::add_upvalue(&mut functions.last_mut().unwrap().upvalues, CompiledUpvalue::Local(index)));
         }
 
         let functions_len = functions.len();
         if let Some(upvalue) = Self::resolve_upvalue(&mut functions[..functions_len-1], identifier) {
-            return Some(Self::add_upvalue(&mut functions.last_mut().unwrap().upvalues, Upvalue::Upvalue(upvalue)));
+            return Some(Self::add_upvalue(&mut functions.last_mut().unwrap().upvalues, CompiledUpvalue::Upvalue(upvalue)));
         }
 
         None
     }
 
-    fn add_upvalue(upvalues: &mut Vec<Upvalue>, upvalue: Upvalue) -> u8 {
+    fn add_upvalue(upvalues: &mut Vec<CompiledUpvalue>, upvalue: CompiledUpvalue) -> u8 {
         match upvalues.iter().position(|u| u == &upvalue) {
             Some(index) => index as u8,
             None => {

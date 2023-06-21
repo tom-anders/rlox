@@ -1,6 +1,6 @@
-use std::{marker::PhantomData, ops::Deref, pin::Pin};
+use std::{marker::PhantomData, ops::{Deref, DerefMut}, pin::Pin};
 
-use crate::{Function, RloxString, StringInterner, Value, Closure};
+use crate::{Function, RloxString, StringInterner, Value, Closure, Upvalue};
 
 #[derive(Debug)]
 pub struct Heap {
@@ -8,7 +8,7 @@ pub struct Heap {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ValueRef(*const Value);
+pub struct ValueRef(*mut Value);
 
 impl Deref for ValueRef {
     type Target = Value;
@@ -25,12 +25,19 @@ impl Deref for ValueRef {
         // object that is still reachable.
         //
         // # Aliasing
-        // Right now, ValueRef contains a const pointer and only implements Deref,
-        // but not DerefMut. The heap does not provide any way to mutate values after allocation
-        // either. This means currently only immutable references can ever coexist, but no mutable
-        // ones.
-        // TODO: Revisit this once we have objects
+        // deref_mut() is marked unsafe, callers must make sure that Heap values only modified
+        // when no other mutable/immutable references exist.
+        // As long as this variant is upheld by deref_mut() callers, deref() is safe.
         unsafe { &*self.0 }
+    }
+}
+
+impl ValueRef {
+    /// # Safety
+    /// Callers must make sure this does not violate Rusts's aliasing rules,
+    /// i.e. that there currently are no other mutable/immutable borrows of the same value.
+    pub unsafe fn deref_mut(&mut self) -> &mut Value {
+        &mut *self.0
     }
 }
 
@@ -108,6 +115,8 @@ pub type FunctionRef = TypedValueRef<Function>;
 
 pub type ClosureRef = TypedValueRef<Closure>;
 
+pub type UpvalueRef = TypedValueRef<Upvalue>;
+
 impl<T> Deref for TypedValueRef<T>
 where
     for<'a> &'a T: TryFrom<&'a Value>,
@@ -123,6 +132,18 @@ where
 impl <T> From<ValueRef> for TypedValueRef<T> {
     fn from(value: ValueRef) -> Self {
         Self(value, PhantomData)
+    }
+}
+
+impl<T> TypedValueRef<T>
+where 
+    for<'a> &'a mut T: TryFrom<&'a mut Value>,
+    for<'a> <&'a mut T as std::convert::TryFrom<&'a mut Value>>::Error: std::fmt::Debug,
+{
+    /// # Safety
+    /// Same as ValueRef::deref_mut()
+    pub unsafe fn deref_mut(&mut self) -> &mut T {
+        self.0.deref_mut().try_into().unwrap()
     }
 }
 
@@ -142,6 +163,6 @@ impl Heap {
     pub fn alloc(&mut self, value: Value) -> ValueRef {
         self.objects.push(Box::pin(value));
 
-        ValueRef(self.objects.last().unwrap().deref())
+        ValueRef(self.objects.last_mut().unwrap().deref_mut())
     }
 }

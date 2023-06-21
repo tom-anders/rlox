@@ -22,6 +22,14 @@ impl CallFrame {
         Self { closure, ip: 0, base_slot }
     }
 
+    pub fn closure(&self) -> &ClosureRef {
+        &self.closure
+    }
+
+    pub fn closure_mut(&mut self) -> &mut ClosureRef {
+        &mut self.closure
+    }
+
     pub fn decr_ip(&mut self, offset: usize) {
         self.ip -= offset;
     }

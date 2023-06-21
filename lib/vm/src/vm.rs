@@ -6,8 +6,11 @@ use std::{
 
 use compiler::Compiler;
 use errors::RloxErrors;
-use gc::{Chunk, Heap, NativeFun, RloxString, StringInterner, Value, ValueRef, Closure};
-use instructions::{Arity, Instruction, Jump};
+use gc::{
+    Chunk, Closure, Heap, NativeFun, RloxString, StringInterner, Upvalue, UpvalueRef, Value,
+    ValueRef,
+};
+use instructions::{Arity, CompiledUpvalue, Instruction, Jump};
 use itertools::Itertools;
 use log::trace;
 
@@ -105,7 +108,7 @@ impl Vm {
             Compiler::new(source, &mut self.string_interner, &mut self.heap).compile()?;
 
         let function_ref = self.heap.alloc(function.into());
-        let closure = self.heap.alloc(Closure::new(function_ref.into()).into());
+        let closure = self.heap.alloc(Closure::new(function_ref.into(), vec![]).into());
         self.push_ref(closure);
         self.call(closure, Arity(0)).unwrap();
         self.run(stdout)?;
@@ -319,18 +322,65 @@ impl Vm {
                     let callee = self.stack.peek_n(arg_count.0 as usize).next().unwrap();
                     self.call(*callee, arg_count)?;
                 }
-                Instruction::Closure { constant_index } => {
+                Instruction::Closure { constant_index, upvalue_count } => {
                     let function = self.stack.frame_chunk().get_function_constant(constant_index);
-                    self.push(Closure::new(function).into());
+
+                    let ip = self.stack.frame().ip();
+                    let upvalue_bytes = self.frame_chunk().code()
+                        [ip..ip + 2 * upvalue_count as usize]
+                        .iter()
+                        .copied()
+                        .collect_vec();
+
+                    let upvalues = upvalue_bytes
+                        .chunks(2)
+                        .into_iter()
+                        .map(|chunk| {
+                            let (is_local, index) = (chunk[0], chunk[1]);
+                            if is_local == 0 {
+                                self.capture_upvalue(*self.stack.stack_at(index))
+                            } else {
+                                self.stack.frame().closure().upvalues()[index as usize]
+                            }
+                        })
+                        .collect_vec();
+
+                    self.stack.frame_mut().inc_ip(upvalue_bytes.len());
+
+                    self.push(Closure::new(function, upvalues).into());
                 }
+                Instruction::GetUpvalue { upvalue_index } => self.push_ref(
+                    self.stack
+                        .frame()
+                        .closure()
+                        .upvalues()
+                        .get(upvalue_index as usize)
+                        .expect("invalid upvalue")
+                        .location(),
+                ),
                 Instruction::SetUpvalue { upvalue_index } => {
-                    todo!()
-                }
-                Instruction::GetUpvalue { upvalue_index } => {
-                    todo!()
+                    // SAFETY: No other part of the VM holds on to a dereferenced ValueRef for
+                    // longer than the duration of the current instruction, so at this point there
+                    // won't be any other references to the upvalue or the closure, making deref_mut() safe.
+                    unsafe {
+                        *self
+                            .stack
+                            .frame_mut()
+                            .closure_mut()
+                            .deref_mut()
+                            .upvalues_mut()
+                            .get_mut(upvalue_index as usize)
+                            .expect("Invalid upvalue index")
+                            .deref_mut()
+                            .location_mut() = *self.stack.peek();
+                    }
                 }
             }
         }
+    }
+
+    fn capture_upvalue(&mut self, local: ValueRef) -> UpvalueRef {
+        self.heap.alloc(Upvalue::new(local).into()).into()
     }
 }
 
@@ -373,5 +423,22 @@ mod tests {
         let mut output = Vec::new();
         Vm::new().run_source(source, &mut output).unwrap();
         assert_eq!(String::from_utf8(output).unwrap(), "true\ntrue\n");
+    }
+
+    #[test]
+    fn open_upvalues() {
+        let source = r#"
+            fun outer() {
+              var x = "outside";
+              fun inner() {
+                print x;
+              }
+              inner();
+            }
+            outer();
+        "#;
+        let mut output = Vec::new();
+        Vm::new().run_source(source, &mut output).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap(), "outside\n");
     }
 }

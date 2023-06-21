@@ -254,6 +254,7 @@ dependencies = [
  "cursor",
  "derive_more",
  "instructions",
+ "itertools",
 ]
 
 [[package]]

@@ -24,6 +24,12 @@ impl Arity {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub enum CompiledUpvalue {
+    Local(u8),
+    Upvalue(u8),
+}
+
 #[derive(Debug, Clone, PartialEq, instructions_derive::Instruction)]
 pub enum Instruction {
     Return,
@@ -43,7 +49,7 @@ pub enum Instruction {
     Pop,
     PopN(u8),
     Constant { index: u8 },
-    Closure { constant_index: u8 },
+    Closure { constant_index: u8, upvalue_count: u8 },
     DefineGlobal { constant_index: u8 },
     SetGlobal { constant_index: u8 },
     GetGlobal { constant_index: u8 },
