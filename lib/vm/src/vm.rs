@@ -1,11 +1,15 @@
 use std::{
+    cmp::Ordering,
     collections::{hash_map::Entry, HashMap},
-    io::Write, ops::Deref,
+    io::Write,
+    ops::Deref,
 };
 
 use compiler::Compiler;
 use errors::RloxErrors;
-use gc::{Object, Value, NativeFun, RloxString, Chunk, Closure, Heap, StringInterner};
+use gc::{
+    Chunk, Closure, Heap, NativeFun, Object, RloxString, StringInterner, Upvalue, UpvalueRef, Value,
+};
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
 use log::trace;
@@ -20,6 +24,8 @@ pub struct Vm {
     heap: Heap,
     string_interner: StringInterner,
     globals: HashMap<RloxString, Value>,
+    // TODO clox uses a linked list here, check if this is actually more performant
+    open_upvalues: Vec<UpvalueRef>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -54,6 +60,7 @@ impl Vm {
             string_interner: StringInterner::with_capacity(1024),
             globals: HashMap::new(),
             heap: Heap::with_capacity(1024),
+            open_upvalues: Vec::new(),
         };
         vm.define_native("clock", |_| {
             let now = std::time::SystemTime::now();
@@ -75,17 +82,15 @@ impl Vm {
         InterpretError::RuntimeError {
             line: self.stack.current_line(),
             error: match error {
-                RuntimeError::NotAFunction(v) => format!(
-                    "Expected a function, got {}",
-                    v.resolve(&self.string_interner)
-                ),
+                RuntimeError::NotAFunction(v) => {
+                    format!("Expected a function, got {}", v.resolve(&self.string_interner))
+                }
                 RuntimeError::InvalidArgumentCount { expected, got } => {
                     format!("Expected {} arguments, got {}", expected, got)
                 }
-                RuntimeError::InvalidNegateOperant(v) => format!(
-                    "Expected a number, got {}",
-                    v.resolve(&self.string_interner)
-                ),
+                RuntimeError::InvalidNegateOperant(v) => {
+                    format!("Expected a number, got {}", v.resolve(&self.string_interner))
+                }
                 RuntimeError::InvalidBinaryOperants(l, r) => format!(
                     "Expected two numbers, got {} and {}",
                     l.resolve(&self.string_interner),
@@ -101,7 +106,8 @@ impl Vm {
             Compiler::new(source, &mut self.string_interner, &mut self.heap).compile()?;
         let function_ref = self.heap.alloc(function);
 
-        let closure = Value::Object(self.heap.alloc(Closure::new(function_ref.unwrap_function())));
+        let closure =
+            Value::Object(self.heap.alloc(Closure::new(function_ref.unwrap_function(), vec![])));
         self.push(closure);
         self.call(closure, Arity(0)).unwrap();
         self.run(stdout)?;
@@ -122,25 +128,21 @@ impl Vm {
                     Ok(())
                 }
                 Object::NativeFun(native_fun) => {
-                    let args =
-                        self.stack.peek_n(arg_count.0 as usize);
+                    let args = self.stack.peek_n(arg_count.0 as usize);
                     let result = native_fun.0(args.cloned().collect());
                     self.stack.pop_n(arg_count.0 as usize);
                     self.push(result);
                     Ok(())
                 }
                 _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
-            }
+            },
             _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
         }
     }
 
     fn define_native(&mut self, name: &str, native_fun: fn(Vec<Value>) -> Value) {
         let native_fun = self.heap.alloc(NativeFun(native_fun));
-        self.globals.insert(
-            RloxString::new(name, &mut self.string_interner),
-            native_fun.into(),
-        );
+        self.globals.insert(RloxString::new(name, &mut self.string_interner), native_fun.into());
     }
 
     fn frame_chunk(&self) -> &Chunk {
@@ -158,10 +160,7 @@ impl Vm {
                 self.globals
                     .iter()
                     .map(|(name, value)| {
-                        (
-                            name.resolve(&self.string_interner),
-                            value.resolve(&self.string_interner),
-                        )
+                        (name.resolve(&self.string_interner), value.resolve(&self.string_interner))
                     })
                     .collect_vec()
             );
@@ -169,10 +168,7 @@ impl Vm {
             log::trace!(
                 "{}",
                 self.frame_chunk()
-                    .disassemble_instruction(
-                        self.stack.frame().ip(),
-                        &self.string_interner,
-                    )
+                    .disassemble_instruction(self.stack.frame().ip(), &self.string_interner,)
                     .0
             );
 
@@ -185,20 +181,40 @@ impl Vm {
                     if self.stack.frames().is_empty() {
                         return Ok(());
                     }
+                    self.open_upvalues.retain_mut(|open_upvalue| {
+                        let retain = open_upvalue.stack_slot().unwrap() < popped_frame.base_slot() as u8;
+                        if !retain {
+                            unsafe {
+                                let value = *self.stack.global_stack_at(open_upvalue.stack_slot().unwrap());
+                                *open_upvalue.deref_mut() = Upvalue::Closed(value)
+                            }
+                        }
+                        retain
+                    });
                     self.stack.truncate_stack(popped_frame.base_slot());
                     self.stack.push(result);
                 }
-                Instruction::Print => writeln!(
-                    stdout,
-                    "{}",
-                    self.stack.pop().resolve(&self.string_interner)
-                )
-                .unwrap(),
+                Instruction::Print => {
+                    writeln!(stdout, "{}", self.stack.pop().resolve(&self.string_interner)).unwrap()
+                }
                 Instruction::Pop => {
                     self.stack.pop();
                 }
                 Instruction::PopN(n) => {
                     self.stack.pop_n(n as usize);
+                }
+                Instruction::CloseUpvalue => {
+                    let index = self.open_upvalues.iter().position(|open_upvalue| {
+                        open_upvalue.stack_slot().unwrap() == self.stack.len() - 1
+                    }).expect("Should have an open upvalue at the top of the stack");
+
+                    let open_upvalue = self.open_upvalues.get_mut(index).unwrap();
+                    unsafe {
+                        let value = *self.stack.global_stack_at(open_upvalue.stack_slot().unwrap());
+                        *open_upvalue.deref_mut() = Upvalue::Closed(value)
+                    }
+
+                    self.open_upvalues.swap_remove(index);
                 }
                 Instruction::Constant { index } => {
                     let constant = self.frame_chunk().constants().get(index as usize).unwrap();
@@ -206,8 +222,7 @@ impl Vm {
                     self.push(*constant);
                 }
                 Instruction::DefineGlobal { constant_index } => {
-                    let name =
-                        self.stack.frame_chunk().get_string_constant(constant_index);
+                    let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
                     trace!(
                         "Defining global: {:?} {:?}",
@@ -218,8 +233,7 @@ impl Vm {
                     self.stack.pop();
                 }
                 Instruction::SetGlobal { constant_index } => {
-                    let name =
-                        self.stack.frame_chunk().get_string_constant(constant_index);
+                    let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
                     let val = self.stack.peek();
                     match self.globals.entry(*name) {
@@ -234,8 +248,7 @@ impl Vm {
                     };
                 }
                 Instruction::GetGlobal { constant_index } => {
-                    let name =
-                        self.stack.frame_chunk().get_string_constant(constant_index);
+                    let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
                     let value = self.globals.get(&name).ok_or_else(|| {
                         self.runtime_error(RuntimeError::UndefinedVariable(
@@ -289,9 +302,10 @@ impl Vm {
                 Instruction::Add => {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
-                    let res = a.add(&b, &mut self.heap, &mut self.string_interner).ok_or_else(|| {
-                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
-                    })?;
+                    let res =
+                        a.add(&b, &mut self.heap, &mut self.string_interner).ok_or_else(|| {
+                            self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                        })?;
                     self.push(res);
                 }
                 Instruction::Subtract => {
@@ -333,19 +347,88 @@ impl Vm {
                     let callee = self.stack.peek_n(arg_count.0 as usize).next().unwrap();
                     self.call(*callee, arg_count)?;
                 }
-                Instruction::Closure { constant_index } => {
+                Instruction::Closure { constant_index, upvalue_count } => {
                     let function = self.stack.frame_chunk().get_function_constant(constant_index);
-                    let closure = self.heap.alloc(Closure::new(function));
+
+                    let ip = self.stack.frame().ip();
+                    let upvalue_bytes = self.frame_chunk().code()
+                        [ip..ip + 2 * upvalue_count as usize]
+                        .iter()
+                        .copied()
+                        .collect_vec();
+
+                    let upvalues = upvalue_bytes
+                        .chunks(2)
+                        .into_iter()
+                        .map(|chunk| {
+                            let (is_local, index) = (chunk[0], chunk[1]);
+                            if is_local == 0 {
+                                self.capture_upvalue(
+                                    self.stack.frame().base_slot() + index as usize,
+                                )
+                            } else {
+                                self.stack.frame().closure().upvalues()[index as usize]
+                            }
+                        })
+                        .collect_vec();
+
+                    self.stack.frame_mut().inc_ip(upvalue_bytes.len());
+
+                    let closure = self.heap.alloc(Closure::new(function, upvalues));
                     self.push(closure);
                 }
+                Instruction::GetUpvalue { upvalue_index } => self.push(
+                    match self
+                        .stack
+                        .frame()
+                        .closure()
+                        .upvalues()
+                        .get(upvalue_index as usize)
+                        .expect("invalid upvalue")
+                        .deref()
+                    {
+                        Upvalue::Local { stack_slot } => *self.stack.global_stack_at(*stack_slot),
+                        Upvalue::Closed(value) => *value,
+                    },
+                ),
                 Instruction::SetUpvalue { upvalue_index } => {
-                    todo!()
-                }
-                Instruction::GetUpvalue { upvalue_index } => {
-                    todo!()
+                    let mut upvalue_ref = *self
+                        .stack
+                        .frame()
+                        .closure()
+                        .upvalues()
+                        .get(upvalue_index as usize)
+                        .expect("invalid upvalue");
+
+                    let stack_top = *self.stack.peek();
+                    unsafe {
+                        // SAFETY: The VM does not hold on to upvalue references after any
+                        // instruction, so we can safely get a mutable reference here.
+                        match upvalue_ref.deref_mut() {
+                            Upvalue::Local { stack_slot } => {
+                                *self.stack.global_stack_at_mut(*stack_slot) = stack_top;
+                            }
+                            Upvalue::Closed(value) => {
+                                *value = stack_top;
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+
+    fn capture_upvalue(&mut self, stack_slot: usize) -> UpvalueRef {
+        if let Some(upvalue) = self.open_upvalues.iter().find(|upvalue| {
+            upvalue.stack_slot().expect("Should only contain open upvalues") == stack_slot as u8
+        }) {
+            return *upvalue;
+        }
+
+        self.open_upvalues
+            .push(self.heap.alloc(Upvalue::Local { stack_slot: stack_slot as u8 }).into());
+
+        *self.open_upvalues.last().unwrap()
     }
 }
 
@@ -416,6 +499,12 @@ mod tests {
                 print x;
               }
 
+              // this tests that closures capture variables, not values
+              fun mutate_x() {
+                  x = "mutated";
+              }
+              mutate_x();
+
               return inner;
             }
 
@@ -424,6 +513,6 @@ mod tests {
         "#;
         let mut output = Vec::new();
         Vm::new().run_source(source, &mut output).unwrap();
-        assert_eq!(String::from_utf8(output).unwrap(), "outside\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "mutated\n");
     }
 }

@@ -2,8 +2,9 @@ use std::{iter::Peekable, mem::size_of, unreachable};
 
 use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
-use gc::{Heap, Function, StringInterner, Chunk, Value, RloxString, Object};
-use instructions::{Instruction, Jump, Arity};
+use gc::{Chunk, Function, Heap, Object, RloxString, StringInterner, Value};
+use instructions::{Arity, CompiledUpvalue, Instruction, Jump};
+use itertools::Itertools;
 use log::trace;
 use scanner::{token::TokenData, Token, TokenStream, TokenType};
 
@@ -110,18 +111,19 @@ impl Precedence {
 struct Local<'a> {
     name: &'a str,
     depth: Option<usize>,
+    is_captured: bool,
+}
+
+impl<'a> Local<'a> {
+    pub fn new(name: &'a str, depth: Option<usize>) -> Local<'a> {
+        Self { name, depth, is_captured: false }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum FunctionType {
     Function,
     Script,
-}
-
-#[derive(Debug, PartialEq)]
-enum Upvalue {
-    Local(u8),
-    Upvalue(u8),
 }
 
 // This corresponds to the stack of compilers in clox
@@ -131,22 +133,24 @@ struct FunctionToCompile<'a> {
     function: Function,
     locals: Vec<Local<'a>>,
     scope: Scope,
-    upvalues: Vec<Upvalue>,
+    upvalues: Vec<CompiledUpvalue>,
 }
 
 impl FunctionToCompile<'_> {
     fn script(interner: &mut StringInterner) -> Self {
-        Self::new(
-            FunctionType::Script,
-            Function::new(Arity(0), "", interner),
-            Scope::global(),
-        )
+        Self::new(FunctionType::Script, Function::new(Arity(0), "", interner), Scope::global())
     }
 
     fn new(ty: FunctionType, function: Function, scope: Scope) -> Self {
-        let mut res = Self { ty, function, locals: Vec::with_capacity(u8::MAX as usize + 1), scope, upvalues: Vec::with_capacity(8) };
+        let mut res = Self {
+            ty,
+            function,
+            locals: Vec::with_capacity(u8::MAX as usize + 1),
+            scope,
+            upvalues: Vec::with_capacity(8),
+        };
 
-        res.locals.push(Local { name: "", depth: Some(0) });
+        res.locals.push(Local::new("", Some(0)));
         res
     }
 }
@@ -202,14 +206,6 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn current_scope_mut(&mut self) -> &mut Scope {
         &mut self.functions.last_mut().unwrap().scope
-    }
-
-    fn upvalues(&self) -> &[Upvalue] {
-        &self.functions.last().unwrap().upvalues
-    }
-
-    fn upvalues_mut(&mut self) -> &mut Vec<Upvalue> {
-        &mut self.functions.last_mut().unwrap().upvalues
     }
 
     pub fn compile(mut self) -> std::result::Result<Function, RloxErrors> {
@@ -272,7 +268,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let function_token = self
             .consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("function name"))?;
 
-        self.functions.push(FunctionToCompile::new(ty, Function::new(Arity(0), name, self.interner), self.current_scope().next_depth()));
+        self.functions.push(FunctionToCompile::new(
+            ty,
+            Function::new(Arity(0), name, self.interner),
+            self.current_scope().next_depth(),
+        ));
 
         let mut arity = Arity(0);
         if self.peek().unwrap()? != RightParen {
@@ -305,17 +305,33 @@ impl<'a, 'b> Compiler<'a, 'b> {
         // We don't call self.end_scope() here, as locals are popped by the VM when the function returns
         self.current_scope_mut().end_scope();
 
-        let function = self.functions.pop().unwrap().function;
+        self.return_nil(end_fun_line);
+
+        let compiled_function = self.functions.pop().unwrap();
 
         log::debug!(
             "Compiled function [{:?}]: {:?}",
-            function.name.resolve(self.interner),
-            function.chunk.resolve(self.interner),
-            );
+            compiled_function.function.name.resolve(self.interner),
+            compiled_function.function.chunk.resolve(self.interner),
+        );
 
-        let constant_index = self.add_object_constant(function, &function_token)?;
-        self.current_chunk()
-            .write_instruction(Instruction::Closure { constant_index }, function_token.line());
+        let constant_index =
+            self.add_object_constant(compiled_function.function, &function_token)?;
+        self.current_chunk().write_instruction(
+            Instruction::Closure {
+                constant_index,
+                upvalue_count: compiled_function.upvalues.len() as u8,
+            },
+            function_token.line(),
+        );
+
+        self.current_chunk().write_bytes(
+            compiled_function.upvalues.iter().flat_map(|u| match u {
+                CompiledUpvalue::Local(index) => [0_u8, *index],
+                CompiledUpvalue::Upvalue(index) => [1_u8, *index],
+            }),
+            function_token.line(),
+        );
 
         Ok(())
     }
@@ -361,7 +377,9 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn named_variable(&mut self, identifier: &Token<'a>, can_assign: bool) -> Result<()> {
-        let (get_instr, set_instr) = if let Some(stack_slot) = Self::resolve_local(self.locals(), identifier) {
+        let (get_instr, set_instr) = if let Some(stack_slot) =
+            Self::resolve_local(self.locals(), identifier)
+        {
             (Instruction::GetLocal { stack_slot }, Instruction::SetLocal { stack_slot })
         } else if let Some(upvalue_index) = Self::resolve_upvalue(&mut self.functions, identifier) {
             (Instruction::GetUpvalue { upvalue_index }, Instruction::SetUpvalue { upvalue_index })
@@ -381,21 +399,30 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn resolve_upvalue(functions: &mut [FunctionToCompile], identifier: &Token<'a>) -> Option<u8> {
-        let previous = functions.iter().rev().nth(1)?;
+        let previous = functions.iter_mut().rev().nth(1)?;
 
         if let Some(index) = Self::resolve_local(&previous.locals, identifier) {
-            return Some(Self::add_upvalue(&mut functions.last_mut().unwrap().upvalues, Upvalue::Local(index)));
+            previous.locals[index as usize].is_captured = true;
+            return Some(Self::add_upvalue(
+                &mut functions.last_mut().unwrap().upvalues,
+                CompiledUpvalue::Local(index),
+            ));
         }
 
         let functions_len = functions.len();
-        if let Some(upvalue) = Self::resolve_upvalue(&mut functions[..functions_len-1], identifier) {
-            return Some(Self::add_upvalue(&mut functions.last_mut().unwrap().upvalues, Upvalue::Upvalue(upvalue)));
+        if let Some(upvalue) =
+            Self::resolve_upvalue(&mut functions[..functions_len - 1], identifier)
+        {
+            return Some(Self::add_upvalue(
+                &mut functions.last_mut().unwrap().upvalues,
+                CompiledUpvalue::Upvalue(upvalue),
+            ));
         }
 
         None
     }
 
-    fn add_upvalue(upvalues: &mut Vec<Upvalue>, upvalue: Upvalue) -> u8 {
+    fn add_upvalue(upvalues: &mut Vec<CompiledUpvalue>, upvalue: CompiledUpvalue) -> u8 {
         match upvalues.iter().position(|u| u == &upvalue) {
             Some(index) => index as u8,
             None => {
@@ -434,8 +461,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }
 
         let name = RloxString::new(token.lexeme(), self.interner);
-        let index =
-            self.add_object_constant(name, &token)?;
+        let index = self.add_object_constant(name, &token)?;
 
         Ok((index, token))
     }
@@ -470,7 +496,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             return Err(CompilerError::new(CompilerErrorType::TooManyLocals, name.clone()).into());
         }
 
-        self.locals_mut().push(Local { name: name.lexeme(), depth: None });
+        self.locals_mut().push(Local::new(name.lexeme(), None));
         Ok(())
     }
 
@@ -603,14 +629,25 @@ impl<'a, 'b> Compiler<'a, 'b> {
             .iter()
             .rev()
             .enumerate()
-            .find_map(|(index, local)| (local.depth != Some(self.current_scope().depth())).then_some(index))
+            .find_map(|(index, local)| {
+                (local.depth != Some(self.current_scope().depth())).then_some(index)
+            })
             .unwrap_or(0);
 
-        let num_locals_to_pop = last_local_in_scope as u8;
-        self.current_chunk().write_instruction(Instruction::PopN(num_locals_to_pop), line);
-
         let num_locals = self.num_locals();
-        self.locals_mut().truncate(num_locals - last_local_in_scope);
+        self.locals_mut()
+            // Remove all locals that where in the scope that just ended
+            .drain(num_locals - last_local_in_scope..)
+            .collect_vec()
+            // Divide them into chunks, using captured locals as the separator
+            .split_inclusive(|local| local.is_captured)
+            .for_each(|locals| {
+                let num_locals_to_pop = locals.len() as u8 - 1;
+                self.current_chunk().write_instruction(Instruction::PopN(num_locals_to_pop), line);
+                // split_inclusive puts the separator at the end, which is a local that was
+                // captured, so close the upvalue instead of emitting a pop.
+                self.current_chunk().write_instruction(Instruction::CloseUpvalue, line);
+            });
 
         self.current_scope_mut().end_scope();
     }

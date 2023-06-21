@@ -1,6 +1,7 @@
 use std::{ops::Deref, unreachable};
 
 mod rlox_string;
+
 pub use rlox_string::RloxString;
 
 use crate::{string_interner::StringInterner, ObjectRef, Heap};
@@ -13,6 +14,9 @@ pub use function::*;
 
 mod closure;
 pub use closure::*;
+
+mod upvalue;
+pub use upvalue::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, derive_more::From, derive_more::TryInto, derive_more::Unwrap)]
 #[try_into(owned, ref, ref_mut)]
@@ -115,9 +119,15 @@ impl std::fmt::Debug for ValueWithInterner<'_, '_> {
             ValueWithInterner(Value::Nil, _) => write!(f, "Nil"),
             ValueWithInterner(Value::Object(o), _) => match o.deref() {
                 Object::String(s) => write!(f, "String({:?})", s.resolve(self.1)),
-                Object::Function(fun) => write!(f, "Function({:?})", fun.debug(self.1)),
-                Object::Closure(closure) => write!(f, "Closure({:?})", closure.function().debug(self.1)),
+                Object::Function(fun) => write!(f, "Function({:?})", fun.resolve(self.1)),
+                Object::Closure(closure) => write!(
+                    f,
+                    "Closure(function: {:?}, upvalues: {:?})",
+                    closure.function().resolve(self.1),
+                    closure.upvalues().iter().map(|u| u.deref()).collect::<Vec<_>>()
+                ),
                 Object::NativeFun(fun) => write!(f, "NativeFun<{:?}>", fun),
+                Object::Upvalue(upvalue) => write!(f, "{:?}", upvalue),
             }
         }
     }
@@ -134,6 +144,7 @@ impl std::fmt::Display for ValueWithInterner<'_, '_> {
                 Object::Function(fun) => write!(f, "<fn {}>", fun.name.resolve(self.1)),
                 Object::Closure(closure) => write!(f, "<fn {}>", closure.function().name.resolve(self.1)),
                 Object::NativeFun(native_fn) => write!(f, "<native fn {:?}>", native_fn),
+                Object::Upvalue(_) => unreachable!("Should not be able to print an upvalue"),
             }
         }
     }

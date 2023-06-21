@@ -22,6 +22,14 @@ impl CallFrame {
         Self { closure, ip: 0, base_slot }
     }
 
+    pub fn closure(&self) -> &ClosureRef {
+        &self.closure
+    }
+
+    pub fn closure_mut(&mut self) -> &mut ClosureRef {
+        &mut self.closure
+    }
+
     pub fn decr_ip(&mut self, offset: usize) {
         self.ip -= offset;
     }
@@ -32,6 +40,10 @@ impl CallFrame {
 
     pub fn ip(&self) -> usize {
         self.ip
+    }
+
+    pub fn base_slot(&self) -> usize {
+        self.base_slot
     }
 }
 
@@ -119,6 +131,17 @@ impl Stack {
         value
     }
 
+    pub fn global_stack_at_mut(&mut self, index: u8) -> &mut Value {
+        self.stack
+            .get_mut(index as usize)
+            .unwrap_or_else(|| panic!("Invalid stack index: {}", index))
+    }
+    pub fn global_stack_at(&self, index: u8) -> &Value {
+        self.stack
+            .get(index as usize)
+            .unwrap_or_else(|| panic!("Invalid stack index: {}", index))
+    }
+
     pub fn stack_at(&self, index: u8) -> &Value {
         let index = self.frame().base_slot + index as usize;
         self.stack
@@ -140,6 +163,10 @@ impl Stack {
 
     pub fn peek(&self) -> &Value {
         self.stack.last().as_ref().unwrap()
+    }
+
+    pub fn len(&self) -> u8 {
+        self.stack.len() as u8
     }
 
     pub fn peek_n(&self, n: usize) -> impl Iterator<Item = &Value> {

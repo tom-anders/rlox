@@ -32,7 +32,7 @@ impl Function {
         Function { arity, chunk: Chunk::default(), name: RloxString::new(name, interner) }
     }
 
-    pub fn debug<'a, 'b>(&'a self, interner: &'b StringInterner) -> FunctionDebug<'a, 'b> {
+    pub fn resolve<'a, 'b>(&'a self, interner: &'b StringInterner) -> FunctionDebug<'a, 'b> {
         FunctionDebug(self, interner)
     }
 }

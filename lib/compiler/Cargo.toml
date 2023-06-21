@@ -13,5 +13,6 @@ errors = { path = "../errors" }
 gc = { path = "../gc" }
 thiserror.workspace = true
 log.workspace = true
+itertools.workspace = true
 num_enum = "0.6.1"
 derive_more.workspace = true

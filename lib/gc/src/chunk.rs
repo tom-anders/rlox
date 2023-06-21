@@ -1,6 +1,7 @@
 use std::{fmt::Debug, mem::size_of, writeln, ops::Deref};
 
 use instructions::{Instruction, Jump, OpCode};
+use itertools::Itertools;
 
 use crate::{Value, StringRef, FunctionRef, StringInterner};
 
@@ -31,6 +32,14 @@ impl Chunk {
             self.lines.push(line.0);
         }
 
+        self.code().len() - 1
+    }
+
+    pub fn write_bytes(&mut self, bytes: impl Iterator<Item = u8>, line: cursor::Line) -> usize {
+        for byte in bytes {
+            self.code.push(byte);
+            self.lines.push(line.0);
+        }
         self.code().len() - 1
     }
 
@@ -92,7 +101,23 @@ impl Chunk {
         let op_args = match instr {
             Instruction::PopN(n) => format!("'{n}'"),
             Instruction::Constant { index } => get_constant(index),
-            Instruction::Closure { constant_index } => get_constant(constant_index),
+            Instruction::Closure { constant_index, upvalue_count } => {
+                let upvalues = &self.code[offset + 3..offset + 3 + 2 * upvalue_count as usize]
+                    .chunks(2)
+                    .enumerate()
+                    .map(|(i, chunk)| {
+                        let (is_local, index) = (chunk[0], chunk[1]);
+                        format!(
+                            "{:04}      |                     {} {}",
+                            offset + 3 + 2 * i,
+                            if is_local == 0 { "local" } else { "upvalue" },
+                            index
+                        )
+                    })
+                    .collect_vec()
+                    .join("\n");
+                format!("{}\n{}", get_constant(constant_index), upvalues)
+            }
             Instruction::DefineGlobal { constant_index } => get_constant(constant_index),
             Instruction::SetGlobal { constant_index } => get_constant(constant_index),
             Instruction::GetGlobal { constant_index } => get_constant(constant_index),
@@ -118,6 +143,7 @@ impl Chunk {
             | Instruction::Greater
             | Instruction::Less
             | Instruction::Print
+            | Instruction::CloseUpvalue
             | Instruction::Pop => "".to_string(),
         };
 

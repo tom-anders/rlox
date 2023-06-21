@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, ops::{Deref, DerefMut}, pin::Pin};
 
-use crate::{Object, StringInterner, RloxString, Function, Closure};
+use crate::{Object, StringInterner, RloxString, Function, Closure, Upvalue};
 
 #[derive(Debug)]
 pub struct Heap {
@@ -25,10 +25,9 @@ impl Deref for ObjectRef {
         // object that is still reachable.
         //
         // # Aliasing
-        // Right now, ValueRef contains a const pointer and only implements Deref, 
-        // but not DerefMut. The heap does not provide any way to mutate values after allocation
-        // either. This means currently only immutable references can ever coexist, but no mutable
-        // ones. 
+        // deref_mut() is marked unsafe, callers must make sure that Heap values only modified
+        // when no other mutable/immutable references exist.
+        // As long as this variant is upheld by deref_mut() callers, deref() is safe.
         unsafe { &*self.0 }
     }
 }
@@ -55,6 +54,7 @@ pub struct TypedObjectRef<T>(ObjectRef, PhantomData<T>);
 
 pub type FunctionRef = TypedObjectRef<Function>;
 pub type ClosureRef = TypedObjectRef<Closure>;
+pub type UpvalueRef = TypedObjectRef<Upvalue>;
 
 impl<T> Deref for TypedObjectRef<T>
 where

@@ -141,6 +141,7 @@ dependencies = [
  "errors",
  "gc",
  "instructions",
+ "itertools",
  "log",
  "num_enum",
  "scanner",
@@ -254,6 +255,7 @@ dependencies = [
  "cursor",
  "derive_more",
  "instructions",
+ "itertools",
 ]
 
 [[package]]
