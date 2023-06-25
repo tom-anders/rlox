@@ -233,10 +233,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.return_nil(final_token.line());
 
         if errors.is_empty() {
-            log::trace!(
+            log::debug!(
                 "Compiled chunk [{:?}]: {:?}",
                 self.current_function_type(),
-                self.current_chunk()
+                self.current_chunk().clone().resolve(self.interner)
             );
             assert!(self.functions.len() == 1);
             Ok(self.functions.pop().unwrap().function)
@@ -305,6 +305,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.end_scope(end_fun_line);
 
         let function = self.functions.pop().unwrap().function;
+
+        log::debug!(
+            "Compiled function [{:?}]: {:?}",
+            function.name.resolve(self.interner),
+            function.chunk.resolve(self.interner),
+            );
+
         let constant_index = self.add_object_constant(function, &function_token)?;
         self.current_chunk()
             .write_instruction(Instruction::Closure { constant_index }, function_token.line());
