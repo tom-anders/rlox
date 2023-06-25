@@ -388,4 +388,41 @@ mod tests {
         Vm::new().run_source(source, &mut output).unwrap();
         assert_eq!(String::from_utf8(output).unwrap(), "true\ntrue\n");
     }
+
+    #[test]
+    fn open_upvalues() {
+        let source = r#"
+            fun outer() {
+              var x = "outside";
+              fun inner() {
+                print x;
+              }
+              inner();
+            }
+            outer();
+        "#;
+        let mut output = Vec::new();
+        Vm::new().run_source(source, &mut output).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap(), "outside\n");
+    }
+
+    #[test]
+    fn closed_upvalues() {
+        let source = r#"
+            fun outer() {
+              var x = "outside";
+              fun inner() {
+                print x;
+              }
+
+              return inner;
+            }
+
+            var closure = outer();
+            closure();
+        "#;
+        let mut output = Vec::new();
+        Vm::new().run_source(source, &mut output).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap(), "outside\n");
+    }
 }
