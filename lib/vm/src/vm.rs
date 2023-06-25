@@ -181,10 +181,11 @@ impl Vm {
             match op {
                 Instruction::Return => {
                     let result = self.stack.pop();
-                    self.stack.pop_frame();
+                    let popped_frame = self.stack.pop_frame();
                     if self.stack.frames().is_empty() {
                         return Ok(());
                     }
+                    self.stack.truncate_stack(popped_frame.base_slot());
                     self.stack.push(result);
                 }
                 Instruction::Print => writeln!(

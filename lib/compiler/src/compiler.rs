@@ -302,7 +302,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         let end_fun_line = self.block()?.line();
 
-        self.end_scope(end_fun_line);
+        // We don't call self.end_scope() here, as locals are popped by the VM when the function returns
+        self.current_scope_mut().end_scope();
 
         let function = self.functions.pop().unwrap().function;
 

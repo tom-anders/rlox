@@ -95,10 +95,16 @@ impl Stack {
         self.frames.push(CallFrame::new(closure.clone(), self.stack.len() - closure.arity().0 as usize - 1));
     }
 
-    pub fn pop_frame(&mut self) {
+    pub fn pop_frame(&mut self) -> CallFrame {
         let popped_frame = self.frames.pop().expect("Stack underflow");
         // +1 for the function itself
         self.pop_n(popped_frame.closure.arity().0 as usize + 1);
+
+        popped_frame
+    }
+
+    pub fn truncate_stack(&mut self, len: usize) {
+        self.stack.truncate(len);
     }
 
     pub fn push(&mut self, value: Value) {
