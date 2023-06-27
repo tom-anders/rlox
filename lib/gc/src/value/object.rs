@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{ops::Deref, cell::RefCell, rc::Rc};
 
 use crate::{Closure, Function, NativeFun, RloxString, StringInterner, Upvalue};
 
@@ -6,11 +6,16 @@ use crate::{Closure, Function, NativeFun, RloxString, StringInterner, Upvalue};
 pub(crate) struct GcObject {
     is_marked: bool,
     pub(crate) object: Object,
+    #[cfg(debug_assertions)]
+    pub(crate) _debug: Rc<()>,
 }
 
 impl GcObject {
     pub(crate) fn new(object: impl Into<Object>) -> Self {
-        Self { is_marked: false, object: object.into() }
+        #[cfg(not(debug_assertions))]
+        return Self { is_marked: false, object: object.into() };
+        #[cfg(debug_assertions)]
+        return Self { is_marked: false, object: object.into(), _debug: Rc::new(()) };
     }
 
     pub(crate) fn mark_reachable(&mut self) {

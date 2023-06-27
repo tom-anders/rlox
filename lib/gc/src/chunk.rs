@@ -65,12 +65,12 @@ impl Chunk {
     }
 
     pub fn get_string_constant(&self, index: u8) -> StringRef {
-        self.constants().get(index as usize).expect("Missing string constant")
+        self.constants().get(index as usize).expect("Missing string constant").clone()
             .unwrap_object().unwrap_string()
     }
 
     pub fn get_function_constant(&self, index: u8) -> FunctionRef {
-        self.constants().get(index as usize).expect("Missing function constant")
+        self.constants().get(index as usize).expect("Missing function constant").clone()
             .unwrap_object().unwrap_function()
     }
 

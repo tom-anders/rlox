@@ -83,11 +83,11 @@ impl Vm {
             }
 
             for frame in self.stack.frames_mut() {
-                self.heap.mark_ref(frame.closure().clone());
+                self.heap.mark_ref(frame.closure_mut());
             }
 
             for upvalue in &mut self.open_upvalues {
-                self.heap.mark_ref(*upvalue);
+                self.heap.mark_ref(upvalue);
             }
 
             self.heap.collect_garbage(&self.string_interner);
@@ -131,15 +131,15 @@ impl Vm {
         let closure =
             Value::Object(Compiler::new(source, &mut self.string_interner, &mut self.heap).compile()?.into());
 
-        self.push(closure);
+        self.push(closure.clone());
         self.call(closure, Arity(0)).unwrap();
         self.run(stdout)?;
         Ok(())
     }
 
     fn call(&mut self, value: Value, arg_count: Arity) -> Result<()> {
-        match value {
-            Value::Object(obj) => match &*obj {
+        match &value {
+            Value::Object(obj) => match obj.deref() {
                 Object::Closure(closure) => {
                     if closure.function().arity != arg_count {
                         return Err(self.runtime_error(RuntimeError::InvalidArgumentCount {
@@ -147,7 +147,7 @@ impl Vm {
                             got: arg_count,
                         }));
                     }
-                    self.stack.push_frame(obj.try_into().unwrap());
+                    self.stack.push_frame(obj.clone().try_into().unwrap());
                     Ok(())
                 }
                 Object::NativeFun(native_fun) => {
@@ -208,7 +208,7 @@ impl Vm {
                         let retain = open_upvalue.stack_slot().unwrap() < popped_frame.base_slot() as u8;
                         if !retain {
                             unsafe {
-                                let value = *self.stack.global_stack_at(open_upvalue.stack_slot().unwrap());
+                                let value = self.stack.global_stack_at(open_upvalue.stack_slot().unwrap()).clone();
                                 *open_upvalue.deref_mut() = Upvalue::Closed(value)
                             }
                         }
@@ -233,7 +233,7 @@ impl Vm {
 
                     let open_upvalue = self.open_upvalues.get_mut(index).unwrap();
                     unsafe {
-                        let value = *self.stack.global_stack_at(open_upvalue.stack_slot().unwrap());
+                        let value = self.stack.global_stack_at(open_upvalue.stack_slot().unwrap()).clone();
                         *open_upvalue.deref_mut() = Upvalue::Closed(value)
                     }
 
@@ -242,7 +242,7 @@ impl Vm {
                 Instruction::Constant { index } => {
                     let constant = self.frame_chunk().constants().get(index as usize).unwrap();
                     trace!("Pushed constant: {:?}", constant);
-                    self.push(*constant);
+                    self.push(constant.clone());
                 }
                 Instruction::DefineGlobal { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
@@ -252,7 +252,7 @@ impl Vm {
                         name.resolve(&self.string_interner),
                         self.stack.peek().resolve(&self.string_interner)
                     );
-                    self.globals.insert(*name, *self.stack.peek());
+                    self.globals.insert(*name, self.stack.peek().clone());
                     self.stack.pop();
                 }
                 Instruction::SetGlobal { constant_index } => {
@@ -261,7 +261,7 @@ impl Vm {
                     let val = self.stack.peek();
                     match self.globals.entry(*name) {
                         Entry::Occupied(mut entry) => {
-                            *entry.get_mut() = *val;
+                            *entry.get_mut() = val.clone();
                         }
                         Entry::Vacant(_) => {
                             return Err(self.runtime_error(RuntimeError::UndefinedVariable(
@@ -279,13 +279,13 @@ impl Vm {
                         ))
                     })?;
 
-                    self.push(*value);
+                    self.push(value.clone());
                 }
                 Instruction::GetLocal { stack_slot } => {
-                    self.push(*self.stack.stack_at(stack_slot));
+                    self.push(self.stack.stack_at(stack_slot).clone());
                 }
                 Instruction::SetLocal { stack_slot } => {
-                    *self.stack.stack_at_mut(stack_slot) = *self.stack.peek();
+                    *self.stack.stack_at_mut(stack_slot) = self.stack.peek().clone();
                 }
                 Instruction::Nil => self.push(Value::Nil),
                 Instruction::True => self.push(Value::Boolean(true)),
@@ -368,7 +368,7 @@ impl Vm {
                 }
                 Instruction::Call { arg_count } => {
                     let callee = self.stack.peek_n(arg_count.0 as usize).next().unwrap();
-                    self.call(*callee, arg_count)?;
+                    self.call(callee.clone(), arg_count)?;
                 }
                 Instruction::Closure { constant_index, upvalue_count } => {
                     let function = self.stack.frame_chunk().get_function_constant(constant_index);
@@ -390,7 +390,7 @@ impl Vm {
                                     self.stack.frame().base_slot() + index as usize,
                                 )
                             } else {
-                                self.stack.frame().closure().upvalues()[index as usize]
+                                self.stack.frame().closure().upvalues()[index as usize].clone()
                             }
                         })
                         .collect_vec();
@@ -410,20 +410,21 @@ impl Vm {
                         .expect("invalid upvalue")
                         .deref()
                     {
-                        Upvalue::Local { stack_slot } => *self.stack.global_stack_at(*stack_slot),
-                        Upvalue::Closed(value) => *value,
+                        Upvalue::Local { stack_slot } => self.stack.global_stack_at(*stack_slot).clone(),
+                        Upvalue::Closed(value) => value.clone(),
                     },
                 ),
                 Instruction::SetUpvalue { upvalue_index } => {
-                    let mut upvalue_ref = *self
+                    let mut upvalue_ref = self
                         .stack
                         .frame()
                         .closure()
                         .upvalues()
                         .get(upvalue_index as usize)
-                        .expect("invalid upvalue");
+                        .expect("invalid upvalue")
+                        .clone();
 
-                    let stack_top = *self.stack.peek();
+                    let stack_top = self.stack.peek().clone();
                     unsafe {
                         // SAFETY: The VM does not hold on to upvalue references after any
                         // instruction, so we can safely get a mutable reference here.
@@ -445,14 +446,14 @@ impl Vm {
         if let Some(upvalue) = self.open_upvalues.iter().find(|upvalue| {
             upvalue.stack_slot().expect("Should only contain open upvalues") == stack_slot as u8
         }) {
-            return *upvalue;
+            return upvalue.clone();
         }
 
         let upvalue = self.alloc(Upvalue::Local { stack_slot: stack_slot as u8 }).into();
         self.open_upvalues
             .push(upvalue);
 
-        *self.open_upvalues.last().unwrap()
+        self.open_upvalues.last().unwrap().clone()
     }
 }
 

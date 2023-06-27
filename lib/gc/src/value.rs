@@ -18,7 +18,7 @@ pub use closure::*;
 mod upvalue;
 pub use upvalue::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, derive_more::From, derive_more::TryInto, derive_more::Unwrap)]
+#[derive(Clone, Debug, PartialEq, derive_more::From, derive_more::TryInto, derive_more::Unwrap)]
 #[try_into(owned, ref, ref_mut)]
 pub enum Value {
     Number(f64),

@@ -1,6 +1,6 @@
 use crate::Value;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Upvalue {
     // TODO benchmark if using a raw pointer here would be any more performant
     Local { stack_slot: u8 },

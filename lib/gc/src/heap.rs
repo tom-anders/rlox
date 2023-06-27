@@ -1,7 +1,10 @@
 use std::{
+    cell::RefCell,
+    debug_assert,
     marker::PhantomData,
     ops::{Deref, DerefMut},
     pin::Pin,
+    rc::{Rc, Weak},
 };
 
 use itertools::Itertools;
@@ -10,20 +13,35 @@ use crate::{Closure, Function, GcObject, Object, RloxString, StringInterner, Upv
 
 #[derive(Debug)]
 pub struct Heap {
-    // TODO For debug mode, can we let GcObject contain a Rc,
-    // and each reference a Weak? Then we can use this to check for dangling pointers.
     objects: Vec<Pin<Box<GcObject>>>,
     gray_stack: Vec<ObjectRef>,
     marked_objects: Vec<ObjectRef>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ObjectRef(*mut GcObject);
+#[derive(Clone, Debug)]
+pub struct ObjectRef(*mut GcObject, #[cfg(debug_assertions)] Weak<()>);
+
+impl From<&mut GcObject> for ObjectRef {
+    fn from(object: &mut GcObject) -> Self {
+        Self(
+            object,
+            #[cfg(debug_assertions)]
+            Rc::downgrade(&object._debug),
+        )
+    }
+}
+
+impl PartialEq for ObjectRef {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
 
 impl Deref for ObjectRef {
     type Target = Object;
 
     fn deref(&self) -> &Self::Target {
+        self.debug_assert_not_dangling();
         // SAFETY:
         // # Lifetime / validity
         // The only way to obtain a ObjectRef is through Heap::alloc.
@@ -43,24 +61,33 @@ impl Deref for ObjectRef {
 }
 
 impl ObjectRef {
+    fn debug_assert_not_dangling(&self) {
+        #[cfg(debug_assertions)]
+        debug_assert!(self.1.upgrade().is_some(), "Dangling pointer!");
+    }
+
     /// # Safety
     /// Callers must make sure this does not violate Rusts's aliasing rules,
     /// i.e. that there currently are no other mutable/immutable borrows of the same object.
     pub unsafe fn deref_mut(&mut self) -> &mut Object {
+        self.debug_assert_not_dangling();
         &mut (*self.0).object
     }
 
     pub fn is_marked(&self) -> bool {
+        self.debug_assert_not_dangling();
         unsafe { (*self.0).is_marked() }
     }
 
     pub fn mark_reachable(&mut self) {
+        self.debug_assert_not_dangling();
         unsafe {
             (*self.0).mark_reachable();
         }
     }
 
     pub fn unmark(&mut self) {
+        self.debug_assert_not_dangling();
         unsafe {
             (*self.0).unmark();
         }
@@ -75,7 +102,7 @@ impl ObjectRef {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TypedObjectRef<T>(ObjectRef, PhantomData<T>);
 
 pub type FunctionRef = TypedObjectRef<Function>;
@@ -103,6 +130,12 @@ impl<T> From<ObjectRef> for TypedObjectRef<T> {
 impl<T> From<TypedObjectRef<T>> for ObjectRef {
     fn from(object: TypedObjectRef<T>) -> Self {
         object.0
+    }
+}
+
+impl<'a, T> From<&'a mut TypedObjectRef<T>> for &'a mut ObjectRef {
+    fn from(object: &'a mut TypedObjectRef<T>) -> Self {
+        &mut object.0
     }
 }
 
@@ -180,16 +213,28 @@ impl Heap {
                         }
                     }
                     Object::Closure(closure) => {
-                        self.mark_ref(closure.function());
+                        self.mark_ref(&mut closure.function());
                         for upvalue in closure.upvalues_mut() {
-                            self.mark_ref(*upvalue);
+                            self.mark_ref(upvalue);
                         }
                     }
                 }
             }
         }
 
-        self.objects.retain_mut(|o| o.is_marked());
+        self.objects.retain_mut(|o| {
+            let is_marked = o.is_marked();
+            #[cfg(debug_assertions)]
+            {
+                let weak_count = Rc::weak_count(&o._debug);
+                if !is_marked && weak_count != 0 {
+                    log::warn!(
+                        "Dropping an object that still has {weak_count} weak references! This either means there is a bug in the GC, or this is a cyclic reference"
+                    );
+                }
+            }
+            is_marked
+        });
 
         for mut object in self.marked_objects.drain(..) {
             object.unmark();
@@ -198,24 +243,24 @@ impl Heap {
         self.gray_stack.clear();
     }
 
-    pub fn mark_ref(&mut self, object_ref: impl Into<ObjectRef>) {
-        let mut object_ref = object_ref.into();
+    pub fn mark_ref<'a>(&mut self, object_ref: impl Into<&'a mut ObjectRef>) {
+        let object_ref = object_ref.into();
         if !object_ref.is_marked() {
             object_ref.mark_reachable();
-            self.gray_stack.push(object_ref);
-            self.marked_objects.push(object_ref);
+            self.gray_stack.push(object_ref.clone());
+            self.marked_objects.push(object_ref.clone());
         }
     }
 
     pub fn mark_value(&mut self, value: &mut Value) {
         if let Value::Object(object) = value {
-            self.mark_ref(*object);
+            self.mark_ref(object);
         }
     }
 
     pub fn alloc(&mut self, object: impl Into<Object>) -> ObjectRef {
         self.objects.push(Box::pin(GcObject::new(object.into())));
 
-        ObjectRef(self.objects.last_mut().unwrap().deref_mut())
+        self.objects.last_mut().unwrap().deref_mut().into()
     }
 }
