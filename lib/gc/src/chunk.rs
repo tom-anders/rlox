@@ -155,6 +155,16 @@ impl Chunk {
     pub fn resolve<'a, 'b>(&'a self, interner: &'b StringInterner) -> ResolvedChunk<'a, 'b> {
         ResolvedChunk(self, interner)
     }
+
+    pub fn constants_mut(&mut self) -> &mut Vec<Value> {
+        &mut self.constants
+    }
+
+    pub fn mark_reachable(&mut self) {
+        for constant in &mut self.constants {
+            constant.mark_reachable();
+        }
+    }
 }
 
 pub struct ResolvedChunk<'a, 'b>(&'a Chunk, &'b StringInterner);

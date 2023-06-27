@@ -28,6 +28,13 @@ pub enum Value {
 }
 
 impl Value {
+    pub(crate) fn mark_reachable(&mut self) -> &mut Self {
+        if let Value::Object(object) = self {
+            object.mark_reachable()
+        }
+        self
+    }
+
     pub fn is_truthy(&self) -> bool {
         !matches!(self, Value::Nil | Value::Boolean(false))
     }
@@ -72,7 +79,7 @@ impl Value {
             (Value::Object(a), Value::Object(b)) => match (a.deref(), b.deref()) {
                 (Object::String(a), Object::String(b)) => {
                     let res = format!("{}{}", a.resolve(interner), b.resolve(interner));
-                    Some(Value::Object(heap.alloc(Object::String(RloxString::new(&res, interner)))))
+                    Some(Value::Object(heap.alloc(Object::String(RloxString::new(&res, interner))).into()))
                 }
                 _ => None,
             }
@@ -117,18 +124,7 @@ impl std::fmt::Debug for ValueWithInterner<'_, '_> {
             ValueWithInterner(Value::Number(n), _) => write!(f, "Number({})", n),
             ValueWithInterner(Value::Boolean(b), _) => write!(f, "Boolean({})", b),
             ValueWithInterner(Value::Nil, _) => write!(f, "Nil"),
-            ValueWithInterner(Value::Object(o), _) => match o.deref() {
-                Object::String(s) => write!(f, "String({:?})", s.resolve(self.1)),
-                Object::Function(fun) => write!(f, "Function({:?})", fun.resolve(self.1)),
-                Object::Closure(closure) => write!(
-                    f,
-                    "Closure(function: {:?}, upvalues: {:?})",
-                    closure.function().resolve(self.1),
-                    closure.upvalues().iter().map(|u| u.deref()).collect::<Vec<_>>()
-                ),
-                Object::NativeFun(fun) => write!(f, "NativeFun<{:?}>", fun),
-                Object::Upvalue(upvalue) => write!(f, "{:?}", upvalue),
-            }
+            ValueWithInterner(Value::Object(o), _) => write!(f, "{:?}", o.resolve(self.1)),
         }
     }
 }

@@ -5,9 +5,13 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+gc_stress_test = []
+
 [dependencies]
 derive_more.workspace = true
 itertools.workspace = true
+log.workspace = true
 
 instructions.path = "../instructions"
 cursor.path = "../cursor"

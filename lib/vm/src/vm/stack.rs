@@ -102,6 +102,10 @@ impl Stack {
         &self.frames
     }
 
+    pub fn frames_mut(&mut self) -> &mut [CallFrame] {
+        &mut self.frames
+    }
+
     pub fn push_frame(&mut self, closure: ClosureRef) {
         assert!(self.frames.len() < MAX_FRAMES, "Stack overflow");
         self.frames.push(CallFrame::new(closure.clone(), self.stack.len() - closure.arity().0 as usize - 1));
@@ -167,6 +171,10 @@ impl Stack {
 
     pub fn len(&self) -> u8 {
         self.stack.len() as u8
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Value> {
+        self.stack.iter_mut()
     }
 
     pub fn peek_n(&self, n: usize) -> impl Iterator<Item = &Value> {

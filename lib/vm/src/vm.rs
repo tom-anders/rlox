@@ -8,7 +8,7 @@ use std::{
 use compiler::Compiler;
 use errors::RloxErrors;
 use gc::{
-    Chunk, Closure, Heap, NativeFun, Object, RloxString, StringInterner, Upvalue, UpvalueRef, Value,
+    Chunk, Closure, Heap, NativeFun, Object, RloxString, StringInterner, Upvalue, UpvalueRef, Value, ObjectRef, TypedObjectRef,
 };
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
@@ -70,6 +70,32 @@ impl Vm {
         vm
     }
 
+    fn alloc<T>(&mut self, object: T) -> TypedObjectRef<T> where T: Into<Object> + Clone {
+        log::debug!("Allocating {:?}", object.clone().into().resolve(&self.string_interner));
+
+        if self.heap.gc_needed() {
+            for value in self.stack.iter_mut() {
+                self.heap.mark_value(value);
+            }
+
+            for value in self.globals.values_mut() {
+                self.heap.mark_value(value);
+            }
+
+            for frame in self.stack.frames_mut() {
+                self.heap.mark_ref(frame.closure().clone());
+            }
+
+            for upvalue in &mut self.open_upvalues {
+                self.heap.mark_ref(*upvalue);
+            }
+
+            self.heap.collect_garbage(&self.string_interner);
+        }
+
+        self.heap.alloc(object.into()).into()
+    }
+
     fn push(&mut self, value: impl Into<Value>) {
         self.stack.push(value.into());
     }
@@ -102,12 +128,9 @@ impl Vm {
     }
 
     pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> Result<()> {
-        let function =
-            Compiler::new(source, &mut self.string_interner, &mut self.heap).compile()?;
-        let function_ref = self.heap.alloc(function);
-
         let closure =
-            Value::Object(self.heap.alloc(Closure::new(function_ref.unwrap_function(), vec![])));
+            Value::Object(Compiler::new(source, &mut self.string_interner, &mut self.heap).compile()?.into());
+
         self.push(closure);
         self.call(closure, Arity(0)).unwrap();
         self.run(stdout)?;
@@ -141,8 +164,8 @@ impl Vm {
     }
 
     fn define_native(&mut self, name: &str, native_fun: fn(Vec<Value>) -> Value) {
-        let native_fun = self.heap.alloc(NativeFun(native_fun));
-        self.globals.insert(RloxString::new(name, &mut self.string_interner), native_fun.into());
+        let native_fun = self.alloc(NativeFun(native_fun));
+        self.globals.insert(RloxString::new(name, &mut self.string_interner), Value::Object(native_fun.into()));
     }
 
     fn frame_chunk(&self) -> &Chunk {
@@ -374,8 +397,8 @@ impl Vm {
 
                     self.stack.frame_mut().inc_ip(upvalue_bytes.len());
 
-                    let closure = self.heap.alloc(Closure::new(function, upvalues));
-                    self.push(closure);
+                    let closure = self.alloc(Closure::new(function, upvalues));
+                    self.push(ObjectRef::from(closure));
                 }
                 Instruction::GetUpvalue { upvalue_index } => self.push(
                     match self
@@ -425,8 +448,9 @@ impl Vm {
             return *upvalue;
         }
 
+        let upvalue = self.alloc(Upvalue::Local { stack_slot: stack_slot as u8 }).into();
         self.open_upvalues
-            .push(self.heap.alloc(Upvalue::Local { stack_slot: stack_slot as u8 }).into());
+            .push(upvalue);
 
         *self.open_upvalues.last().unwrap()
     }

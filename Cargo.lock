@@ -256,6 +256,7 @@ dependencies = [
  "derive_more",
  "instructions",
  "itertools",
+ "log",
 ]
 
 [[package]]

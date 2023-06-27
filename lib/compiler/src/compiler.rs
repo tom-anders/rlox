@@ -2,7 +2,7 @@ use std::{iter::Peekable, mem::size_of, unreachable};
 
 use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
-use gc::{Chunk, Function, Heap, Object, RloxString, StringInterner, Value};
+use gc::{Chunk, Function, Heap, Object, RloxString, StringInterner, Value, ObjectRef, Closure, ClosureRef};
 use instructions::{Arity, CompiledUpvalue, Instruction, Jump};
 use itertools::Itertools;
 use log::trace;
@@ -208,7 +208,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         &mut self.functions.last_mut().unwrap().scope
     }
 
-    pub fn compile(mut self) -> std::result::Result<Function, RloxErrors> {
+    pub fn compile(mut self) -> std::result::Result<ClosureRef, RloxErrors> {
         let mut errors = RloxErrors(Vec::new());
 
         let final_token = loop {
@@ -235,7 +235,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 self.current_chunk().clone().resolve(self.interner)
             );
             assert!(self.functions.len() == 1);
-            Ok(self.functions.pop().unwrap().function)
+
+            let function = self.heap.alloc(self.functions.pop().unwrap().function);
+            let closure = self.heap.alloc(Closure::new(function.into(), vec![]));
+            Ok(closure.into())
         } else {
             Err(errors)
         }
@@ -907,7 +910,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn add_object_constant(&mut self, obj: impl Into<Object>, token: &Token<'a>) -> Result<u8> {
-        let obj_ref = self.heap.alloc(obj.into());
+        let obj_ref: ObjectRef = self.heap.alloc(obj).into();
         self.add_constant(obj_ref, token)
     }
 
