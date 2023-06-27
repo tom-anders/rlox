@@ -4,7 +4,7 @@ use std::{
     marker::PhantomData,
     ops::{Deref, DerefMut},
     pin::Pin,
-    rc::{Rc, Weak},
+    rc::{Rc, Weak}, mem::size_of,
 };
 
 use itertools::Itertools;
@@ -16,6 +16,7 @@ pub struct Heap {
     objects: Vec<Pin<Box<GcObject>>>,
     gray_stack: Vec<ObjectRef>,
     marked_objects: Vec<ObjectRef>,
+    next_gc: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -173,6 +174,7 @@ impl Heap {
             objects: Vec::with_capacity(cap),
             gray_stack: Vec::new(),
             marked_objects: Vec::new(),
+            next_gc: 1024 * 1024,
         }
     }
 
@@ -180,7 +182,7 @@ impl Heap {
         if cfg!(feature = "gc_stress_test") {
             true
         } else {
-            false
+            self.objects.len() >= self.next_gc
         }
     }
 
@@ -241,6 +243,8 @@ impl Heap {
         }
 
         self.gray_stack.clear();
+
+        self.next_gc = self.objects.len() * 2;
     }
 
     pub fn mark_ref<'a>(&mut self, object_ref: impl Into<&'a mut ObjectRef>) {
