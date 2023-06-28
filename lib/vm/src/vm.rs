@@ -8,7 +8,7 @@ use std::{
 use compiler::Compiler;
 use errors::RloxErrors;
 use gc::{
-    Chunk, Closure, Heap, NativeFun, Object, RloxString, StringInterner, Upvalue, UpvalueRef, Value, ObjectRef, TypedObjectRef,
+    Chunk, Closure, Heap, NativeFun, Object, RloxString, StringInterner, Upvalue, UpvalueRef, Value, ObjectRef, TypedObjectRef, GarbageCollector,
 };
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
@@ -22,6 +22,7 @@ mod stack;
 pub struct Vm {
     stack: Stack,
     heap: Heap,
+    gc: GarbageCollector,
     string_interner: StringInterner,
     globals: HashMap<RloxString, Value>,
     // TODO clox uses a linked list here, check if this is actually more performant
@@ -60,6 +61,7 @@ impl Vm {
             string_interner: StringInterner::with_capacity(1024),
             globals: HashMap::new(),
             heap: Heap::with_capacity(1024),
+            gc: GarbageCollector::default(),
             open_upvalues: Vec::new(),
         };
         vm.define_native("clock", |_| {
@@ -73,24 +75,24 @@ impl Vm {
     fn alloc<T>(&mut self, object: T) -> TypedObjectRef<T> where T: Into<Object> + Clone {
         log::debug!("Allocating {:?}", object.clone().into().resolve(&self.string_interner));
 
-        if self.heap.gc_needed() {
+        if self.gc.gc_needed(&mut self.heap) {
             for value in self.stack.iter_mut() {
-                self.heap.mark_value(value);
+                self.gc.mark_value(value);
             }
 
             for value in self.globals.values_mut() {
-                self.heap.mark_value(value);
+                self.gc.mark_value(value);
             }
 
             for frame in self.stack.frames_mut() {
-                self.heap.mark_ref(frame.closure_mut());
+                self.gc.mark_ref(frame.closure_mut());
             }
 
             for upvalue in &mut self.open_upvalues {
-                self.heap.mark_ref(upvalue);
+                self.gc.mark_ref(upvalue);
             }
 
-            self.heap.collect_garbage(&self.string_interner);
+            self.gc.collect_garbage(&mut self.heap, &self.string_interner);
         }
 
         self.heap.alloc(object.into()).into()
