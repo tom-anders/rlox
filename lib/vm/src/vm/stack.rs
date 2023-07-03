@@ -5,8 +5,8 @@ use instructions::Arity;
 use itertools::Itertools;
 use log::trace;
 
-const MAX_FRAMES: usize = 64;
-const MAX_STACK: usize = MAX_FRAMES * u8::MAX as usize;
+mod array_stack;
+pub use array_stack::ArrayStack;
 
 #[derive(Debug, Clone)]
 pub struct CallFrame {
@@ -47,10 +47,13 @@ impl CallFrame {
     }
 }
 
+pub type ValueStack = ArrayStack<Value, { u8::MAX as usize }>;
+pub type CallStack = ArrayStack<CallFrame, 64>;
+
 #[derive(Debug)]
 pub struct Stack {
-    stack: Vec<Value>,
-    frames: Vec<CallFrame>,
+    values: ValueStack,
+    frames: CallStack,
 }
 
 pub struct StackResolved<'a, 'b>(&'a Stack, &'b StringInterner);
@@ -60,12 +63,12 @@ impl Display for StackResolved<'_, '_> {
         write!(
             f,
             "Stack {{stack: [{}], call_frames: [{}] }}",
-            self.0.stack
+            self.0.values
                 .iter()
                 .map(|v| v.resolve(self.1).to_string())
                 .collect_vec()
                 .join(", "),
-            self.0.frames().iter().map(|frame| format!("{:?}", frame)).collect_vec().join(", ")
+            self.0.iter_frames().map(|frame| format!("{:?}", frame)).collect_vec().join(", ")
         )
     }
 }
@@ -73,8 +76,8 @@ impl Display for StackResolved<'_, '_> {
 impl Stack {
     pub fn new() -> Self {
         Self {
-            stack: Vec::with_capacity(MAX_STACK),
-            frames: Vec::with_capacity(MAX_FRAMES),
+            values: ArrayStack::new(),
+            frames: ArrayStack::new(),
         }
     }
 
@@ -83,11 +86,11 @@ impl Stack {
     }
 
     pub fn frame(&self) -> &CallFrame {
-        self.frames.last().unwrap()
+        self.frames.peek()
     }
 
     pub fn frame_mut(&mut self) -> &mut CallFrame {
-        self.frames.last_mut().unwrap()
+        self.frames.peek_mut()
     }
 
     pub fn frame_chunk(&self) -> &Chunk {
@@ -98,21 +101,24 @@ impl Stack {
         self.frame_chunk().lines()[self.frame().ip()]
     }
 
-    pub fn frames(&self) -> &[CallFrame] {
+    pub fn iter_frames(&self) -> impl DoubleEndedIterator<Item = &CallFrame> {
+        self.frames.iter()
+    }
+
+    pub fn frames(&self) -> &CallStack {
         &self.frames
     }
 
-    pub fn frames_mut(&mut self) -> &mut [CallFrame] {
-        &mut self.frames
+    pub fn iter_frames_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut CallFrame> {
+        self.frames.iter_mut()
     }
 
     pub fn push_frame(&mut self, closure: ClosureRef) {
-        assert!(self.frames.len() < MAX_FRAMES, "Stack overflow");
-        self.frames.push(CallFrame::new(closure.clone(), self.stack.len() - closure.arity().0 as usize - 1));
+        self.frames.push(CallFrame::new(closure.clone(), self.values.len() - closure.arity().0 as usize - 1));
     }
 
     pub fn pop_frame(&mut self) -> CallFrame {
-        let popped_frame = self.frames.pop().expect("Stack underflow");
+        let popped_frame = self.frames.pop();
         // +1 for the function itself
         self.pop_n(popped_frame.closure.arity().0 as usize + 1);
 
@@ -120,74 +126,63 @@ impl Stack {
     }
 
     pub fn truncate_stack(&mut self, len: usize) {
-        self.stack.truncate(len);
+        self.values.truncate(len);
     }
 
     pub fn push(&mut self, value: Value) {
-        assert!(self.stack.len() < MAX_STACK, "Stack overflow");
         trace!("Pushing {:?}", value);
-        self.stack.push(value);
+        self.values.push(value);
     }
 
     pub fn pop(&mut self) -> Value {
-        let value = self.stack.pop().expect("Stack underflow");
+        let value = self.values.pop();
         trace!("Popping {:?}", value);
         value
     }
 
     pub fn global_stack_at_mut(&mut self, index: u8) -> &mut Value {
-        self.stack
-            .get_mut(index as usize)
-            .unwrap_or_else(|| panic!("Invalid stack index: {}", index))
+        &mut self.values[index as usize]
     }
     pub fn global_stack_at(&self, index: u8) -> &Value {
-        self.stack
-            .get(index as usize)
-            .unwrap_or_else(|| panic!("Invalid stack index: {}", index))
+        &self.values[index as usize]
     }
 
-    pub fn stack_at(&self, index: u8) -> &Value {
+    pub fn frame_stack_at(&self, index: u8) -> &Value {
         let index = self.frame().base_slot + index as usize;
-        self.stack
-            .get(index)
-            .unwrap_or_else(|| panic!("Invalid stack index: {}", index))
+        &self.values[index]
     }
 
-    pub fn stack_at_mut(&mut self, index: u8) -> &mut Value {
+    pub fn frame_stack_at_mut(&mut self, index: u8) -> &mut Value {
         let index = self.frame().base_slot + index as usize;
-        self.stack
-            .get_mut(index)
-            .unwrap_or_else(|| panic!("Invalid stack index: {}", index))
+        &mut self.values[index]
     }
 
     pub fn pop_n(&mut self, n: usize) {
-        debug_assert!(n <= self.stack.len());
-        self.stack.truncate(self.stack.len() - n);
+        self.values.pop_n(n)
     }
 
     pub fn peek(&self) -> &Value {
-        self.stack.last().as_ref().unwrap()
-    }
-
-    pub fn peek_mut(&mut self) -> &mut Value {
-        self.stack.last_mut().unwrap()
+        self.values.peek()
     }
 
     pub fn len(&self) -> u8 {
-        self.stack.len() as u8
+        self.values.len() as u8
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Value> {
-        self.stack.iter_mut()
+    pub fn iter(&mut self) -> impl DoubleEndedIterator<Item = &Value> {
+        self.values.iter()
     }
 
-    pub fn peek_n(&self, n: usize) -> impl Iterator<Item = &Value> {
-        self.stack[self.stack.len() - 1 - n..].iter()
+    pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut Value> {
+        self.values.iter_mut()
+    }
+
+    pub fn value_stack(&self) -> &ValueStack {
+        &self.values
     }
 
     pub fn stack_trace(&self, interner: &StringInterner) -> String {
-        self.frames()
-            .iter()
+        self.iter_frames()
             .rev()
             .map(|frame| {
                 let function = &*frame.closure.function();

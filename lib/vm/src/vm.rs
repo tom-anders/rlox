@@ -90,7 +90,7 @@ impl Vm {
                 self.gc.mark_value(value);
             }
 
-            for frame in self.stack.frames_mut() {
+            for frame in self.stack.iter_frames_mut() {
                 self.gc.mark_ref(frame.closure_mut());
             }
 
@@ -167,18 +167,18 @@ impl Vm {
                     // TODO pass fields
                     let instance =
                         self.alloc(Instance::new(obj.clone().unwrap_class(), HashMap::new()));
-                    *self.stack.stack_at_mut(self.stack.len() - 1 - arg_count.0) = instance.into();
+                    *self.stack.frame_stack_at_mut(self.stack.len() - 1 - arg_count.0) = instance.into();
                     Ok(())
                 }
                 Object::NativeFun(native_fun) => {
-                    let args = self.stack.peek_n(arg_count.0 as usize);
-                    let result = native_fun.0(args.cloned().collect());
+                    let args = self.stack.iter().rev().take(arg_count.0 as usize).cloned();
+                    let result = native_fun.0(args.collect());
                     self.stack.pop_n(arg_count.0 as usize);
                     self.push(result);
                     Ok(())
                 }
                 Object::BoundMethod(bound_method) => {
-                    *self.stack.stack_at_mut(self.stack.len() - 1 - arg_count.0) =
+                    *self.stack.frame_stack_at_mut(self.stack.len() - 1 - arg_count.0) =
                         bound_method.receiver().into();
                     self.call(bound_method.method().into(), arg_count)
                 }
@@ -316,10 +316,10 @@ impl Vm {
                     self.push(value.clone());
                 }
                 Instruction::GetLocal { stack_slot } => {
-                    self.push(self.stack.stack_at(stack_slot).clone());
+                    self.push(self.stack.frame_stack_at(stack_slot).clone());
                 }
                 Instruction::SetLocal { stack_slot } => {
-                    *self.stack.stack_at_mut(stack_slot) = self.stack.peek().clone();
+                    *self.stack.frame_stack_at_mut(stack_slot) = self.stack.peek().clone();
                 }
                 Instruction::Nil => self.push(Value::Nil),
                 Instruction::True => self.push(Value::Boolean(true)),
@@ -401,7 +401,7 @@ impl Vm {
                     self.stack.frame_mut().decr_ip(jump as usize);
                 }
                 Instruction::Call { arg_count } => {
-                    let callee = self.stack.peek_n(arg_count.0 as usize).next().unwrap();
+                    let callee = self.stack.value_stack().peek_nth(arg_count.0 as usize);
                     self.call(callee.clone(), arg_count)?;
                 }
                 Instruction::Closure { constant_index, upvalue_count } => {
@@ -507,7 +507,7 @@ impl Vm {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
                     let mut object: ObjectRef =
-                        self.stack.peek_n(1).next().unwrap().clone().try_into().ok().ok_or_else(
+                        self.stack.value_stack().peek_nth(1).clone().try_into().ok().ok_or_else(
                             || self.runtime_error(RuntimeError::InvalidPropertyAccess),
                         )?;
                     let object = unsafe { object.deref_mut() };
@@ -525,7 +525,7 @@ impl Vm {
                     }
                 }
                 Instruction::Method { constant_index } => {
-                    let (class, method) = self.stack.peek_n(1).collect_tuple().unwrap();
+                    let (method, class) = self.stack.value_stack().iter().rev().take(2).collect_tuple().unwrap();
 
                     let mut class = class.clone().unwrap_object().unwrap_class();
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
