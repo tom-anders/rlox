@@ -19,3 +19,9 @@ itertools.workspace = true
 [dev-dependencies]
 env_logger.workspace = true
 ctor.workspace = true
+criterion.workspace = true
+
+[[bench]]
+path = "benches/bench.rs"
+name = "bench"
+harness = false
