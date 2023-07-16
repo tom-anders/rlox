@@ -75,6 +75,8 @@ pub enum CompilerErrorType {
     ExpectedClassName,
     #[error("Expected identifier after '{0}'.")]
     ExpectedIdentifier(&'static str),
+    #[error("Expected method name")]
+    ExpectedMethodName,
 }
 
 #[repr(u8)]
@@ -131,6 +133,7 @@ impl<'a> Local<'a> {
 enum FunctionType {
     Function,
     Script,
+    Method,
 }
 
 // This corresponds to the stack of compilers in clox
@@ -157,7 +160,7 @@ impl FunctionToCompile<'_> {
             upvalues: Vec::with_capacity(8),
         };
 
-        res.locals.push(Local::new("", Some(0)));
+        res.locals.push(Local::new(if ty != FunctionType::Function { "this" } else { "" }, Some(0)));
         res
     }
 }
@@ -278,9 +281,33 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.define_variable(constant_index, identifier.line())?;
 
+        self.named_variable(&identifier, false)?;
         self.consume_or_error(LeftBrace, CompilerErrorType::ExpectedLeftBrace("class body"))?;
+
+        loop {
+            match self.peek().unwrap()? {
+                RightBrace | Eof => break,
+                _ => {
+                    self.method()?;
+                }
+            }
+        }
+
         self.consume_or_error(RightBrace, CompilerErrorType::ExpectedRightBrace("class body"))?;
 
+        // pop the class name
+        self.current_chunk().write_instruction(Instruction::Pop, identifier.line());
+
+        Ok(())
+    }
+
+    fn method(&mut self) -> Result<()> {
+        let identifier =
+            self.consume_or_error(Identifier, CompilerErrorType::ExpectedMethodName)?;
+        let constant_index = self.add_identifier_constant(&identifier)?;
+        self.function(FunctionType::Method, identifier.lexeme())?;
+        self.current_chunk()
+            .write_instruction(Instruction::Method { constant_index }, identifier.line());
         Ok(())
     }
 
@@ -374,9 +401,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         if can_assign && self.consume(Equal)?.is_ok() {
             self.expression()?;
-            self.current_chunk().write_instruction(Instruction::SetProperty { constant_index }, identifier.line());
+            self.current_chunk()
+                .write_instruction(Instruction::SetProperty { constant_index }, identifier.line());
         } else {
-            self.current_chunk().write_instruction(Instruction::GetProperty { constant_index }, identifier.line());
+            self.current_chunk()
+                .write_instruction(Instruction::GetProperty { constant_index }, identifier.line());
         }
 
         Ok(())
@@ -734,6 +763,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Ok(())
     }
 
+    fn this(&mut self, token: &Token<'a>) -> Result<()> {
+        self.variable(token, false)
+    }
+
     fn number(&mut self, prefix_token: &Token<'a>) -> Result<()> {
         trace!("Compiling number: {:?}", prefix_token);
         let value = match prefix_token.data {
@@ -826,6 +859,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         match token.ty() {
             Number => self.number(&token),
             True | False | Nil => self.literal(&token),
+            This => self.this(&token),
             LeftParen => self.grouping(&token),
             Minus | Bang => self.unary(&token),
             Str => self.string(&token),

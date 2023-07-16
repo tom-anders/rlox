@@ -13,7 +13,7 @@ impl Instance {
         Self { class, fields }
     }
 
-    pub(crate) fn class(&self) -> &ClassRef {
+    pub fn class(&self) -> &ClassRef {
         &self.class
     }
 
@@ -35,19 +35,5 @@ impl Instance {
 
     pub(crate) fn fields_mut(&mut self) -> &mut HashMap<RloxString, Value> {
         &mut self.fields
-    }
-}
-
-impl<'a> TryFrom<&'a Value> for &'a Instance {
-    type Error = ();
-
-    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
-        if let Value::Object(object) = value {
-            if let Object::Instance(instance) = object.deref() {
-                return Ok(instance);
-            }
-        }
-
-        Err(())
     }
 }

@@ -2,7 +2,7 @@ use std::{cell::RefCell, ops::Deref, rc::Rc};
 
 use itertools::Itertools;
 
-use crate::{Class, Closure, Function, Instance, NativeFun, RloxString, StringInterner, Upvalue};
+use crate::{Class, Closure, Function, Instance, NativeFun, RloxString, StringInterner, Upvalue, BoundMethod};
 
 #[derive(Debug, PartialEq, derive_more::TryInto, derive_more::From)]
 #[try_into(owned, ref, ref_mut)]
@@ -14,6 +14,7 @@ pub enum Object {
     Upvalue(Upvalue),
     Class(Class),
     Instance(Instance),
+    BoundMethod(BoundMethod),
 }
 
 impl Object {
@@ -47,6 +48,12 @@ impl std::fmt::Debug for ObjectWithInterner<'_, '_> {
                     .iter()
                     .map(|(name, field)| format!("{}: {:?}", name.resolve(self.1), field.resolve(self.1)))
                     .collect_vec()
+            ),
+            Object::BoundMethod(bound_method) => write!(
+                f,
+                "BoundMethod({:?}, receiver: {:?})",
+                Object::Closure(bound_method.method().deref().clone()).resolve(self.1),
+                Object::Instance(bound_method.receiver().deref().clone()).resolve(self.1),
             ),
         }
     }

@@ -8,8 +8,8 @@ use std::{
 use compiler::Compiler;
 use errors::RloxErrors;
 use gc::{
-    Chunk, Class, Closure, GarbageCollector, Heap, Instance, NativeFun, Object, ObjectRef,
-    RloxString, StringInterner, TypedObjectRef, Upvalue, UpvalueRef, Value,
+    BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef, NativeFun,
+    Object, ObjectRef, RloxString, StringInterner, TypedObjectRef, Upvalue, UpvalueRef, Value,
 };
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
@@ -151,7 +151,7 @@ impl Vm {
     }
 
     fn call(&mut self, value: Value, arg_count: Arity) -> Result<()> {
-        match &value {
+        match value {
             Value::Object(obj) => match obj.deref() {
                 Object::Closure(closure) => {
                     if closure.function().arity != arg_count {
@@ -178,7 +178,12 @@ impl Vm {
                     self.push(result);
                     Ok(())
                 }
-                _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
+                Object::BoundMethod(bound_method) => {
+                    *self.stack.stack_at_mut(self.stack.len() - 1 - arg_count.0) =
+                        Value::Object(bound_method.receiver().clone().into());
+                    self.call(Value::Object(bound_method.method().clone().into()), arg_count)
+                }
+                _ => Err(self.runtime_error(RuntimeError::NotAFunction(obj.into()))),
             },
             _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
         }
@@ -481,28 +486,26 @@ impl Vm {
                 Instruction::GetProperty { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
-                    let instance: &Instance = self
-                        .stack
-                        .peek()
-                        .try_into()
-                        .map_err(|_| self.runtime_error(RuntimeError::InvalidPropertyAccess))?;
+                    let instance: InstanceRef = self.stack.peek().clone().unwrap_object().into();
 
-                    let field = instance
-                        .field(name.deref())
-                        .ok_or_else(|| {
-                            self.runtime_error(RuntimeError::UndefinedProperty(
-                                name.resolve(&self.string_interner),
-                            ))
-                        })?
-                        .clone();
-
-                    log::debug!(
-                        "get property: {} -> {}",
-                        name.resolve(&self.string_interner),
-                        field.resolve(&self.string_interner)
-                    );
-                    self.stack.pop();
-                    self.push(field.clone());
+                    if let Some(field) = instance.field(name.deref()).cloned() {
+                        log::debug!(
+                            "get property: {} -> {}",
+                            name.resolve(&self.string_interner),
+                            field.resolve(&self.string_interner)
+                        );
+                        self.stack.pop();
+                        self.push(field.clone());
+                    } else if let Some(method) = instance.class().get_method(name.deref()) {
+                        let bound_method =
+                            self.alloc(BoundMethod::new(instance.clone(), method.clone()));
+                        self.stack.pop();
+                        self.push(Value::Object(bound_method.into()));
+                    } else {
+                        return Err(self.runtime_error(RuntimeError::UndefinedProperty(
+                            name.resolve(&self.string_interner),
+                        )));
+                    }
                 }
                 Instruction::SetProperty { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
@@ -524,6 +527,18 @@ impl Vm {
                     } else {
                         return Err(self.runtime_error(RuntimeError::InvalidPropertyAccess));
                     }
+                }
+                Instruction::Method { constant_index } => {
+                    let (class, method) = self.stack.peek_n(1).collect_tuple().unwrap();
+
+                    let mut class = class.clone().unwrap_object().unwrap_class();
+                    let name = self.stack.frame_chunk().get_string_constant(constant_index);
+                    unsafe {
+                        class
+                            .deref_mut()
+                            .add_method(*name, method.clone().unwrap_object().unwrap_closure())
+                    };
+                    self.stack.pop();
                 }
             }
         }
@@ -628,9 +643,26 @@ mod tests {
     }
 
     #[test]
+    fn bound_methods() {
+        let source = r#"
+            class Scone {
+                topping(first, second) {
+                    print "scone with " + first + " and " + second;
+                }
+            }
+
+            var scone = Scone();
+            scone.topping("berries", "cream");
+        "#;
+        let mut output = Vec::new();
+        Vm::new().run_source(source, &mut output).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap(), "scone with berries and cream\n");
+    }
+
+    #[test]
     fn classes() {
         let source = r#"
-            class Pair {}
+            class Pair { }
 
             var pair = Pair();
             pair.first = 1;
@@ -643,6 +675,29 @@ mod tests {
         assert_eq!(
             String::from_utf8(output).unwrap().lines().collect_vec(),
             vec!["Pair instance", "3"]
+        );
+    }
+
+    #[test]
+    fn resolve_this_in_nested() {
+        let source = r#" 
+            class Nested {
+              method() {
+                fun function() {
+                  print this;
+                }
+
+                function();
+              }
+            }
+
+            Nested().method();
+                            "#;
+        let mut output = Vec::new();
+        Vm::new().run_source(source, &mut output).unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap().lines().collect_vec(),
+            vec!["Nested instance"]
         );
     }
 

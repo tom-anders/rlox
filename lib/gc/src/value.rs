@@ -24,6 +24,9 @@ pub use class::*;
 mod instance;
 pub use instance::*;
 
+mod bound_method;
+pub use bound_method::*;
+
 #[derive(Clone, Debug, PartialEq, derive_more::From, derive_more::TryInto, derive_more::Unwrap)]
 #[try_into(owned, ref, ref_mut)]
 pub enum Value {
@@ -149,6 +152,7 @@ impl std::fmt::Display for ValueWithInterner<'_, '_> {
                 Object::Upvalue(_) => unreachable!("Should not be able to print an upvalue"),
                 Object::Class(class) => write!(f, "{}", class.name().resolve(self.1)),
                 Object::Instance(instance) => write!(f, "{} instance", instance.class().name().resolve(self.1)),
+                Object::BoundMethod(bound_method) => write!(f, "{}", bound_method.method().function().name.resolve(self.1)),
             } 
         }
     }
