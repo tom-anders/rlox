@@ -1,6 +1,6 @@
 use std::{rc::{Weak, Rc}, ops::Deref, marker::PhantomData};
 
-use crate::{garbage_collector::GcObject, Object, Function, Closure, Upvalue, StringInterner, RloxString, Class, Instance, BoundMethod};
+use crate::{garbage_collector::GcObject, Object, Function, Closure, Upvalue, StringInterner, RloxString, Class, Instance, BoundMethod, Value};
 
 #[derive(Clone, Debug)]
 pub struct ObjectRef(*mut GcObject, #[cfg(debug_assertions)] Weak<()>);
@@ -166,4 +166,15 @@ impl StringRef {
     }
 }
 
+impl<T> From<TypedObjectRef<T>> for Value {
+    fn from(object: TypedObjectRef<T>) -> Self {
+        Value::Object(object.into())
+    }
+}
+
+impl<T: Clone> From<&TypedObjectRef<T>> for Value {
+    fn from(object: &TypedObjectRef<T>) -> Self {
+        Value::Object((*object).clone().into())
+    }
+}
 

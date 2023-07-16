@@ -167,8 +167,7 @@ impl Vm {
                     // TODO pass fields
                     let instance =
                         self.alloc(Instance::new(obj.clone().unwrap_class(), HashMap::new()));
-                    *self.stack.stack_at_mut(self.stack.len() - 1 - arg_count.0) =
-                        Value::Object(instance.into());
+                    *self.stack.stack_at_mut(self.stack.len() - 1 - arg_count.0) = instance.into();
                     Ok(())
                 }
                 Object::NativeFun(native_fun) => {
@@ -180,8 +179,8 @@ impl Vm {
                 }
                 Object::BoundMethod(bound_method) => {
                     *self.stack.stack_at_mut(self.stack.len() - 1 - arg_count.0) =
-                        Value::Object(bound_method.receiver().clone().into());
-                    self.call(Value::Object(bound_method.method().clone().into()), arg_count)
+                        bound_method.receiver().into();
+                    self.call(bound_method.method().into(), arg_count)
                 }
                 _ => Err(self.runtime_error(RuntimeError::NotAFunction(obj.into()))),
             },
@@ -193,7 +192,7 @@ impl Vm {
         let native_fun = self.alloc(NativeFun(native_fun));
         self.globals.insert(
             RloxString::new(name, &mut self.string_interner),
-            Value::Object(native_fun.into()),
+            native_fun.into(),
         );
     }
 
@@ -481,7 +480,7 @@ impl Vm {
                 Instruction::Class { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
                     let class = self.alloc(Class::new(*name));
-                    self.push(Value::Object(class.into()));
+                    self.push(class);
                 }
                 Instruction::GetProperty { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
@@ -500,7 +499,7 @@ impl Vm {
                         let bound_method =
                             self.alloc(BoundMethod::new(instance.clone(), method.clone()));
                         self.stack.pop();
-                        self.push(Value::Object(bound_method.into()));
+                        self.push(bound_method);
                     } else {
                         return Err(self.runtime_error(RuntimeError::UndefinedProperty(
                             name.resolve(&self.string_interner),
