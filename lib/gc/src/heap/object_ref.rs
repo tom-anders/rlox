@@ -1,6 +1,6 @@
 use std::{rc::{Weak, Rc}, ops::Deref, marker::PhantomData};
 
-use crate::{garbage_collector::GcObject, Object, Function, Closure, Upvalue, StringInterner, RloxString};
+use crate::{garbage_collector::GcObject, Object, Function, Closure, Upvalue, StringInterner, RloxString, Class};
 
 #[derive(Clone, Debug)]
 pub struct ObjectRef(*mut GcObject, #[cfg(debug_assertions)] Weak<()>);
@@ -81,6 +81,10 @@ impl ObjectRef {
         self.try_into().unwrap()
     }
 
+    pub fn unwrap_class(self) -> ClassRef {
+        self.try_into().unwrap()
+    }
+
     pub fn unwrap_string(self) -> StringRef {
         self.try_into().unwrap()
     }
@@ -92,6 +96,7 @@ pub struct TypedObjectRef<T>(ObjectRef, PhantomData<T>);
 pub type FunctionRef = TypedObjectRef<Function>;
 pub type ClosureRef = TypedObjectRef<Closure>;
 pub type UpvalueRef = TypedObjectRef<Upvalue>;
+pub type ClassRef = TypedObjectRef<Class>;
 
 impl<T> Deref for TypedObjectRef<T>
 where

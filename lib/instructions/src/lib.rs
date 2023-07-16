@@ -62,6 +62,7 @@ pub enum Instruction {
     Jump(Jump),
     Loop(Jump),
     Call { arg_count: Arity },
+    Class { constant_index: u8 },
 }
 
 #[cfg(test)]

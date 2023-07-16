@@ -2,7 +2,10 @@ use std::{iter::Peekable, mem::size_of, unreachable};
 
 use cursor::{Col, Line};
 use errors::{RloxError, RloxErrors};
-use gc::{Chunk, Function, Heap, Object, RloxString, StringInterner, Value, ObjectRef, Closure, ClosureRef};
+use gc::{
+    Chunk, Closure, ClosureRef, Function, Heap, Object, ObjectRef, RloxString, StringInterner,
+    Value,
+};
 use instructions::{Arity, CompiledUpvalue, Instruction, Jump};
 use itertools::Itertools;
 use log::trace;
@@ -50,10 +53,10 @@ pub enum CompilerErrorType {
     ExpectedVariableName,
     #[error("Invalid assignment target")]
     InvalidAssignmentTarget,
-    #[error("Expected '}}' after block")]
-    ExpectedRightBrace,
-    #[error("Expected '{{' after {after}")]
-    ExpectedLeftBrace { after: &'static str },
+    #[error("Expected '}}' after {0}")]
+    ExpectedRightBrace(&'static str),
+    #[error("Expected '{{' after {0}")]
+    ExpectedLeftBrace(&'static str),
     #[error("Variable already in scope")]
     VariableAlreadyInScope,
     #[error("Expected '(' after '{0}'")]
@@ -68,6 +71,8 @@ pub enum CompilerErrorType {
     ExpectedParameterName,
     #[error("Can't return from top-level code")]
     ReturnOutsideFunction,
+    #[error("Expected class name.")]
+    ExpectedClassName,
 }
 
 #[repr(u8)]
@@ -252,11 +257,30 @@ impl<'a, 'b> Compiler<'a, 'b> {
     fn declaration(&mut self) -> Result<()> {
         if self.consume(Var)?.is_ok() {
             self.var_declaration()
+        } else if self.consume(Class)?.is_ok() {
+            self.class_declaration()
         } else if self.consume(Fun)?.is_ok() {
             self.fun_declaration()
         } else {
             self.statement()
         }
+    }
+
+    fn class_declaration(&mut self) -> Result<()> {
+        let identifier = self.consume_or_error(Identifier, CompilerErrorType::ExpectedClassName)?;
+        let name = RloxString::new(identifier.lexeme(), self.interner);
+        let constant_index = self.add_object_constant(name, &identifier)?;
+
+        self.declare_variable(&identifier)?;
+        self.current_chunk()
+            .write_instruction(Instruction::Class { constant_index }, identifier.line());
+
+        self.define_variable(constant_index, identifier.line())?;
+
+        self.consume_or_error(LeftBrace, CompilerErrorType::ExpectedLeftBrace("class body"))?;
+        self.consume_or_error(RightBrace, CompilerErrorType::ExpectedRightBrace("class body"))?;
+
+        Ok(())
     }
 
     fn fun_declaration(&mut self) -> Result<()> {
@@ -298,10 +322,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("parameters"))?;
 
-        self.consume_or_error(
-            LeftBrace,
-            CompilerErrorType::ExpectedLeftBrace { after: "parameters" },
-        )?;
+        self.consume_or_error(LeftBrace, CompilerErrorType::ExpectedLeftBrace("parameters"))?;
 
         let end_fun_line = self.block()?.line();
 
@@ -663,7 +684,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             }
         }
 
-        self.consume_or_error(RightBrace, CompilerErrorType::ExpectedRightBrace)
+        self.consume_or_error(RightBrace, CompilerErrorType::ExpectedRightBrace("block"))
     }
 
     fn print_statement(&mut self) -> Result<()> {

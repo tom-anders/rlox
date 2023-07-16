@@ -1,6 +1,8 @@
-use std::{ops::Deref, cell::RefCell, rc::Rc};
+use std::{cell::RefCell, ops::Deref, rc::Rc};
 
-use crate::{Closure, Function, NativeFun, RloxString, StringInterner, Upvalue};
+use itertools::Itertools;
+
+use crate::{Class, Closure, Function, Instance, NativeFun, RloxString, StringInterner, Upvalue};
 
 #[derive(Debug, PartialEq, derive_more::TryInto, derive_more::From)]
 #[try_into(owned, ref, ref_mut)]
@@ -10,6 +12,8 @@ pub enum Object {
     NativeFun(NativeFun),
     Closure(Closure),
     Upvalue(Upvalue),
+    Class(Class),
+    Instance(Instance),
 }
 
 impl Object {
@@ -33,6 +37,17 @@ impl std::fmt::Debug for ObjectWithInterner<'_, '_> {
             ),
             Object::NativeFun(fun) => write!(f, "NativeFun<{:?}>", fun),
             Object::Upvalue(upvalue) => write!(f, "{:?}", upvalue),
+            Object::Class(class) => write!(f, "Class({:?})", class.name().resolve(self.1)),
+            Object::Instance(instance) => write!(
+                f,
+                "Instance({:?}, fields: {:?})",
+                instance.class().name().resolve(self.1),
+                instance
+                    .fields()
+                    .iter()
+                    .map(|(name, field)| format!("{}: {:?}", name.resolve(self.1), field.resolve(self.1)))
+                    .collect_vec()
+            ),
         }
     }
 }

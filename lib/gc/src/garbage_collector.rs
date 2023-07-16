@@ -112,6 +112,13 @@ impl GarbageCollector {
                             self.mark_ref(upvalue);
                         }
                     }
+                    Object::Class(_) => (),
+                    Object::Instance(instance) => {
+                        self.mark_ref(instance.class_mut());
+                        for field in instance.fields_mut().values_mut() {
+                            self.mark_value(field);
+                        }
+                    }
                 }
             }
         }

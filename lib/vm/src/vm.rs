@@ -8,7 +8,7 @@ use std::{
 use compiler::Compiler;
 use errors::RloxErrors;
 use gc::{
-    Chunk, Closure, Heap, NativeFun, Object, RloxString, StringInterner, Upvalue, UpvalueRef, Value, ObjectRef, TypedObjectRef, GarbageCollector,
+    Chunk, Closure, Heap, NativeFun, Object, RloxString, StringInterner, Upvalue, UpvalueRef, Value, ObjectRef, TypedObjectRef, GarbageCollector, Class, Instance,
 };
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
@@ -150,6 +150,12 @@ impl Vm {
                         }));
                     }
                     self.stack.push_frame(obj.clone().try_into().unwrap());
+                    Ok(())
+                }
+                Object::Class(_) => {
+                    // TODO pass fields
+                    let instance = self.alloc(Instance::new(obj.clone().unwrap_class(), HashMap::new()));
+                    *self.stack.stack_at_mut(self.stack.len() - 1 - arg_count.0) = Value::Object(instance.into());
                     Ok(())
                 }
                 Object::NativeFun(native_fun) => {
@@ -440,6 +446,11 @@ impl Vm {
                         }
                     }
                 }
+                Instruction::Class { constant_index } => {
+                    let name = self.stack.frame_chunk().get_string_constant(constant_index);
+                    let class = self.alloc(Class::new(*name));
+                    self.push(Value::Object(class.into()));
+                }
             }
         }
     }
@@ -451,7 +462,7 @@ impl Vm {
             return upvalue.clone();
         }
 
-        let upvalue = self.alloc(Upvalue::Local { stack_slot: stack_slot as u8 }).into();
+        let upvalue = self.alloc(Upvalue::Local { stack_slot: stack_slot as u8 });
         self.open_upvalues
             .push(upvalue);
 
@@ -541,5 +552,21 @@ mod tests {
         let mut output = Vec::new();
         Vm::new().run_source(source, &mut output).unwrap();
         assert_eq!(String::from_utf8(output).unwrap(), "mutated\n");
+    }
+
+    #[test]
+    fn classes() {
+        let source = r#"
+            class Brioche {
+            }
+            print Brioche;
+            print Brioche();
+        "#;
+        let mut output = Vec::new();
+        Vm::new().run_source(source, &mut output).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap().lines().collect_vec(), vec![
+            "Brioche",
+            "Brioche instance",
+        ]);
     }
 }
