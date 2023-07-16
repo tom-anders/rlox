@@ -59,7 +59,7 @@ impl Display for StackResolved<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Stack {{ stack: [{}], call_frames: [{}] }}",
+            "Stack {{stack: [{}], call_frames: [{}] }}",
             self.0.stack
                 .iter()
                 .map(|v| v.resolve(self.1).to_string())
@@ -167,6 +167,10 @@ impl Stack {
 
     pub fn peek(&self) -> &Value {
         self.stack.last().as_ref().unwrap()
+    }
+
+    pub fn peek_mut(&mut self) -> &mut Value {
+        self.stack.last_mut().unwrap()
     }
 
     pub fn len(&self) -> u8 {

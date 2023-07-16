@@ -73,6 +73,8 @@ pub enum CompilerErrorType {
     ReturnOutsideFunction,
     #[error("Expected class name.")]
     ExpectedClassName,
+    #[error("Expected identifier after '{0}'.")]
+    ExpectedIdentifier(&'static str),
 }
 
 #[repr(u8)]
@@ -268,8 +270,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn class_declaration(&mut self) -> Result<()> {
         let identifier = self.consume_or_error(Identifier, CompilerErrorType::ExpectedClassName)?;
-        let name = RloxString::new(identifier.lexeme(), self.interner);
-        let constant_index = self.add_object_constant(name, &identifier)?;
+        let constant_index = self.add_identifier_constant(&identifier)?;
 
         self.declare_variable(&identifier)?;
         self.current_chunk()
@@ -366,6 +367,21 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Ok(())
     }
 
+    fn dot(&mut self, _: &Token, can_assign: bool) -> Result<()> {
+        let identifier =
+            self.consume_or_error(Identifier, CompilerErrorType::ExpectedIdentifier("."))?;
+        let constant_index = self.add_identifier_constant(&identifier)?;
+
+        if can_assign && self.consume(Equal)?.is_ok() {
+            self.expression()?;
+            self.current_chunk().write_instruction(Instruction::SetProperty { constant_index }, identifier.line());
+        } else {
+            self.current_chunk().write_instruction(Instruction::GetProperty { constant_index }, identifier.line());
+        }
+
+        Ok(())
+    }
+
     fn argument_list(&mut self) -> Result<u8> {
         let mut arg_count = 0;
 
@@ -408,8 +424,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         } else if let Some(upvalue_index) = Self::resolve_upvalue(&mut self.functions, identifier) {
             (Instruction::GetUpvalue { upvalue_index }, Instruction::SetUpvalue { upvalue_index })
         } else {
-            let name = RloxString::new(identifier.lexeme(), self.interner);
-            let constant_index = self.add_object_constant(name, identifier)?;
+            let constant_index = self.add_identifier_constant(identifier)?;
             (Instruction::GetGlobal { constant_index }, Instruction::SetGlobal { constant_index })
         };
 
@@ -484,8 +499,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             return Ok((0, token));
         }
 
-        let name = RloxString::new(token.lexeme(), self.interner);
-        let index = self.add_object_constant(name, &token)?;
+        let index = self.add_identifier_constant(&token)?;
 
         Ok((index, token))
     }
@@ -822,13 +836,14 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }
     }
 
-    fn advance_with_infix_rule(&mut self) -> Result<()> {
+    fn advance_with_infix_rule(&mut self, can_assign: bool) -> Result<()> {
         let token = self.advance()?;
         trace!("Advancing with infix rule for {}", token);
         match token.ty() {
             Plus | Minus | Slash | Star | EqualEqual | BangEqual | Greater | GreaterEqual
             | Less | LessEqual => self.binary(&token),
             LeftParen => self.call(&token),
+            Dot => self.dot(&token, can_assign),
             _ => {
                 Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
             }
@@ -841,7 +856,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             Slash | Star => Precedence::Factor,
             EqualEqual | BangEqual => Precedence::Equality,
             Greater | GreaterEqual | Less | LessEqual => Precedence::Comparison,
-            LeftParen => Precedence::Call,
+            LeftParen | Dot => Precedence::Call,
             _ => Precedence::None,
         }
     }
@@ -857,7 +872,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.advance_with_prefix_rule(can_assign)?;
 
         while precedence <= self.peek_precendence()? {
-            self.advance_with_infix_rule()?;
+            self.advance_with_infix_rule(can_assign)?;
         }
 
         if can_assign {
@@ -930,8 +945,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.token_stream.next().unwrap().map_err(|e| e.into())
     }
 
+    fn add_identifier_constant(&mut self, token: &Token<'a>) -> Result<u8> {
+        let name = RloxString::new(token.lexeme(), self.interner);
+        self.add_object_constant(name, token)
+    }
+
     fn add_object_constant(&mut self, obj: impl Into<Object>, token: &Token<'a>) -> Result<u8> {
-        let obj_ref: ObjectRef = self.heap.alloc(obj).into();
+        let obj_ref: ObjectRef = self.heap.alloc(obj);
         self.add_constant(obj_ref, token)
     }
 

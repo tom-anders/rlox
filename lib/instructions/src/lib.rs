@@ -54,6 +54,8 @@ pub enum Instruction {
     DefineGlobal { constant_index: u8 },
     SetGlobal { constant_index: u8 },
     GetGlobal { constant_index: u8 },
+    SetProperty { constant_index: u8 },
+    GetProperty { constant_index: u8 },
     SetLocal { stack_slot: u8 },
     GetLocal { stack_slot: u8 },
     SetUpvalue { upvalue_index: u8 },

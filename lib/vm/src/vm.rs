@@ -8,7 +8,8 @@ use std::{
 use compiler::Compiler;
 use errors::RloxErrors;
 use gc::{
-    Chunk, Closure, Heap, NativeFun, Object, RloxString, StringInterner, Upvalue, UpvalueRef, Value, ObjectRef, TypedObjectRef, GarbageCollector, Class, Instance,
+    Chunk, Class, Closure, GarbageCollector, Heap, Instance, NativeFun, Object, ObjectRef,
+    RloxString, StringInterner, TypedObjectRef, Upvalue, UpvalueRef, Value,
 };
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
@@ -29,7 +30,7 @@ pub struct Vm {
     open_upvalues: Vec<UpvalueRef>,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, thiserror::Error)]
 pub enum InterpretError {
     #[error(transparent)]
     CompileError(#[from] RloxErrors),
@@ -42,8 +43,10 @@ pub enum RuntimeError<'a> {
     InvalidNegateOperant(Value),
     InvalidBinaryOperants(Value, Value),
     UndefinedVariable(&'a str),
+    UndefinedProperty(&'a str),
     NotAFunction(Value),
     InvalidArgumentCount { expected: Arity, got: Arity },
+    InvalidPropertyAccess,
 }
 
 pub type Result<T> = std::result::Result<T, InterpretError>;
@@ -72,7 +75,10 @@ impl Vm {
         vm
     }
 
-    fn alloc<T>(&mut self, object: T) -> TypedObjectRef<T> where T: Into<Object> + Clone {
+    fn alloc<T>(&mut self, object: T) -> TypedObjectRef<T>
+    where
+        T: Into<Object> + Clone,
+    {
         log::debug!("Allocating {:?}", object.clone().into().resolve(&self.string_interner));
 
         if self.gc.gc_needed(&mut self.heap) {
@@ -124,14 +130,19 @@ impl Vm {
                     l.resolve(&self.string_interner),
                     r.resolve(&self.string_interner)
                 ),
-                RuntimeError::UndefinedVariable(name) => format!("Undefined variable {}", name),
+                RuntimeError::UndefinedVariable(name) => format!("Undefined variable '{}'.", name),
+                RuntimeError::UndefinedProperty(name) => format!("Undefined property '{}'.", name),
+                RuntimeError::InvalidPropertyAccess => {
+                    "Only instances have properties.".to_string()
+                }
             },
         }
     }
 
     pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> Result<()> {
-        let closure =
-            Value::Object(Compiler::new(source, &mut self.string_interner, &mut self.heap).compile()?.into());
+        let closure = Value::Object(
+            Compiler::new(source, &mut self.string_interner, &mut self.heap).compile()?.into(),
+        );
 
         self.push(closure.clone());
         self.call(closure, Arity(0)).unwrap();
@@ -154,8 +165,10 @@ impl Vm {
                 }
                 Object::Class(_) => {
                     // TODO pass fields
-                    let instance = self.alloc(Instance::new(obj.clone().unwrap_class(), HashMap::new()));
-                    *self.stack.stack_at_mut(self.stack.len() - 1 - arg_count.0) = Value::Object(instance.into());
+                    let instance =
+                        self.alloc(Instance::new(obj.clone().unwrap_class(), HashMap::new()));
+                    *self.stack.stack_at_mut(self.stack.len() - 1 - arg_count.0) =
+                        Value::Object(instance.into());
                     Ok(())
                 }
                 Object::NativeFun(native_fun) => {
@@ -173,7 +186,10 @@ impl Vm {
 
     fn define_native(&mut self, name: &str, native_fun: fn(Vec<Value>) -> Value) {
         let native_fun = self.alloc(NativeFun(native_fun));
-        self.globals.insert(RloxString::new(name, &mut self.string_interner), Value::Object(native_fun.into()));
+        self.globals.insert(
+            RloxString::new(name, &mut self.string_interner),
+            Value::Object(native_fun.into()),
+        );
     }
 
     fn frame_chunk(&self) -> &Chunk {
@@ -185,7 +201,7 @@ impl Vm {
             let bytes = &self.frame_chunk().code()[self.stack.frame().ip()..];
             let op = Instruction::from_bytes(bytes);
 
-            log::trace!("Stack: {}", self.stack.resolve(&self.string_interner));
+            log::debug!("Stack: {}", self.stack.resolve(&self.string_interner));
             log::trace!(
                 "Globals: {:?}",
                 self.globals
@@ -213,10 +229,14 @@ impl Vm {
                         return Ok(());
                     }
                     self.open_upvalues.retain_mut(|open_upvalue| {
-                        let retain = open_upvalue.stack_slot().unwrap() < popped_frame.base_slot() as u8;
+                        let retain =
+                            open_upvalue.stack_slot().unwrap() < popped_frame.base_slot() as u8;
                         if !retain {
                             unsafe {
-                                let value = self.stack.global_stack_at(open_upvalue.stack_slot().unwrap()).clone();
+                                let value = self
+                                    .stack
+                                    .global_stack_at(open_upvalue.stack_slot().unwrap())
+                                    .clone();
                                 *open_upvalue.deref_mut() = Upvalue::Closed(value)
                             }
                         }
@@ -235,13 +255,18 @@ impl Vm {
                     self.stack.pop_n(n as usize);
                 }
                 Instruction::CloseUpvalue => {
-                    let index = self.open_upvalues.iter().position(|open_upvalue| {
-                        open_upvalue.stack_slot().unwrap() == self.stack.len() - 1
-                    }).expect("Should have an open upvalue at the top of the stack");
+                    let index = self
+                        .open_upvalues
+                        .iter()
+                        .position(|open_upvalue| {
+                            open_upvalue.stack_slot().unwrap() == self.stack.len() - 1
+                        })
+                        .expect("Should have an open upvalue at the top of the stack");
 
                     let open_upvalue = self.open_upvalues.get_mut(index).unwrap();
                     unsafe {
-                        let value = self.stack.global_stack_at(open_upvalue.stack_slot().unwrap()).clone();
+                        let value =
+                            self.stack.global_stack_at(open_upvalue.stack_slot().unwrap()).clone();
                         *open_upvalue.deref_mut() = Upvalue::Closed(value)
                     }
 
@@ -418,7 +443,9 @@ impl Vm {
                         .expect("invalid upvalue")
                         .deref()
                     {
-                        Upvalue::Local { stack_slot } => self.stack.global_stack_at(*stack_slot).clone(),
+                        Upvalue::Local { stack_slot } => {
+                            self.stack.global_stack_at(*stack_slot).clone()
+                        }
                         Upvalue::Closed(value) => value.clone(),
                     },
                 ),
@@ -451,6 +478,53 @@ impl Vm {
                     let class = self.alloc(Class::new(*name));
                     self.push(Value::Object(class.into()));
                 }
+                Instruction::GetProperty { constant_index } => {
+                    let name = self.stack.frame_chunk().get_string_constant(constant_index);
+
+                    let instance: &Instance = self
+                        .stack
+                        .peek()
+                        .try_into()
+                        .map_err(|_| self.runtime_error(RuntimeError::InvalidPropertyAccess))?;
+
+                    let field = instance
+                        .field(name.deref())
+                        .ok_or_else(|| {
+                            self.runtime_error(RuntimeError::UndefinedProperty(
+                                name.resolve(&self.string_interner),
+                            ))
+                        })?
+                        .clone();
+
+                    log::debug!(
+                        "get property: {} -> {}",
+                        name.resolve(&self.string_interner),
+                        field.resolve(&self.string_interner)
+                    );
+                    self.stack.pop();
+                    self.push(field.clone());
+                }
+                Instruction::SetProperty { constant_index } => {
+                    let name = self.stack.frame_chunk().get_string_constant(constant_index);
+
+                    let mut object: ObjectRef =
+                        self.stack.peek_n(1).next().unwrap().clone().try_into().ok().ok_or_else(
+                            || self.runtime_error(RuntimeError::InvalidPropertyAccess),
+                        )?;
+                    let object = unsafe { object.deref_mut() };
+
+                    if let Object::Instance(instance) = object {
+                        let value = self.stack.pop();
+                        instance
+                            .field_mut(name.deref())
+                            .and_modify(|field| *field = value.clone())
+                            .or_insert_with(|| value.clone());
+                        self.stack.pop();
+                        self.stack.push(value);
+                    } else {
+                        return Err(self.runtime_error(RuntimeError::InvalidPropertyAccess));
+                    }
+                }
             }
         }
     }
@@ -463,8 +537,7 @@ impl Vm {
         }
 
         let upvalue = self.alloc(Upvalue::Local { stack_slot: stack_slot as u8 });
-        self.open_upvalues
-            .push(upvalue);
+        self.open_upvalues.push(upvalue);
 
         self.open_upvalues.last().unwrap().clone()
     }
@@ -557,16 +630,35 @@ mod tests {
     #[test]
     fn classes() {
         let source = r#"
-            class Brioche {
-            }
-            print Brioche;
-            print Brioche();
+            class Pair {}
+
+            var pair = Pair();
+            pair.first = 1;
+            pair.second = 2;
+            print pair;
+            print pair.first + pair.second;
         "#;
         let mut output = Vec::new();
         Vm::new().run_source(source, &mut output).unwrap();
-        assert_eq!(String::from_utf8(output).unwrap().lines().collect_vec(), vec![
-            "Brioche",
-            "Brioche instance",
-        ]);
+        assert_eq!(
+            String::from_utf8(output).unwrap().lines().collect_vec(),
+            vec!["Pair instance", "3"]
+        );
+    }
+
+    #[test]
+    fn invalid_field() {
+        let source = r#" class Foo {}
+                               var foo = Foo();
+                               print foo.bar;
+                            "#;
+        let mut output = Vec::new();
+        assert_eq!(
+            Vm::new().run_source(source, &mut output).unwrap_err(),
+            InterpretError::RuntimeError {
+                line: 3,
+                error: "Undefined property 'bar'.".to_string()
+            }
+        )
     }
 }

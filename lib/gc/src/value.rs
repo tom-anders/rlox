@@ -85,7 +85,7 @@ impl Value {
             (Value::Object(a), Value::Object(b)) => match (a.deref(), b.deref()) {
                 (Object::String(a), Object::String(b)) => {
                     let res = format!("{}{}", a.resolve(interner), b.resolve(interner));
-                    Some(Value::Object(heap.alloc(Object::String(RloxString::new(&res, interner))).into()))
+                    Some(Value::Object(heap.alloc(Object::String(RloxString::new(&res, interner)))))
                 }
                 _ => None,
             }

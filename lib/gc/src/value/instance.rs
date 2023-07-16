@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::{HashMap, hash_map::Entry}, ops::Deref};
 
-use crate::{ClassRef, RloxString, Value};
+use crate::{ClassRef, RloxString, Value, Object};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Instance {
@@ -25,11 +25,29 @@ impl Instance {
         self.fields.get(name)
     }
 
+    pub fn field_mut(&mut self, name: &RloxString) -> Entry<RloxString, Value>  {
+        self.fields.entry(*name)
+    }
+
     pub(crate) fn fields(&self) -> &HashMap<RloxString, Value> {
         &self.fields
     }
 
     pub(crate) fn fields_mut(&mut self) -> &mut HashMap<RloxString, Value> {
         &mut self.fields
+    }
+}
+
+impl<'a> TryFrom<&'a Value> for &'a Instance {
+    type Error = ();
+
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        if let Value::Object(object) = value {
+            if let Object::Instance(instance) = object.deref() {
+                return Ok(instance);
+            }
+        }
+
+        Err(())
     }
 }

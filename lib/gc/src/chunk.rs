@@ -121,6 +121,8 @@ impl Chunk {
             Instruction::DefineGlobal { constant_index } => get_constant(constant_index),
             Instruction::SetGlobal { constant_index } => get_constant(constant_index),
             Instruction::GetGlobal { constant_index } => get_constant(constant_index),
+            Instruction::SetProperty { constant_index } => get_constant(constant_index),
+            Instruction::GetProperty { constant_index } => get_constant(constant_index),
             Instruction::Class { constant_index } => get_constant(constant_index),
             Instruction::SetLocal { stack_slot } => format!("'{stack_slot}'"),
             Instruction::GetLocal { stack_slot } => format!("'{stack_slot}'"),
