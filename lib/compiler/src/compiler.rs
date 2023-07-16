@@ -77,6 +77,8 @@ pub enum CompilerErrorType {
     ExpectedIdentifier(&'static str),
     #[error("Expected method name")]
     ExpectedMethodName,
+    #[error("Can't use 'this' outside of a class.")]
+    ThisOutsideClass,
 }
 
 #[repr(u8)]
@@ -169,6 +171,7 @@ impl FunctionToCompile<'_> {
 pub struct Compiler<'a, 'b> {
     token_stream: Peekable<TokenStream<'a>>,
     functions: Vec<FunctionToCompile<'a>>,
+    classes: Vec<Token<'a>>, 
     interner: &'b mut StringInterner,
     heap: &'b mut Heap,
 }
@@ -181,6 +184,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Self {
             token_stream: TokenStream::new(source).peekable(),
             functions: data_stack,
+            classes: Vec::new(),
             interner,
             heap,
         }
@@ -281,6 +285,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.define_variable(constant_index, identifier.line())?;
 
+        self.classes.push(identifier.clone());
+
         self.named_variable(&identifier, false)?;
         self.consume_or_error(LeftBrace, CompilerErrorType::ExpectedLeftBrace("class body"))?;
 
@@ -297,6 +303,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         // pop the class name
         self.current_chunk().write_instruction(Instruction::Pop, identifier.line());
+        self.classes.pop().unwrap();
 
         Ok(())
     }
@@ -764,6 +771,12 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn this(&mut self, token: &Token<'a>) -> Result<()> {
+        if self.classes.is_empty() {
+            return Err(CompilerError::new(
+                CompilerErrorType::ThisOutsideClass,
+                token.clone(),
+            ).into());
+        }
         self.variable(token, false)
     }
 

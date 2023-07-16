@@ -190,10 +190,7 @@ impl Vm {
 
     fn define_native(&mut self, name: &str, native_fun: fn(Vec<Value>) -> Value) {
         let native_fun = self.alloc(NativeFun(native_fun));
-        self.globals.insert(
-            RloxString::new(name, &mut self.string_interner),
-            native_fun.into(),
-        );
+        self.globals.insert(RloxString::new(name, &mut self.string_interner), native_fun.into());
     }
 
     fn frame_chunk(&self) -> &Chunk {
@@ -559,7 +556,9 @@ impl Vm {
 
 #[cfg(test)]
 mod tests {
+    use cursor::{Line, Col};
     use env_logger::Env;
+    use errors::RloxError;
 
     use super::*;
 
@@ -713,6 +712,20 @@ mod tests {
                 line: 3,
                 error: "Undefined property 'bar'.".to_string()
             }
+        )
+    }
+
+    #[test]
+    fn this_outside_class() {
+        let source = r#"this.foo = "bar"; "#;
+        let mut output = Vec::new();
+        assert_eq!(
+            Vm::new().run_source(source, &mut output).unwrap_err(),
+            InterpretError::CompileError(RloxErrors(vec![RloxError {
+                line: Line(1),
+                col: Col(1),
+                message: "Can't use 'this' outside of a class.".to_string()
+            }]))
         )
     }
 }
