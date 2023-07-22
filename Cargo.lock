@@ -189,7 +189,6 @@ version = "0.1.0"
 dependencies = [
  "cursor",
  "derive_more",
- "errors",
  "gc",
  "instructions",
  "itertools",
@@ -368,14 +367,6 @@ checksum = "aa68f1b12764fab894d2755d2518754e71b4fd80ecfb822714a1206c2aab39bf"
 dependencies = [
  "cc",
  "libc",
-]
-
-[[package]]
-name = "errors"
-version = "0.1.0"
-dependencies = [
- "cursor",
- "thiserror",
 ]
 
 [[package]]
@@ -701,7 +692,6 @@ dependencies = [
  "anyhow",
  "clap",
  "env_logger",
- "errors",
  "itertools",
  "log",
  "scanner",
@@ -758,7 +748,6 @@ name = "scanner"
 version = "0.1.0"
 dependencies = [
  "cursor",
- "errors",
  "itertools",
  "pretty_assertions",
  "strum",
@@ -936,7 +925,6 @@ dependencies = [
  "ctor 0.2.2",
  "cursor",
  "env_logger",
- "errors",
  "gc",
  "instructions",
  "itertools",

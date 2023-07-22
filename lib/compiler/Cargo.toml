@@ -9,7 +9,6 @@ edition = "2021"
 instructions = { path = "../instructions" }
 scanner = { path = "../scanner" }
 cursor = { path = "../cursor" }
-errors = { path = "../errors" }
 gc = { path = "../gc" }
 thiserror.workspace = true
 log.workspace = true

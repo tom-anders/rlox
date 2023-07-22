@@ -1,19 +1,27 @@
-#[derive(thiserror::Error, Debug, PartialEq)]
-pub enum ScanError<'a> {
+pub mod token;
+pub use token::*;
+
+use cursor::{Cursor, Line, Col};
+use token::TokenData::{self, *};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScanError {
+    pub error: ScanErrorType,
+    pub line: Line,
+    pub col: Col,
+}
+
+pub type Result<T> = std::result::Result<T, ScanError>;
+
+#[derive(thiserror::Error, Clone, Debug, PartialEq)]
+pub enum ScanErrorType {
     #[error("Unexpected character: {0}")]
     UnexpectedCharacter(char),
     #[error("Unterminated string: {0}")]
-    UnterminatedString(&'a str),
+    UnterminatedString(String),
     #[error("Unterminated block comment: {0}")]
-    UnterminatedBlockComment(&'a str),
+    UnterminatedBlockComment(String),
 }
-
-pub mod token;
-
-use cursor::Cursor;
-use errors::{Result, RloxError};
-use token::TokenData::{self, *};
-pub use token::*;
 
 #[derive(Debug, Clone)]
 struct Scanner<'a> {
@@ -60,9 +68,9 @@ impl<'a> Scanner<'a> {
         Ok(Token::new(data, (self.start.clone(), self.cursor.clone())))
     }
 
-    fn error(&self, error: ScanError) -> Result<Token<'a>> {
+    fn error(&self, error: ScanErrorType) -> Result<Token<'a>> {
         let prev = self.cursor.prev().unwrap();
-        Err(RloxError { line: prev.line(), col: prev.col(), message: error.to_string() })
+        Err(ScanError { error, line: prev.line(), col: prev.col() })
     }
 
     pub fn scan_token(&mut self) -> Option<Result<Token<'a>>> {
@@ -134,7 +142,7 @@ impl<'a> Scanner<'a> {
 
             ' ' | '\r' | '\t' | '\n' => self.scan_token()?,
 
-            c => self.error(ScanError::UnexpectedCharacter(c)),
+            c => self.error(ScanErrorType::UnexpectedCharacter(c)),
         }
         .into()
     }
@@ -166,7 +174,7 @@ impl<'a> Scanner<'a> {
                 }
                 None => {
                     return self
-                        .error(ScanError::UnterminatedBlockComment(&self.lexeme()[2..]))
+                        .error(ScanErrorType::UnterminatedBlockComment(self.lexeme()[2..].to_string()))
                         .map(|_| ())
                 }
                 _ => (),
@@ -180,7 +188,7 @@ impl<'a> Scanner<'a> {
 
     fn string(&mut self) -> Result<Token<'a>> {
         if !self.consume_until('"') {
-            self.error(ScanError::UnterminatedString(&self.lexeme()[1..]))
+            self.error(ScanErrorType::UnterminatedString(self.lexeme()[1..].to_string()))
         } else {
             let s = self.lexeme();
             self.token(TokenData::Str(&s[1..s.len() - 1]))
@@ -270,8 +278,6 @@ mod tests {
     use cursor::{Col, Line};
     use pretty_assertions::assert_eq;
 
-    use errors::RloxError;
-
     use super::*;
 
     #[derive(Debug, PartialEq)]
@@ -332,10 +338,10 @@ mod tests {
                     col: Col(10),
                     lexeme: ";".to_string()
                 }),
-                Err(RloxError {
+                Err(ScanError {
                     line: Line(2),
                     col: Col(3),
-                    message: ScanError::UnexpectedCharacter('@').to_string()
+                    error: ScanErrorType::UnexpectedCharacter('@'),
                 }),
                 Ok(ExpectedToken { data: Eof, line: Line(2), col: Col(4), lexeme: "".to_string() })
             ]
@@ -347,10 +353,10 @@ mod tests {
         assert_eq!(
             scan_expected_tokens("/* hello world"),
             vec![
-                Err(RloxError {
+                Err(ScanError {
                     line: Line(1),
                     col: Col(14),
-                    message: ScanError::UnterminatedBlockComment(" hello world").to_string()
+                    error: ScanErrorType::UnterminatedBlockComment(" hello world".to_string()),
                 }),
                 Ok(ExpectedToken {
                     data: Eof,
@@ -364,10 +370,10 @@ mod tests {
         assert_eq!(
             scan_expected_tokens("/* hello\nworld"),
             vec![
-                Err(RloxError {
+                Err(ScanError {
                     line: Line(2),
                     col: Col(5),
-                    message: ScanError::UnterminatedBlockComment(" hello\nworld").to_string()
+                    error: ScanErrorType::UnterminatedBlockComment(" hello\nworld".to_string()),
                 }),
                 Ok(ExpectedToken { data: Eof, line: Line(2), col: Col(6), lexeme: "".to_string() })
             ]
@@ -493,10 +499,10 @@ mod tests {
         assert_eq!(
             scan_expected_tokens("     \n\n \"hello world"),
             vec![
-                Err(RloxError {
+                Err(ScanError {
                     line: Line(3),
                     col: Col(13),
-                    message: ScanError::UnterminatedString("hello world").to_string()
+                    error: ScanErrorType::UnterminatedString("hello world".to_string())
                 }),
                 Ok(ExpectedToken {
                     data: Eof,
@@ -510,10 +516,10 @@ mod tests {
         assert_eq!(
             scan_expected_tokens("\"hello world\n"),
             vec![
-                Err(RloxError {
+                Err(ScanError {
                     line: Line(1),
                     col: Col(13),
-                    message: ScanError::UnterminatedString("hello world\n").to_string()
+                    error: ScanErrorType::UnterminatedString("hello world\n".to_string())
                 }),
                 Ok(ExpectedToken { data: Eof, line: Line(2), col: Col(1), lexeme: "".to_string() })
             ]

@@ -1,7 +1,6 @@
-use std::{iter::Peekable, mem::size_of, unreachable};
+use std::{fmt::Display, iter::Peekable, mem::size_of, unreachable};
 
 use cursor::{Col, Line};
-use errors::{RloxError, RloxErrors};
 use gc::{
     Chunk, Closure, ClosureRef, Function, Heap, Object, ObjectRef, RloxString, StringInterner,
     Value,
@@ -9,34 +8,53 @@ use gc::{
 use instructions::{Arity, CompiledUpvalue, Instruction, Jump};
 use itertools::Itertools;
 use log::trace;
-use scanner::{token::TokenData, Token, TokenStream, TokenType};
+use scanner::{token::TokenData, ScanError, ScanErrorType, Token, TokenStream, TokenType};
 
 use TokenType::*;
 
 use crate::scope::Scope;
 
-pub type Result<T> = std::result::Result<T, RloxErrors>;
+pub type Result<T> = std::result::Result<T, CompilerError>;
 
+#[derive(thiserror::Error, Debug, PartialEq)]
+#[error("error (l. {line}, c. {col}): {error}")]
 pub struct CompilerError {
     error: CompilerErrorType,
     line: Line,
     col: Col,
 }
 
-impl From<CompilerError> for RloxError {
-    fn from(error: CompilerError) -> Self {
-        RloxError { line: error.line, col: error.col, message: error.error.to_string() }
+#[derive(thiserror::Error, Debug, PartialEq)]
+pub struct CompilerErrors(pub Vec<CompilerError>);
+
+impl Display for CompilerErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n"))
+    }
+}
+
+impl From<CompilerError> for CompilerErrors {
+    fn from(value: CompilerError) -> Self {
+        Self(vec![value])
     }
 }
 
 impl CompilerError {
-    fn new(error: CompilerErrorType, token: Token) -> Self {
-        Self { error, line: token.line(), col: token.col() }
+    pub fn new(error: CompilerErrorType, line: Line, col: Col) -> Self {
+        Self { error, line, col }
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+impl From<ScanError> for CompilerError {
+    fn from(value: ScanError) -> Self {
+        Self { error: CompilerErrorType::ScanError(value.error), line: value.line, col: value.col }
+    }
+}
+
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum CompilerErrorType {
+    #[error("{0}")]
+    ScanError(ScanErrorType),
     #[error("Too many constants")]
     TooManyConstants,
     #[error("Too many locals")]
@@ -79,6 +97,12 @@ pub enum CompilerErrorType {
     ExpectedMethodName,
     #[error("Can't use 'this' outside of a class.")]
     ThisOutsideClass,
+}
+
+impl CompilerErrorType {
+    fn at(self, token: &Token) -> CompilerError {
+        CompilerError::new(self, token.line(), token.col())
+    }
 }
 
 #[repr(u8)]
@@ -162,7 +186,8 @@ impl FunctionToCompile<'_> {
             upvalues: Vec::with_capacity(8),
         };
 
-        res.locals.push(Local::new(if ty != FunctionType::Function { "this" } else { "" }, Some(0)));
+        res.locals
+            .push(Local::new(if ty != FunctionType::Function { "this" } else { "" }, Some(0)));
         res
     }
 }
@@ -171,7 +196,7 @@ impl FunctionToCompile<'_> {
 pub struct Compiler<'a, 'b> {
     token_stream: Peekable<TokenStream<'a>>,
     functions: Vec<FunctionToCompile<'a>>,
-    classes: Vec<Token<'a>>, 
+    classes: Vec<Token<'a>>,
     interner: &'b mut StringInterner,
     heap: &'b mut Heap,
 }
@@ -222,8 +247,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
         &mut self.functions.last_mut().unwrap().scope
     }
 
-    pub fn compile(mut self) -> std::result::Result<ClosureRef, RloxErrors> {
-        let mut errors = RloxErrors(Vec::new());
+    pub fn compile(mut self) -> std::result::Result<ClosureRef, CompilerErrors> {
+        let mut errors = CompilerErrors(Vec::new());
 
         let final_token = loop {
             if let Ok(token) = self.consume(Eof)? {
@@ -232,17 +257,17 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
             match self.declaration() {
                 Ok(()) => (),
-                Err(mut e) => {
+                Err(e) => {
                     log::trace!("Hit error: {:?}, syncing...", e);
                     self.synchronize();
-                    errors.0.append(&mut e);
+                    errors.0.push(e);
                 }
             }
         };
 
         self.return_nil(final_token.line());
 
-        if errors.is_empty() {
+        if errors.0.is_empty() {
             log::debug!(
                 "Compiled chunk [{:?}]: {:?}",
                 self.current_function_type(),
@@ -339,9 +364,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let mut arity = Arity(0);
         if self.peek().unwrap()? != RightParen {
             loop {
-                arity.0 = arity.0.checked_add(1).ok_or_else(|| {
-                    CompilerError::new(CompilerErrorType::TooManyArguments, function_token.clone())
-                })?;
+                arity.0 = arity
+                    .0
+                    .checked_add(1)
+                    .ok_or_else(|| CompilerErrorType::TooManyArguments.at(&function_token))?;
 
                 let (constant_index, token) =
                     self.parse_variable(CompilerErrorType::ExpectedParameterName)?;
@@ -426,11 +452,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 self.expression()?;
 
                 if arg_count == 255 {
-                    return Err(CompilerError::new(
-                        CompilerErrorType::TooManyArguments,
-                        self.peek_token().unwrap()?,
-                    )
-                    .into());
+                    return Err(CompilerErrorType::TooManyArguments.at(self.peek_token().unwrap()?));
                 }
 
                 arg_count += 1;
@@ -555,11 +577,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             })
             .any(|local| local.name == name.lexeme())
         {
-            return Err(CompilerError::new(
-                CompilerErrorType::VariableAlreadyInScope,
-                name.clone(),
-            )
-            .into());
+            return Err(CompilerErrorType::VariableAlreadyInScope.at(name));
         }
 
         self.add_local(name)
@@ -567,7 +585,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn add_local(&mut self, name: &Token<'a>) -> Result<()> {
         if self.num_locals() == self.functions.last().unwrap().locals.capacity() {
-            return Err(CompilerError::new(CompilerErrorType::TooManyLocals, name.clone()).into());
+            return Err(CompilerErrorType::TooManyLocals.at(name));
         }
 
         self.locals_mut().push(Local::new(name.lexeme(), None));
@@ -610,11 +628,9 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn return_statement(&mut self) -> Result<()> {
         if self.current_function_type() == FunctionType::Script {
-            return Err(CompilerError::new(
-                CompilerErrorType::ReturnOutsideFunction,
-                self.peek_token().unwrap().unwrap().clone(),
-            )
-            .into());
+            return Err(
+                CompilerErrorType::ReturnOutsideFunction.at(self.peek_token().unwrap().unwrap())
+            );
         }
 
         if let Ok(token) = self.consume(Semicolon)? {
@@ -650,7 +666,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let jump = Jump(
             (self.current_chunk().code().len() - loop_start + size_of::<Jump>())
                 .try_into()
-                .map_err(|_| CompilerError::new(CompilerErrorType::TooLargeJump, token.clone()))?,
+                .map_err(|_| CompilerErrorType::TooLargeJump.at(token))?,
         );
         self.current_chunk().write_instruction(Instruction::Loop(jump), token.line());
         Ok(())
@@ -689,10 +705,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.current_chunk().patch_jump(
             offset,
-            Jump(
-                jump.try_into()
-                    .map_err(|_| CompilerError::new(CompilerErrorType::TooLargeJump, token))?,
-            ),
+            Jump(jump.try_into().map_err(|_| CompilerErrorType::TooLargeJump.at(&token))?),
         );
         Ok(())
     }
@@ -772,10 +785,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn this(&mut self, token: &Token<'a>) -> Result<()> {
         if self.classes.is_empty() {
-            return Err(CompilerError::new(
-                CompilerErrorType::ThisOutsideClass,
-                token.clone(),
-            ).into());
+            return Err(CompilerErrorType::ThisOutsideClass.at(token));
         }
         self.variable(token, false)
     }
@@ -877,9 +887,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             Minus | Bang => self.unary(&token),
             Str => self.string(&token),
             Identifier => self.variable(&token, can_assign),
-            _ => {
-                Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
-            }
+            _ => Err(CompilerErrorType::ExpectedExpression.at(&token)),
         }
     }
 
@@ -891,9 +899,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             | Less | LessEqual => self.binary(&token),
             LeftParen => self.call(&token),
             Dot => self.dot(&token, can_assign),
-            _ => {
-                Err(CompilerError::new(CompilerErrorType::ExpectedExpression, token.clone()).into())
-            }
+            _ => Err(CompilerErrorType::ExpectedExpression.at(&token)),
         }
     }
 
@@ -926,9 +932,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             // If the equal has not been consumed, we tried assigning to an invalid target,
             // so report that error here
             if let Ok(token) = self.consume(Equal)? {
-                return Err(
-                    CompilerError::new(CompilerErrorType::InvalidAssignmentTarget, token).into()
-                );
+                return Err(CompilerErrorType::InvalidAssignmentTarget.at(&token));
             }
         }
 
@@ -963,7 +967,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     ) -> Result<std::result::Result<Token<'a>, Token<'a>>> {
         match self.peek_token() {
             Some(Ok(t)) if t.ty() == token_type => Ok(Ok(self.advance().unwrap())),
-            Some(Ok(t)) => Ok(Err(t)),
+            Some(Ok(t)) => Ok(Err(t.clone())),
             Some(Err(err)) => Err(err),
             None => unreachable!("Should have hit Eof"),
         }
@@ -976,12 +980,15 @@ impl<'a, 'b> Compiler<'a, 'b> {
     ) -> Result<Token<'a>> {
         match self.consume(token_type)? {
             Ok(token) => Ok(token),
-            Err(token) => Err(CompilerError::new(error, token).into()),
+            Err(token) => Err(error.at(&token)),
         }
     }
 
-    fn peek_token(&mut self) -> Option<Result<Token<'a>>> {
-        self.token_stream.peek().cloned().map(|t| t.map_err(|e| e.into()))
+    fn peek_token(&mut self) -> Option<Result<&Token<'a>>> {
+        match self.token_stream.peek()? {
+            Ok(token) => Some(Ok(token)),
+            Err(scan_error) => Some(Err(CompilerError::from(scan_error.clone()))),
+        }
     }
 
     fn peek(&mut self) -> Option<Result<TokenType>> {
@@ -1005,6 +1012,6 @@ impl<'a, 'b> Compiler<'a, 'b> {
     fn add_constant(&mut self, value: impl Into<Value>, token: &Token<'a>) -> Result<u8> {
         self.current_chunk()
             .add_constant(value.into())
-            .ok_or(CompilerError::new(CompilerErrorType::TooManyConstants, token.clone()).into())
+            .ok_or(CompilerErrorType::TooManyConstants.at(token))
     }
 }

@@ -10,7 +10,6 @@ cursor = { path = "../cursor" }
 instructions = { path = "../instructions" }
 scanner = { path = "../scanner" }
 compiler = { path = "../compiler" }
-errors = { path = "../errors" }
 gc = { path = "../gc" }
 log.workspace = true
 thiserror.workspace = true

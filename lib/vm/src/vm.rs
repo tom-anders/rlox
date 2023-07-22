@@ -5,8 +5,7 @@ use std::{
     ops::Deref,
 };
 
-use compiler::Compiler;
-use errors::RloxErrors;
+use compiler::{Compiler, CompilerErrors};
 use gc::{
     BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef, NativeFun,
     Object, ObjectRef, RloxString, StringInterner, TypedObjectRef, Upvalue, UpvalueRef, Value,
@@ -33,7 +32,7 @@ pub struct Vm {
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub enum InterpretError {
     #[error(transparent)]
-    CompileError(#[from] RloxErrors),
+    CompileError(#[from] CompilerErrors),
     #[error("line {line}: {error}")]
     RuntimeError { line: usize, error: String },
 }
@@ -556,9 +555,9 @@ impl Vm {
 
 #[cfg(test)]
 mod tests {
+    use compiler::{CompilerError, CompilerErrorType};
     use cursor::{Line, Col};
     use env_logger::Env;
-    use errors::RloxError;
 
     use super::*;
 
@@ -721,11 +720,11 @@ mod tests {
         let mut output = Vec::new();
         assert_eq!(
             Vm::new().run_source(source, &mut output).unwrap_err(),
-            InterpretError::CompileError(RloxErrors(vec![RloxError {
-                line: Line(1),
-                col: Col(1),
-                message: "Can't use 'this' outside of a class.".to_string()
-            }]))
+            InterpretError::CompileError(CompilerErrors(vec![CompilerError::new(
+                CompilerErrorType::ThisOutsideClass,
+                Line(1),
+                Col(1),
+            )]))
         )
     }
 }

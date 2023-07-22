@@ -16,5 +16,4 @@ pretty_assertions.workspace = true
 strum = { version = "0.24.1", features = ["derive"] }
 strum_macros = "0.24.3"
 
-errors = { path = "../errors" }
 cursor = { path = "../cursor" }
