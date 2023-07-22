@@ -1,15 +1,15 @@
 use std::{collections::{HashMap, hash_map::Entry}, ops::Deref};
 
-use crate::{ClassRef, RloxString, Value, Object};
+use crate::{ClassRef, Value, Object, InternedString};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Instance {
     class: ClassRef,
-    fields: HashMap<RloxString, Value>,
+    fields: HashMap<InternedString, Value>,
 }
 
 impl Instance {
-    pub fn new(class: ClassRef, fields: HashMap<RloxString, Value>) -> Self {
+    pub fn new(class: ClassRef, fields: HashMap<InternedString, Value>) -> Self {
         Self { class, fields }
     }
 
@@ -21,19 +21,19 @@ impl Instance {
         &mut self.class
     }
 
-    pub fn field(&self, name: &RloxString) -> Option<&Value> {
+    pub fn field(&self, name: &InternedString) -> Option<&Value> {
         self.fields.get(name)
     }
 
-    pub fn field_mut(&mut self, name: &RloxString) -> Entry<RloxString, Value>  {
+    pub fn field_mut(&mut self, name: &InternedString) -> Entry<InternedString, Value>  {
         self.fields.entry(*name)
     }
 
-    pub(crate) fn fields(&self) -> &HashMap<RloxString, Value> {
+    pub(crate) fn fields(&self) -> &HashMap<InternedString, Value> {
         &self.fields
     }
 
-    pub(crate) fn fields_mut(&mut self) -> &mut HashMap<RloxString, Value> {
+    pub(crate) fn fields_mut(&mut self) -> &mut HashMap<InternedString, Value> {
         &mut self.fields
     }
 }

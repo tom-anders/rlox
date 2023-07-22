@@ -56,33 +56,12 @@ pub struct Stack {
     frames: CallStack,
 }
 
-pub struct StackResolved<'a, 'b>(&'a Stack, &'b StringInterner);
-
-impl Display for StackResolved<'_, '_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Stack {{stack: [{}], call_frames: [{}] }}",
-            self.0.values
-                .iter()
-                .map(|v| v.resolve(self.1).to_string())
-                .collect_vec()
-                .join(", "),
-            self.0.iter_frames().map(|frame| format!("{:?}", frame)).collect_vec().join(", ")
-        )
-    }
-}
-
 impl Stack {
     pub fn new() -> Self {
         Self {
             values: ArrayStack::new(),
             frames: ArrayStack::new(),
         }
-    }
-
-    pub fn resolve<'a, 'b>(&'a self, interner: &'b StringInterner) -> StackResolved<'a, 'b> {
-        StackResolved(self, interner)
     }
 
     pub fn frame(&self) -> &CallFrame {
@@ -181,15 +160,15 @@ impl Stack {
         &self.values
     }
 
-    pub fn stack_trace(&self, interner: &StringInterner) -> String {
+    pub fn stack_trace(&self) -> String {
         self.iter_frames()
             .rev()
             .map(|frame| {
                 let function = &*frame.closure.function();
-                let name = if function.name.resolve(interner).is_empty() {
+                let name = if function.name.is_empty() {
                     "script".to_string()
                 } else {
-                    format!("{}()", function.name.resolve(interner))
+                    format!("{}()", function.name)
                 };
                 format!("[line {}] in {}", function.chunk.lines()[frame.ip()], name)
             })

@@ -35,7 +35,7 @@ fn run(source: String, vm: &mut Vm) -> anyhow::Result<()> {
     match vm.run_source(&source, &mut stdout()) {
         Ok(()) => Ok(()),
         Err(e) => match e {
-            vm::InterpretError::CompileError(_) => Err(e.into()),
+            vm::InterpretError::CompileError(_) => Err(anyhow!("{e}")),
             vm::InterpretError::RuntimeError { .. } => Err(anyhow!("{e}\n{}", vm.stack_trace())),
         },
     }

@@ -2,7 +2,7 @@ use std::{fmt::Display, iter::Peekable, mem::size_of, unreachable};
 
 use cursor::{Col, Line};
 use gc::{
-    Chunk, Closure, ClosureRef, Function, Heap, Object, ObjectRef, RloxString, StringInterner,
+    Chunk, Closure, ClosureRef, Function, Heap, Object, ObjectRef, StringInterner,
     Value,
 };
 use instructions::{Arity, CompiledUpvalue, Instruction, Jump};
@@ -271,7 +271,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             log::debug!(
                 "Compiled chunk [{:?}]: {:?}",
                 self.current_function_type(),
-                self.current_chunk().clone().resolve(self.interner)
+                self.current_chunk()
             );
             assert!(self.functions.len() == 1);
 
@@ -396,8 +396,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         log::debug!(
             "Compiled function [{:?}]: {:?}",
-            compiled_function.function.name.resolve(self.interner),
-            compiled_function.function.chunk.resolve(self.interner),
+            compiled_function.function.name,
+            compiled_function.function.chunk,
         );
 
         let constant_index =
@@ -809,7 +809,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             _ => unreachable!(),
         };
 
-        let name = RloxString::new(s, self.interner);
+        let name = self.interner.intern(s);
         let index = self.add_object_constant(name, prefix_token)?;
         self.current_chunk()
             .write_instruction(Instruction::Constant { index }, prefix_token.line());
@@ -1000,7 +1000,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn add_identifier_constant(&mut self, token: &Token<'a>) -> Result<u8> {
-        let name = RloxString::new(token.lexeme(), self.interner);
+        let name = self.interner.intern(token.lexeme());
         self.add_object_constant(name, token)
     }
 

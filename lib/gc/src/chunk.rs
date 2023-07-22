@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 use crate::{Value, StringRef, FunctionRef, StringInterner};
 
-#[derive(Clone, Default, Debug, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub struct Chunk {
     code: Vec<u8>,
     constants: Vec<Value>,
@@ -77,7 +77,6 @@ impl Chunk {
     pub fn disassemble_instruction(
         &self,
         offset: usize,
-        interner: &StringInterner,
     ) -> (String, usize) {
         let instr = Instruction::from_bytes(&self.code[offset..]);
 
@@ -93,7 +92,7 @@ impl Chunk {
                 "{index} -> {}",
                 self.constants
                     .get(index as usize)
-                    .map(|c| c.resolve(interner).to_string())
+                    .map(Value::to_string)
                     .unwrap_or_else(|| "??".to_string())
             )
         };
@@ -156,10 +155,6 @@ impl Chunk {
         (format!("{offset:04} {line_str} {opcode:16} {op_args}"), offset + instr.num_bytes())
     }
 
-    pub fn resolve<'a, 'b>(&'a self, interner: &'b StringInterner) -> ResolvedChunk<'a, 'b> {
-        ResolvedChunk(self, interner)
-    }
-
     pub fn constants_mut(&mut self) -> &mut Vec<Value> {
         &mut self.constants
     }
@@ -171,16 +166,14 @@ impl Chunk {
     }
 }
 
-pub struct ResolvedChunk<'a, 'b>(&'a Chunk, &'b StringInterner);
-
-impl Debug for ResolvedChunk<'_, '_> {
+impl Debug for Chunk {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut offset = 0;
 
         writeln!(f)?;
         writeln!(f, "================ Chunk ================")?;
-        while offset < self.0.code.len() {
-            let (debug, new_offset) = self.0.disassemble_instruction(offset, self.1);
+        while offset < self.code.len() {
+            let (debug, new_offset) = self.disassemble_instruction(offset);
             writeln!(f, "{}", debug)?;
             offset = new_offset;
         }

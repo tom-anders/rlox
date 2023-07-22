@@ -1,75 +1,84 @@
-//! Adapted from https://matklad.github.io/2020/03/22/fast-simple-rust-interner.html
+use std::{
+    collections::HashSet,
+    hash::Hash,
+    ops::Deref,
+};
 
-use std::{collections::HashMap, mem};
+#[derive(Eq, Debug, Clone, Copy)]
+pub struct InternedString(*const str);
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
-pub struct StrId(u32);
+impl Hash for InternedString {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::ptr::hash(self.0, state)
+    }
+}
+
+impl PartialEq for InternedString {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.0, other.0)
+    }
+}
+
+impl std::fmt::Display for InternedString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.deref())
+    }
+}
+
+impl Deref for InternedString {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: We never remove interned strings, so the pointer is always valid.
+        // We also only hand out immutable pointers, so dereferencing never violates Rust's
+        // mutability rules.
+        unsafe { &*self.0 }
+    }
+}
 
 #[derive(Debug)]
 pub struct StringInterner {
-    map: HashMap<&'static str, StrId>,
-    vec: Vec<&'static str>,
-    buf: String,
-    full: Vec<String>,
+    set: HashSet<&'static str>,
+    strings: Vec<String>,
 }
 
 impl StringInterner {
     pub fn with_capacity(cap: usize) -> StringInterner {
-        let cap = cap.next_power_of_two();
-
         StringInterner {
-            map: HashMap::default(),
-            vec: Vec::new(),
-            buf: String::with_capacity(cap),
-            full: Vec::new(),
+            set: HashSet::default(),
+            strings: Vec::with_capacity(cap.next_power_of_two()),
         }
     }
 
-    pub fn intern(&mut self, name: &str) -> StrId {
-        if let Some(&id) = self.map.get(name) {
-            return id;
+    pub fn intern(&mut self, name: &str) -> InternedString {
+        if let Some(&id) = self.set.get(&name) {
+            return InternedString(id);
         }
 
-        let name = unsafe { self.alloc(name) };
+        self.strings.push(name.to_string());
 
-        let id = StrId(self.map.len() as u32);
+        let ptr = self.strings.last().unwrap().as_str() as *const str;
+        self.set.insert(unsafe { &*ptr });
 
-        self.map.insert(name, id);
-
-        self.vec.push(name);
-
-        debug_assert!(self.lookup(id) == name);
-
-        debug_assert!(self.intern(name) == id);
-
-        id
+        InternedString(ptr)
     }
+}
 
-    pub fn lookup(&self, id: StrId) -> &str {
-        self.vec[id.0 as usize]
-    }
+#[cfg(test)]
+mod tests {
+    use std::assert_eq;
 
-    unsafe fn alloc(&mut self, name: &str) -> &'static str {
-        let cap = self.buf.capacity();
+    use super::*;
 
-        if cap < self.buf.len() + name.len() {
-            let new_cap = (cap.max(name.len()) + 1).next_power_of_two();
+    #[test]
+    fn intering() {
+        let mut interner = StringInterner::with_capacity(1024);
 
-            let new_buf = String::with_capacity(new_cap);
+        assert_eq!(interner.intern("a"), interner.intern("a"));
+        assert_eq!(interner.intern("b"), interner.intern("b"));
+        assert_eq!(interner.intern("ab"), interner.intern(&("a".to_string() + "b")));
 
-            let old_buf = mem::replace(&mut self.buf, new_buf);
-
-            self.full.push(old_buf);
-        }
-
-        let interned = {
-            let start = self.buf.len();
-
-            self.buf.push_str(name);
-
-            &self.buf[start..]
-        };
-
-        &*(interned as *const str)
+        let s = "s".to_string();
+        assert_eq!(interner.intern(&s), interner.intern(&s.clone()));
     }
 }

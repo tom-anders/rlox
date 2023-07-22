@@ -1,10 +1,6 @@
 use std::{ops::Deref, unreachable};
 
-mod rlox_string;
-
-pub use rlox_string::RloxString;
-
-use crate::{string_interner::StringInterner, ObjectRef, Heap};
+use crate::{string_interner::StringInterner, Heap, ObjectRef};
 
 mod object;
 pub use object::*;
@@ -18,7 +14,7 @@ pub use closure::*;
 mod upvalue;
 pub use upvalue::*;
 
-mod class; 
+mod class;
 pub use class::*;
 
 mod instance;
@@ -27,11 +23,12 @@ pub use instance::*;
 mod bound_method;
 pub use bound_method::*;
 
-#[derive(Clone, Debug, PartialEq, derive_more::From, derive_more::TryInto, derive_more::Unwrap)]
+#[derive(Clone, PartialEq, derive_more::From, derive_more::TryInto, derive_more::Unwrap, derive_more::Display)]
 #[try_into(owned, ref, ref_mut)]
 pub enum Value {
     Number(f64),
     Boolean(bool),
+    #[display(fmt="Nil")]
     Nil,
     Object(ObjectRef),
 }
@@ -54,7 +51,7 @@ impl Value {
 
     pub fn equals(&self, other: &Value) -> bool {
         match (self, other) {
-            // Dereference first, since due to string two different ObjectRefs may actually refer
+            // Dereference first, since due to string interning two different ObjectRefs may actually refer
             // to the same string.
             (Value::Object(a), Value::Object(b)) => a.deref() == b.deref(),
             (a, b) => a == b,
@@ -82,16 +79,21 @@ impl Value {
         }
     }
 
-    pub fn add(&self, other: &Value, heap: &mut Heap, interner: &mut StringInterner) -> Option<Value> {
+    pub fn add(
+        &self,
+        other: &Value,
+        heap: &mut Heap,
+        interner: &mut StringInterner,
+    ) -> Option<Value> {
         match (self, other) {
             (Value::Number(a), Value::Number(b)) => Some(Value::Number(a + b)),
             (Value::Object(a), Value::Object(b)) => match (a.deref(), b.deref()) {
                 (Object::String(a), Object::String(b)) => {
-                    let res = format!("{}{}", a.resolve(interner), b.resolve(interner));
-                    Some(Value::Object(heap.alloc(Object::String(RloxString::new(&res, interner)))))
+                    let res = format!("{}{}", a, b);
+                    Some(Value::Object(heap.alloc(Object::String(interner.intern(&res)))))
                 }
                 _ => None,
-            }
+            },
             _ => None,
         }
     }
@@ -118,42 +120,13 @@ impl Value {
     }
 }
 
-impl Value {
-    pub fn resolve<'a, 'b>(&'a self, interner: &'b StringInterner) -> ValueWithInterner<'a, 'b> {
-        ValueWithInterner(self, interner)
-    }
-}
-
-#[derive(Clone)]
-pub struct ValueWithInterner<'a, 'b>(&'a Value, &'b StringInterner);
-
-impl std::fmt::Debug for ValueWithInterner<'_, '_> {
+impl std::fmt::Debug for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ValueWithInterner(Value::Number(n), _) => write!(f, "Number({})", n),
-            ValueWithInterner(Value::Boolean(b), _) => write!(f, "Boolean({})", b),
-            ValueWithInterner(Value::Nil, _) => write!(f, "Nil"),
-            ValueWithInterner(Value::Object(o), _) => write!(f, "{:?}", o.resolve(self.1)),
-        }
-    }
-}
-
-impl std::fmt::Display for ValueWithInterner<'_, '_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ValueWithInterner(Value::Number(n), _) => write!(f, "{}", n),
-            ValueWithInterner(Value::Boolean(b), _) => write!(f, "{}", b),
-            ValueWithInterner(Value::Nil, _) => write!(f, "nil"),
-            ValueWithInterner(Value::Object(o), _) => match o.deref() {
-                Object::String(s) => write!(f, "{}", s.resolve(self.1)),
-                Object::Function(fun) => write!(f, "<fn {}>", fun.name.resolve(self.1)),
-                Object::Closure(closure) => write!(f, "<fn {}>", closure.function().name.resolve(self.1)),
-                Object::NativeFun(native_fn) => write!(f, "<native fn {:?}>", native_fn),
-                Object::Upvalue(_) => unreachable!("Should not be able to print an upvalue"),
-                Object::Class(class) => write!(f, "{}", class.name().resolve(self.1)),
-                Object::Instance(instance) => write!(f, "{} instance", instance.class().name().resolve(self.1)),
-                Object::BoundMethod(bound_method) => write!(f, "{}", bound_method.method().function().name.resolve(self.1)),
-            } 
+            Value::Number(n) => write!(f, "Number({})", n),
+            Value::Boolean(b) => write!(f, "Boolean({})", b),
+            Value::Nil => write!(f, "Nil"),
+            Value::Object(o) => write!(f, "{:?}", o),
         }
     }
 }

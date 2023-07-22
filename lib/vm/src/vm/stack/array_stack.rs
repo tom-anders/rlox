@@ -4,10 +4,17 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-#[derive(Debug)]
+use itertools::Itertools;
+
 pub struct ArrayStack<T, const N: usize> {
     stack: [MaybeUninit<T>; N],
     top: usize,
+}
+
+impl<T: std::fmt::Debug, const N: usize> std::fmt::Debug for ArrayStack<T, N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.iter().collect_vec().as_slice())
+    }
 }
 
 impl<T, const N: usize> ArrayStack<T, N> {

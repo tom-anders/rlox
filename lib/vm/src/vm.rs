@@ -8,7 +8,7 @@ use std::{
 use compiler::{Compiler, CompilerErrors};
 use gc::{
     BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef, NativeFun,
-    Object, ObjectRef, RloxString, StringInterner, TypedObjectRef, Upvalue, UpvalueRef, Value,
+    Object, ObjectRef, StringInterner, TypedObjectRef, Upvalue, UpvalueRef, Value, InternedString,
 };
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
@@ -24,7 +24,7 @@ pub struct Vm {
     heap: Heap,
     gc: GarbageCollector,
     string_interner: StringInterner,
-    globals: HashMap<RloxString, Value>,
+    globals: HashMap<InternedString, Value>,
     // TODO clox uses a linked list here, check if this is actually more performant
     open_upvalues: Vec<UpvalueRef>,
 }
@@ -34,17 +34,24 @@ pub enum InterpretError {
     #[error(transparent)]
     CompileError(#[from] CompilerErrors),
     #[error("line {line}: {error}")]
-    RuntimeError { line: usize, error: String },
+    RuntimeError { line: usize, error: RuntimeError },
 }
 
-#[derive(Debug, Clone)]
-pub enum RuntimeError<'a> {
+#[derive(thiserror::Error, Debug, Clone, PartialEq)]
+pub enum RuntimeError {
+    #[error("Expected a number, got {0}")]
     InvalidNegateOperant(Value),
+    #[error("Expected two numbers, got {0} and {1}")]
     InvalidBinaryOperants(Value, Value),
-    UndefinedVariable(&'a str),
-    UndefinedProperty(&'a str),
+    #[error("Undefined variable '{0}'.")]
+    UndefinedVariable(String),
+    #[error("Undefined property '{0}'.")]
+    UndefinedProperty(String),
+    #[error("Expected a function, got {0}")]
     NotAFunction(Value),
+    #[error("Expected {expected} arguments, got {got}")]
     InvalidArgumentCount { expected: Arity, got: Arity },
+    #[error("Only instances have properties.")]
     InvalidPropertyAccess,
 }
 
@@ -78,7 +85,7 @@ impl Vm {
     where
         T: Into<Object> + Clone,
     {
-        log::debug!("Allocating {:?}", object.clone().into().resolve(&self.string_interner));
+        log::debug!("Allocating {:?}", object.clone().into());
 
         if self.gc.gc_needed(&mut self.heap) {
             for value in self.stack.iter_mut() {
@@ -97,7 +104,7 @@ impl Vm {
                 self.gc.mark_ref(upvalue);
             }
 
-            self.gc.collect_garbage(&mut self.heap, &self.string_interner);
+            self.gc.collect_garbage(&mut self.heap);
         }
 
         self.heap.alloc(object.into()).into()
@@ -108,34 +115,11 @@ impl Vm {
     }
 
     pub fn stack_trace(&self) -> String {
-        self.stack.stack_trace(&self.string_interner)
+        self.stack.stack_trace()
     }
 
     fn runtime_error(&self, error: RuntimeError) -> InterpretError {
-        InterpretError::RuntimeError {
-            line: self.stack.current_line(),
-            error: match error {
-                RuntimeError::NotAFunction(v) => {
-                    format!("Expected a function, got {}", v.resolve(&self.string_interner))
-                }
-                RuntimeError::InvalidArgumentCount { expected, got } => {
-                    format!("Expected {} arguments, got {}", expected, got)
-                }
-                RuntimeError::InvalidNegateOperant(v) => {
-                    format!("Expected a number, got {}", v.resolve(&self.string_interner))
-                }
-                RuntimeError::InvalidBinaryOperants(l, r) => format!(
-                    "Expected two numbers, got {} and {}",
-                    l.resolve(&self.string_interner),
-                    r.resolve(&self.string_interner)
-                ),
-                RuntimeError::UndefinedVariable(name) => format!("Undefined variable '{}'.", name),
-                RuntimeError::UndefinedProperty(name) => format!("Undefined property '{}'.", name),
-                RuntimeError::InvalidPropertyAccess => {
-                    "Only instances have properties.".to_string()
-                }
-            },
-        }
+        InterpretError::RuntimeError { line: self.stack.current_line(), error }
     }
 
     pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> Result<()> {
@@ -166,7 +150,8 @@ impl Vm {
                     // TODO pass fields
                     let instance =
                         self.alloc(Instance::new(obj.clone().unwrap_class(), HashMap::new()));
-                    *self.stack.frame_stack_at_mut(self.stack.len() - 1 - arg_count.0) = instance.into();
+                    *self.stack.frame_stack_at_mut(self.stack.len() - 1 - arg_count.0) =
+                        instance.into();
                     Ok(())
                 }
                 Object::NativeFun(native_fun) => {
@@ -189,7 +174,7 @@ impl Vm {
 
     fn define_native(&mut self, name: &str, native_fun: fn(Vec<Value>) -> Value) {
         let native_fun = self.alloc(NativeFun(native_fun));
-        self.globals.insert(RloxString::new(name, &mut self.string_interner), native_fun.into());
+        self.globals.insert(self.string_interner.intern(name), native_fun.into());
     }
 
     fn frame_chunk(&self) -> &Chunk {
@@ -201,22 +186,12 @@ impl Vm {
             let bytes = &self.frame_chunk().code()[self.stack.frame().ip()..];
             let op = Instruction::from_bytes(bytes);
 
-            log::debug!("Stack: {}", self.stack.resolve(&self.string_interner));
-            log::trace!(
-                "Globals: {:?}",
-                self.globals
-                    .iter()
-                    .map(|(name, value)| {
-                        (name.resolve(&self.string_interner), value.resolve(&self.string_interner))
-                    })
-                    .collect_vec()
-            );
+            log::debug!("Stack: {:?}", self.stack);
+            log::trace!("Globals: {:?}", self.globals);
             log::trace!("Constants: {:?}", self.frame_chunk().constants());
             log::trace!(
                 "{}",
-                self.frame_chunk()
-                    .disassemble_instruction(self.stack.frame().ip(), &self.string_interner,)
-                    .0
+                self.frame_chunk().disassemble_instruction(self.stack.frame().ip()).0
             );
 
             self.stack.frame_mut().inc_ip(op.num_bytes());
@@ -245,9 +220,7 @@ impl Vm {
                     self.stack.truncate_stack(popped_frame.base_slot());
                     self.stack.push(result);
                 }
-                Instruction::Print => {
-                    writeln!(stdout, "{}", self.stack.pop().resolve(&self.string_interner)).unwrap()
-                }
+                Instruction::Print => writeln!(stdout, "{}", self.stack.pop()).unwrap(),
                 Instruction::Pop => {
                     self.stack.pop();
                 }
@@ -280,11 +253,7 @@ impl Vm {
                 Instruction::DefineGlobal { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
-                    trace!(
-                        "Defining global: {:?} {:?}",
-                        name.resolve(&self.string_interner),
-                        self.stack.peek().resolve(&self.string_interner)
-                    );
+                    trace!("Defining global: {:?} {:?}", name, self.stack.peek());
                     self.globals.insert(*name, self.stack.peek().clone());
                     self.stack.pop();
                 }
@@ -297,9 +266,8 @@ impl Vm {
                             *entry.get_mut() = val.clone();
                         }
                         Entry::Vacant(_) => {
-                            return Err(self.runtime_error(RuntimeError::UndefinedVariable(
-                                name.resolve(&self.string_interner),
-                            )))
+                            return Err(self
+                                .runtime_error(RuntimeError::UndefinedVariable(name.to_string())))
                         }
                     };
                 }
@@ -307,9 +275,7 @@ impl Vm {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
                     let value = self.globals.get(&name).ok_or_else(|| {
-                        self.runtime_error(RuntimeError::UndefinedVariable(
-                            name.resolve(&self.string_interner),
-                        ))
+                        self.runtime_error(RuntimeError::UndefinedVariable(name.to_string()))
                     })?;
 
                     self.push(value.clone());
@@ -484,11 +450,7 @@ impl Vm {
                     let instance: InstanceRef = self.stack.peek().clone().unwrap_object().into();
 
                     if let Some(field) = instance.field(name.deref()).cloned() {
-                        log::debug!(
-                            "get property: {} -> {}",
-                            name.resolve(&self.string_interner),
-                            field.resolve(&self.string_interner)
-                        );
+                        log::debug!("get property: {} -> {}", name.deref(), field);
                         self.stack.pop();
                         self.push(field.clone());
                     } else if let Some(method) = instance.class().get_method(name.deref()) {
@@ -497,9 +459,9 @@ impl Vm {
                         self.stack.pop();
                         self.push(bound_method);
                     } else {
-                        return Err(self.runtime_error(RuntimeError::UndefinedProperty(
-                            name.resolve(&self.string_interner),
-                        )));
+                        return Err(
+                            self.runtime_error(RuntimeError::UndefinedProperty(name.to_string()))
+                        );
                     }
                 }
                 Instruction::SetProperty { constant_index } => {
@@ -524,7 +486,8 @@ impl Vm {
                     }
                 }
                 Instruction::Method { constant_index } => {
-                    let (method, class) = self.stack.value_stack().iter().rev().take(2).collect_tuple().unwrap();
+                    let (method, class) =
+                        self.stack.value_stack().iter().rev().take(2).collect_tuple().unwrap();
 
                     let mut class = class.clone().unwrap_object().unwrap_class();
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
@@ -556,7 +519,7 @@ impl Vm {
 #[cfg(test)]
 mod tests {
     use compiler::{CompilerError, CompilerErrorType};
-    use cursor::{Line, Col};
+    use cursor::{Col, Line};
     use env_logger::Env;
 
     use super::*;
@@ -709,7 +672,7 @@ mod tests {
             Vm::new().run_source(source, &mut output).unwrap_err(),
             InterpretError::RuntimeError {
                 line: 3,
-                error: "Undefined property 'bar'.".to_string()
+                error: RuntimeError::UndefinedProperty("bar".to_string())
             }
         )
     }

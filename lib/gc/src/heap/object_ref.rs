@@ -1,6 +1,6 @@
 use std::{rc::{Weak, Rc}, ops::Deref, marker::PhantomData};
 
-use crate::{garbage_collector::GcObject, Object, Function, Closure, Upvalue, StringInterner, RloxString, Class, Instance, BoundMethod, Value};
+use crate::{garbage_collector::GcObject, Object, Function, Closure, Upvalue, Class, Instance, BoundMethod, Value, InternedString};
 
 #[derive(Clone, Debug)]
 pub struct ObjectRef(*mut GcObject, #[cfg(debug_assertions)] Weak<()>);
@@ -41,6 +41,12 @@ impl Deref for ObjectRef {
         // when no other mutable/immutable references exist.
         // As long as this variant is upheld by deref_mut() callers, deref() is safe.
         unsafe { &(*self.0).object }
+    }
+}
+
+impl std::fmt::Display for ObjectRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.deref())
     }
 }
 
@@ -158,13 +164,7 @@ where
     }
 }
 
-pub type StringRef = TypedObjectRef<RloxString>;
-
-impl StringRef {
-    pub fn resolve<'a>(&self, interner: &'a StringInterner) -> &'a str {
-        self.deref().resolve(interner)
-    }
-}
+pub type StringRef = TypedObjectRef<InternedString>;
 
 impl<T> From<TypedObjectRef<T>> for Value {
     fn from(object: TypedObjectRef<T>) -> Self {

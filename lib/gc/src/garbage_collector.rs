@@ -1,7 +1,5 @@
 use std::{ops::Deref, rc::Rc};
 
-use itertools::Itertools;
-
 use crate::{Heap, Object, ObjectRef, StringInterner, Upvalue, Value};
 
 #[derive(Debug, PartialEq)]
@@ -78,20 +76,14 @@ impl GarbageCollector {
         }
     }
 
-    pub fn collect_garbage(&mut self, heap: &mut Heap, interner: &StringInterner) {
+    pub fn collect_garbage(&mut self, heap: &mut Heap) {
         log::trace!("Starting garbage collection");
 
-        log::trace!(
-            "Gray stack: {:?}",
-            self.gray_stack.iter().map(|o| o.resolve(interner)).collect_vec()
-        );
-        log::trace!(
-            "Heap: {:?}",
-            heap.objects.iter().map(|o| o.object.resolve(interner)).collect_vec()
-        );
+        log::trace!("Gray stack: {:?}", self.gray_stack);
+        log::trace!("Heap: {:?}", heap.objects);
 
         while let Some(mut object) = self.gray_stack.pop() {
-            log::trace!("Marking {:?}", object.deref());
+            log::trace!("Marking {object:?}");
             unsafe {
                 match object.deref_mut() {
                     Object::String(_) => {}
