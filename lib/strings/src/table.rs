@@ -94,15 +94,21 @@ impl<V> StringTable<V> {
         key: InternedString,
         cmp: impl Fn(&InternedString, &InternedString) -> bool,
     ) -> usize {
-        let first_index = key.hash % self.capacity();
+        // capacity is always a power of 2, in which case this is 
+        // equivalent to key.hash % self.capacity(), but a lot faster.
+        let mut first_index = key.hash & ( self.capacity() - 1);
 
-        (first_index..self.entries.len())
-            .chain(0..first_index)
-            .find(|index| match &self.entries[*index] {
-                None => true,
-                Some(entry) => cmp(&entry.key, &key),
-            })
-            .expect("Ran out of empty buckets!")
+        loop {
+            match &self.entries[first_index] {
+                None => return first_index,
+                Some(entry) => {
+                    if cmp(&entry.key, &key) {
+                        return first_index;
+                    }
+                }
+            }
+            first_index = (first_index + 1) & ( self.capacity() - 1);
+        }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, &V)> {
