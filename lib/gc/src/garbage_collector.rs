@@ -1,6 +1,8 @@
 use std::{ops::Deref, rc::Rc};
 
-use crate::{Heap, Object, ObjectRef, StringInterner, Upvalue, Value};
+use strings::string_interner::StringInterner;
+
+use crate::{Heap, Object, ObjectRef, Upvalue, Value};
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct GcObject {

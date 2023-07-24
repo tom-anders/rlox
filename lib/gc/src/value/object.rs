@@ -1,4 +1,6 @@
-use crate::{Class, Closure, Function, Instance, NativeFun, Upvalue, BoundMethod, InternedString};
+use strings::string_interner::InternedString;
+
+use crate::{Class, Closure, Function, Instance, NativeFun, Upvalue, BoundMethod};
 
 #[derive(Debug, PartialEq, derive_more::TryInto, derive_more::From)]
 #[try_into(owned, ref, ref_mut)]

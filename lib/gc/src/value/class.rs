@@ -1,16 +1,16 @@
-use std::collections::HashMap;
+use strings::{string_interner::InternedString, table::StringTable};
 
-use crate::{ClosureRef, InternedString};
+use crate::ClosureRef;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
     name: InternedString,
-    methods: HashMap<InternedString, ClosureRef>,
+    methods: StringTable<ClosureRef>,
 }
 
 impl Class {
     pub fn new(name: InternedString) -> Self {
-        Self { name, methods: HashMap::new() }
+        Self { name, methods: StringTable::new() }
     }
 
     pub fn add_method(&mut self, name: InternedString, method: ClosureRef) {
@@ -18,10 +18,10 @@ impl Class {
     }
 
     pub fn get_method(&self, name: &InternedString) -> Option<&ClosureRef> {
-        self.methods.get(name)
+        self.methods.get(*name)
     }
 
-    pub(crate) fn methods_mut(&mut self) -> &mut HashMap<InternedString, ClosureRef> {
+    pub(crate) fn methods_mut(&mut self) -> &mut StringTable<ClosureRef> {
         &mut self.methods
     }
 

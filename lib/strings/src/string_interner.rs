@@ -1,21 +1,39 @@
-use std::{
-    collections::HashSet,
-    hash::Hash,
-    ops::Deref,
-};
+use std::{hash::Hash, ops::Deref};
+
+use crate::table::StringTable;
 
 #[derive(Eq, Debug, Clone, Copy)]
-pub struct InternedString(*const str);
+pub struct InternedString {
+    ptr: *const str,
+    pub(crate) hash: usize,
+}
+
+impl InternedString {
+    fn hash(s: &str) -> usize {
+        s.bytes().fold(2166136261, |hash, byte| (hash ^ byte as usize).wrapping_mul(16777619))
+    }
+
+    pub fn new(s: &str) -> Self {
+        Self { ptr: s as *const str, hash: Self::hash(s) }
+    }
+
+    #[allow(clippy::op_ref)]
+    /// Compare actual underlying strings, instead of just comparing pointers.
+    /// This is only needed when interning new strings.
+    pub(crate) fn str_eq(&self, other: &InternedString) -> bool {
+        unsafe { &(*self.ptr) == &(*other.ptr) }
+    }
+}
 
 impl Hash for InternedString {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::ptr::hash(self.0, state)
+        std::ptr::hash(self.ptr, state)
     }
 }
 
 impl PartialEq for InternedString {
     fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self.0, other.0)
+        std::ptr::eq(self.ptr, other.ptr)
     }
 }
 
@@ -32,35 +50,39 @@ impl Deref for InternedString {
         // SAFETY: We never remove interned strings, so the pointer is always valid.
         // We also only hand out immutable pointers, so dereferencing never violates Rust's
         // mutability rules.
-        unsafe { &*self.0 }
+        unsafe { &*self.ptr }
     }
 }
 
 #[derive(Debug)]
 pub struct StringInterner {
-    set: HashSet<&'static str>,
+    set: StringTable<()>,
     strings: Vec<String>,
 }
 
 impl StringInterner {
     pub fn with_capacity(cap: usize) -> StringInterner {
         StringInterner {
-            set: HashSet::default(),
+            set: StringTable::new(),
             strings: Vec::with_capacity(cap.next_power_of_two()),
         }
     }
 
-    pub fn intern(&mut self, name: &str) -> InternedString {
-        if let Some(&id) = self.set.get(&name) {
-            return InternedString(id);
+    pub fn intern(&mut self, s: &str) -> InternedString {
+        let hash = InternedString::hash(s);
+        match self.set.get_str_eq(InternedString { ptr: s as *const str, hash }) {
+            Some(interned_string) => *interned_string,
+            None => {
+                self.strings.push(s.to_string());
+
+                let newly_interned_string =
+                    InternedString { ptr: self.strings.last().unwrap().as_str(), hash };
+
+                self.set.insert(newly_interned_string, ());
+
+                newly_interned_string
+            }
         }
-
-        self.strings.push(name.to_string());
-
-        let ptr = self.strings.last().unwrap().as_str() as *const str;
-        self.set.insert(unsafe { &*ptr });
-
-        InternedString(ptr)
     }
 }
 

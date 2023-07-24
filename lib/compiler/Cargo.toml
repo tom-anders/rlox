@@ -10,6 +10,7 @@ instructions = { path = "../instructions" }
 scanner = { path = "../scanner" }
 cursor = { path = "../cursor" }
 gc = { path = "../gc" }
+strings = { path = "../strings" }
 thiserror.workspace = true
 log.workspace = true
 itertools.workspace = true

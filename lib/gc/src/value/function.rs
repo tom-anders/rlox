@@ -1,10 +1,11 @@
 use std::fmt::{Debug, Display};
 
 use instructions::Arity;
+use strings::string_interner::{InternedString, StringInterner};
 
 use crate::{
     chunk::Chunk,
-    value::Value, string_interner::StringInterner, InternedString
+    value::Value
 };
 
 #[derive(Clone, PartialEq)]

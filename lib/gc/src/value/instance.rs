@@ -1,15 +1,17 @@
-use std::{collections::{HashMap, hash_map::Entry}, ops::Deref};
+use std::collections::{HashMap, hash_map::Entry};
 
-use crate::{ClassRef, Value, Object, InternedString};
+use strings::{string_interner::InternedString, table::StringTable};
+
+use crate::{ClassRef, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Instance {
     class: ClassRef,
-    fields: HashMap<InternedString, Value>,
+    fields: StringTable<Value>,
 }
 
 impl Instance {
-    pub fn new(class: ClassRef, fields: HashMap<InternedString, Value>) -> Self {
+    pub fn new(class: ClassRef, fields: StringTable<Value>) -> Self {
         Self { class, fields }
     }
 
@@ -22,18 +24,18 @@ impl Instance {
     }
 
     pub fn field(&self, name: &InternedString) -> Option<&Value> {
-        self.fields.get(name)
+        self.fields.get(*name)
     }
 
-    pub fn field_mut(&mut self, name: &InternedString) -> Entry<InternedString, Value>  {
-        self.fields.entry(*name)
+    pub fn set_field(&mut self, name: &InternedString, value: Value) {
+        self.fields.insert(*name, value);
     }
 
-    pub(crate) fn fields(&self) -> &HashMap<InternedString, Value> {
+    pub(crate) fn fields(&self) -> &StringTable<Value> {
         &self.fields
     }
 
-    pub(crate) fn fields_mut(&mut self) -> &mut HashMap<InternedString, Value> {
+    pub(crate) fn fields_mut(&mut self) -> &mut StringTable<Value> {
         &mut self.fields
     }
 }

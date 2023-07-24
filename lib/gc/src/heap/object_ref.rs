@@ -1,6 +1,8 @@
 use std::{rc::{Weak, Rc}, ops::Deref, marker::PhantomData};
 
-use crate::{garbage_collector::GcObject, Object, Function, Closure, Upvalue, Class, Instance, BoundMethod, Value, InternedString};
+use strings::string_interner::InternedString;
+
+use crate::{garbage_collector::GcObject, Object, Function, Closure, Upvalue, Class, Instance, BoundMethod, Value};
 
 #[derive(Clone, Debug)]
 pub struct ObjectRef(*mut GcObject, #[cfg(debug_assertions)] Weak<()>);

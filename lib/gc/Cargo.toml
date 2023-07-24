@@ -15,3 +15,4 @@ log.workspace = true
 
 instructions.path = "../instructions"
 cursor.path = "../cursor"
+strings.path = "../strings"

@@ -8,11 +8,12 @@ use std::{
 use compiler::{Compiler, CompilerErrors};
 use gc::{
     BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef, NativeFun,
-    Object, ObjectRef, StringInterner, TypedObjectRef, Upvalue, UpvalueRef, Value, InternedString,
+    Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value, 
 };
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
 use log::trace;
+use strings::{string_interner::{StringInterner, InternedString}, table::StringTable};
 
 use self::stack::Stack;
 
@@ -24,7 +25,7 @@ pub struct Vm {
     heap: Heap,
     gc: GarbageCollector,
     string_interner: StringInterner,
-    globals: HashMap<InternedString, Value>,
+    globals: StringTable<Value>,
     // TODO clox uses a linked list here, check if this is actually more performant
     open_upvalues: Vec<UpvalueRef>,
 }
@@ -68,7 +69,7 @@ impl Vm {
         let mut vm = Self {
             stack: Stack::new(),
             string_interner: StringInterner::with_capacity(1024),
-            globals: HashMap::new(),
+            globals: StringTable::default(),
             heap: Heap::with_capacity(1024),
             gc: GarbageCollector::default(),
             open_upvalues: Vec::new(),
@@ -149,7 +150,7 @@ impl Vm {
                 Object::Class(_) => {
                     // TODO pass fields
                     let instance =
-                        self.alloc(Instance::new(obj.clone().unwrap_class(), HashMap::new()));
+                        self.alloc(Instance::new(obj.clone().unwrap_class(), StringTable::new()));
                     *self.stack.frame_stack_at_mut(self.stack.len() - 1 - arg_count.0) =
                         instance.into();
                     Ok(())
@@ -254,27 +255,22 @@ impl Vm {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
                     trace!("Defining global: {:?} {:?}", name, self.stack.peek());
-                    self.globals.insert(*name, self.stack.peek().clone());
+                    self.globals.insert(name, self.stack.peek().clone());
                     self.stack.pop();
                 }
                 Instruction::SetGlobal { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
                     let val = self.stack.peek();
-                    match self.globals.entry(*name) {
-                        Entry::Occupied(mut entry) => {
-                            *entry.get_mut() = val.clone();
-                        }
-                        Entry::Vacant(_) => {
-                            return Err(self
-                                .runtime_error(RuntimeError::UndefinedVariable(name.to_string())))
-                        }
+                    match self.globals.get_mut(name) {
+                        Some(entry) => *entry = val.clone(),
+                        None => return Err(self.runtime_error(RuntimeError::UndefinedVariable(name.to_string()))),
                     };
                 }
                 Instruction::GetGlobal { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
-                    let value = self.globals.get(&name).ok_or_else(|| {
+                    let value = self.globals.get(name).ok_or_else(|| {
                         self.runtime_error(RuntimeError::UndefinedVariable(name.to_string()))
                     })?;
 
@@ -441,7 +437,7 @@ impl Vm {
                 }
                 Instruction::Class { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
-                    let class = self.alloc(Class::new(*name));
+                    let class = self.alloc(Class::new(name));
                     self.push(class);
                 }
                 Instruction::GetProperty { constant_index } => {
@@ -449,11 +445,11 @@ impl Vm {
 
                     let instance: InstanceRef = self.stack.peek().clone().unwrap_object().into();
 
-                    if let Some(field) = instance.field(name.deref()).cloned() {
+                    if let Some(field) = instance.field(&name).cloned() {
                         log::debug!("get property: {} -> {}", name.deref(), field);
                         self.stack.pop();
                         self.push(field.clone());
-                    } else if let Some(method) = instance.class().get_method(name.deref()) {
+                    } else if let Some(method) = instance.class().get_method(&name) {
                         let bound_method =
                             self.alloc(BoundMethod::new(instance.clone(), method.clone()));
                         self.stack.pop();
@@ -475,10 +471,7 @@ impl Vm {
 
                     if let Object::Instance(instance) = object {
                         let value = self.stack.pop();
-                        instance
-                            .field_mut(name.deref())
-                            .and_modify(|field| *field = value.clone())
-                            .or_insert_with(|| value.clone());
+                        instance.set_field(&name, value.clone());
                         self.stack.pop();
                         self.stack.push(value);
                     } else {
@@ -494,7 +487,7 @@ impl Vm {
                     unsafe {
                         class
                             .deref_mut()
-                            .add_method(*name, method.clone().unwrap_object().unwrap_closure())
+                            .add_method(name, method.clone().unwrap_object().unwrap_closure())
                     };
                     self.stack.pop();
                 }

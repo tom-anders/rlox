@@ -1,12 +1,13 @@
 use std::fmt::Display;
 
-use gc::{Chunk, Value, StringInterner, ClosureRef};
+use gc::{Chunk, Value, ClosureRef};
 use instructions::Arity;
 use itertools::Itertools;
 use log::trace;
 
 mod array_stack;
 pub use array_stack::ArrayStack;
+use strings::string_interner::StringInterner;
 
 #[derive(Debug, Clone)]
 pub struct CallFrame {

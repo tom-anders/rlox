@@ -2,8 +2,9 @@ use std::{fmt::Debug, mem::size_of, writeln, ops::Deref};
 
 use instructions::{Instruction, Jump, OpCode};
 use itertools::Itertools;
+use strings::string_interner::InternedString;
 
-use crate::{Value, StringRef, FunctionRef, StringInterner};
+use crate::{Value, StringRef, FunctionRef};
 
 #[derive(Clone, Default, PartialEq)]
 pub struct Chunk {
@@ -64,9 +65,9 @@ impl Chunk {
         &self.constants
     }
 
-    pub fn get_string_constant(&self, index: u8) -> StringRef {
-        self.constants().get(index as usize).expect("Missing string constant").clone()
-            .unwrap_object().unwrap_string()
+    pub fn get_string_constant(&self, index: u8) -> InternedString {
+        *self.constants().get(index as usize).expect("Missing string constant").clone()
+            .unwrap_object().unwrap_string().deref()
     }
 
     pub fn get_function_constant(&self, index: u8) -> FunctionRef {

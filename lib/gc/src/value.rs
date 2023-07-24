@@ -1,6 +1,6 @@
 use std::{ops::Deref, unreachable};
 
-use crate::{string_interner::StringInterner, Heap, ObjectRef};
+use crate::{Heap, ObjectRef};
 
 mod object;
 pub use object::*;
@@ -12,6 +12,7 @@ mod closure;
 pub use closure::*;
 
 mod upvalue;
+use strings::string_interner::StringInterner;
 pub use upvalue::*;
 
 mod class;

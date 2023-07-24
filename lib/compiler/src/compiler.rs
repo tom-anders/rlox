@@ -2,7 +2,7 @@ use std::{fmt::Display, iter::Peekable, mem::size_of, unreachable};
 
 use cursor::{Col, Line};
 use gc::{
-    Chunk, Closure, ClosureRef, Function, Heap, Object, ObjectRef, StringInterner,
+    Chunk, Closure, ClosureRef, Function, Heap, Object, ObjectRef,
     Value,
 };
 use instructions::{Arity, CompiledUpvalue, Instruction, Jump};
@@ -11,6 +11,7 @@ use log::trace;
 use scanner::{token::TokenData, ScanError, ScanErrorType, Token, TokenStream, TokenType};
 
 use TokenType::*;
+use strings::string_interner::StringInterner;
 
 use crate::scope::Scope;
 

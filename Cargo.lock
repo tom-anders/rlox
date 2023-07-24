@@ -195,6 +195,7 @@ dependencies = [
  "log",
  "num_enum",
  "scanner",
+ "strings",
  "thiserror",
 ]
 
@@ -378,6 +379,7 @@ dependencies = [
  "instructions",
  "itertools",
  "log",
+ "strings",
 ]
 
 [[package]]
@@ -799,6 +801,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strings"
+version = "0.1.0"
+
+[[package]]
 name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -930,6 +936,7 @@ dependencies = [
  "itertools",
  "log",
  "scanner",
+ "strings",
  "thiserror",
 ]
 

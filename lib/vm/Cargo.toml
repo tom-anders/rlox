@@ -11,6 +11,7 @@ instructions = { path = "../instructions" }
 scanner = { path = "../scanner" }
 compiler = { path = "../compiler" }
 gc = { path = "../gc" }
+strings = { path = "../strings" }
 log.workspace = true
 thiserror.workspace = true
 itertools.workspace = true
