@@ -98,6 +98,8 @@ pub enum CompilerErrorType {
     ExpectedMethodName,
     #[error("Can't use 'this' outside of a class.")]
     ThisOutsideClass,
+    #[error("Can't return a value from an initializer.")]
+    InitializerCannotReturn,
 }
 
 impl CompilerErrorType {
@@ -651,6 +653,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
             self.expression()?;
             let token = self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?;
             self.current_chunk().write_instruction(Instruction::Return, token.line());
+
+            if self.current_function_type() == FunctionType::Initializer {
+                return Err(CompilerErrorType::InitializerCannotReturn.at(&token));
+            }
         }
         Ok(())
     }

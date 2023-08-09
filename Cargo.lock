@@ -935,6 +935,7 @@ dependencies = [
  "instructions",
  "itertools",
  "log",
+ "pretty_assertions",
  "scanner",
  "strings",
  "thiserror",

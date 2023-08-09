@@ -534,6 +534,7 @@ mod tests {
     use compiler::{CompilerError, CompilerErrorType};
     use cursor::{Col, Line};
     use env_logger::Env;
+    use pretty_assertions::assert_eq;
 
     use super::*;
 
@@ -772,5 +773,25 @@ mod tests {
             line: 1,
             error: RuntimeError::InvalidArgumentCount { expected: Arity(0), got: Arity(1) }
         });
+    }
+
+    #[test]
+    fn initializer_cannot_return_value() {
+        let source = r#"
+            class Foo { 
+                init(foo) { 
+                    return 1; 
+                }
+            }
+        "#;
+        let mut output = Vec::new();
+
+        assert_eq!(Vm::new().run_source(source, &mut output).unwrap_err(), InterpretError::CompileError(
+                CompilerErrors(vec![CompilerError::new(
+                    CompilerErrorType::InitializerCannotReturn,
+                    Line(4),
+                    Col(29),
+                    )])
+                ));
     }
 }

@@ -20,6 +20,7 @@ itertools.workspace = true
 env_logger.workspace = true
 ctor.workspace = true
 criterion.workspace = true
+pretty_assertions.workspace = true
 
 [[bench]]
 path = "benches/bench.rs"
