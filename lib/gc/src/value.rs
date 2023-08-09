@@ -1,4 +1,4 @@
-use std::{ops::Deref, unreachable};
+use std::{ops::Deref};
 
 use crate::{Heap, ObjectRef};
 

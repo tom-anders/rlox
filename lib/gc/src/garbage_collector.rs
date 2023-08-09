@@ -1,6 +1,6 @@
-use std::{ops::Deref, rc::Rc};
+use std::{rc::Rc};
 
-use strings::string_interner::StringInterner;
+
 
 use crate::{Heap, Object, ObjectRef, Upvalue, Value};
 

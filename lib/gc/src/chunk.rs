@@ -4,7 +4,7 @@ use instructions::{Instruction, Jump, OpCode};
 use itertools::Itertools;
 use strings::string_interner::InternedString;
 
-use crate::{Value, StringRef, FunctionRef};
+use crate::{Value, FunctionRef};
 
 #[derive(Clone, Default, PartialEq)]
 pub struct Chunk {

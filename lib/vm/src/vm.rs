@@ -1,6 +1,4 @@
 use std::{
-    cmp::Ordering,
-    collections::{hash_map::Entry, HashMap},
     io::Write,
     ops::Deref,
 };
@@ -13,7 +11,7 @@ use gc::{
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
 use log::trace;
-use strings::{string_interner::{StringInterner, InternedString}, table::StringTable};
+use strings::{string_interner::{StringInterner}, table::StringTable};
 
 use self::stack::Stack;
 
