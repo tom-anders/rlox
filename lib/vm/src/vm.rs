@@ -604,10 +604,13 @@ mod tests {
 
             var scone = Scone();
             scone.topping("berries", "cream");
+            var topping = scone.topping;
+            topping("berries", "cream");
         "#;
         let mut output = Vec::new();
         Vm::new().run_source(source, &mut output).unwrap();
-        assert_eq!(String::from_utf8(output).unwrap(), "scone with berries and cream\n");
+        assert_eq!(String::from_utf8(output).unwrap(), 
+            "scone with berries and cream\nscone with berries and cream\n");
     }
 
     #[test]
