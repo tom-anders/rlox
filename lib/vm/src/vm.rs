@@ -630,6 +630,31 @@ mod tests {
     }
 
     #[test]
+    fn fields_shadow_methods() {
+        let source = r#"
+            class Foo { 
+                bar() { print "method"; }
+            }
+
+            var foo = Foo();
+            foo.bar = 123;
+            print foo.bar;
+        "#;
+        let mut output = Vec::new();
+        let mut vm = Vm::new();
+        vm.run_source(source, &mut output).unwrap();
+        assert_eq!(
+            String::from_utf8(output.clone()).unwrap().lines().collect_vec(),
+            vec!["123"]
+        );
+
+        assert_eq!(vm.run_source("print foo.bar();", &mut output), Err(InterpretError::RuntimeError {
+            line: 1,
+            error: RuntimeError::NotAFunction(Value::Number(123.0)),
+        }));
+    }
+
+    #[test]
     fn resolve_this_in_nested() {
         let source = r#" 
             class Nested {
