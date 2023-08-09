@@ -6,11 +6,30 @@ use std::{
 mod source_range;
 pub use source_range::*;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Cursor<'a> {
     source: &'a str,
     chars: Chars<'a>,
     line: Line,
+}
+
+impl<'a> std::fmt::Debug for Cursor<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // Printing source and chars is usually to verbose, so by default
+        // we only print line/col
+        if f.alternate() {
+            f.debug_struct("Cursor")
+                .field("line", &self.line)
+                .field("col", &self.col())
+                .field("source", &self.source)
+                .finish()
+        } else {
+            f.debug_struct("Cursor")
+                .field("line", &self.line)
+                .field("col", &self.col())
+                .finish()
+        }
+    }
 }
 
 impl<'a> PartialEq for Cursor<'a> {
