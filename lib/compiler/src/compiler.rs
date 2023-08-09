@@ -159,6 +159,7 @@ impl<'a> Local<'a> {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum FunctionType {
     Function,
+    Initializer,
     Script,
     Method,
 }
@@ -266,7 +267,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             }
         };
 
-        self.return_nil(final_token.line());
+        self.emit_return(final_token.line());
 
         if errors.0.is_empty() {
             log::debug!(
@@ -284,8 +285,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }
     }
 
-    fn return_nil(&mut self, line: Line) {
-        self.current_chunk().write_instruction(Instruction::Nil, line);
+    fn emit_return(&mut self, line: Line) {
+        let return_value = if self.current_function_type() == FunctionType::Initializer {
+            Instruction::GetLocal { stack_slot: 0 }
+        } else {
+            Instruction::Nil
+        };
+        self.current_chunk().write_instruction(return_value, line);
         self.current_chunk().write_instruction(Instruction::Return, line);
     }
 
@@ -338,7 +344,12 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let identifier =
             self.consume_or_error(Identifier, CompilerErrorType::ExpectedMethodName)?;
         let constant_index = self.add_identifier_constant(&identifier)?;
-        self.function(FunctionType::Method, identifier.lexeme())?;
+        let function_type = if identifier.lexeme() == "init" {
+            FunctionType::Initializer
+        } else {
+            FunctionType::Method
+        };
+        self.function(function_type, identifier.lexeme())?;
         self.current_chunk()
             .write_instruction(Instruction::Method { constant_index }, identifier.line());
         Ok(())
@@ -391,7 +402,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         // We don't call self.end_scope() here, as locals are popped by the VM when the function returns
         self.current_scope_mut().end_scope();
 
-        self.return_nil(end_fun_line);
+        self.emit_return(end_fun_line);
 
         let compiled_function = self.functions.pop().unwrap();
 
@@ -635,7 +646,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }
 
         if let Ok(token) = self.consume(Semicolon)? {
-            self.return_nil(token.line());
+            self.emit_return(token.line());
         } else {
             self.expression()?;
             let token = self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?;

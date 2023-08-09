@@ -65,6 +65,11 @@ impl Stack {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.values.clear();
+        self.frames.clear();
+    }
+
     pub fn frame(&self) -> &CallFrame {
         self.frames.peek()
     }

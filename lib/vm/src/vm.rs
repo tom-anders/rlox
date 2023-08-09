@@ -1,17 +1,14 @@
-use std::{
-    io::Write,
-    ops::Deref,
-};
+use std::{io::Write, ops::Deref};
 
 use compiler::{Compiler, CompilerErrors};
 use gc::{
     BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef, NativeFun,
-    Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value, 
+    Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value,
 };
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
 use log::trace;
-use strings::{string_interner::{StringInterner}, table::StringTable};
+use strings::{string_interner::{StringInterner, InternedString}, table::StringTable};
 
 use self::stack::Stack;
 
@@ -23,6 +20,7 @@ pub struct Vm {
     heap: Heap,
     gc: GarbageCollector,
     string_interner: StringInterner,
+    init_string: InternedString,
     globals: StringTable<Value>,
     // TODO clox uses a linked list here, check if this is actually more performant
     open_upvalues: Vec<UpvalueRef>,
@@ -64,9 +62,12 @@ impl Default for Vm {
 
 impl Vm {
     pub fn new() -> Self {
+        let mut string_interner = StringInterner::with_capacity(1024);
+        let init_string = string_interner.intern("init");
         let mut vm = Self {
             stack: Stack::new(),
-            string_interner: StringInterner::with_capacity(1024),
+            string_interner,
+            init_string,
             globals: StringTable::default(),
             heap: Heap::with_capacity(1024),
             gc: GarbageCollector::default(),
@@ -122,6 +123,11 @@ impl Vm {
     }
 
     pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> Result<()> {
+        // If the previous call to run_source failed, the stack will still contain values/frames.
+        // This is needed so that we can show the strack trace.
+        // But once we try to execute more code, we need to clear the stack.
+        self.stack.clear();
+
         let closure = Value::Object(
             Compiler::new(source, &mut self.string_interner, &mut self.heap).compile()?.into(),
         );
@@ -146,12 +152,25 @@ impl Vm {
                     Ok(())
                 }
                 Object::Class(_) => {
-                    // TODO pass fields
                     let instance =
                         self.alloc(Instance::new(obj.clone().unwrap_class(), StringTable::new()));
                     *self.stack.frame_stack_at_mut(self.stack.len() - 1 - arg_count.0) =
-                        instance.into();
-                    Ok(())
+                        instance.clone().into();
+
+                    match instance.class().get_method(&self.init_string) {
+                        Some(init) => self.call(init.into(), arg_count),
+                        None => {
+                            if arg_count.0 == 0 {
+                                Ok(())
+                            } else {
+                                // Class has no explicit init method, but arguments where passed anyway
+                                Err(self.runtime_error(RuntimeError::InvalidArgumentCount {
+                                    expected: Arity(0),
+                                    got: arg_count,
+                                }))
+                            }
+                        }
+                    }
                 }
                 Object::NativeFun(native_fun) => {
                     let args = self.stack.iter().rev().take(arg_count.0 as usize).cloned();
@@ -262,7 +281,10 @@ impl Vm {
                     let val = self.stack.peek();
                     match self.globals.get_mut(name) {
                         Some(entry) => *entry = val.clone(),
-                        None => return Err(self.runtime_error(RuntimeError::UndefinedVariable(name.to_string()))),
+                        None => {
+                            return Err(self
+                                .runtime_error(RuntimeError::UndefinedVariable(name.to_string())))
+                        }
                     };
                 }
                 Instruction::GetGlobal { constant_index } => {
@@ -609,26 +631,35 @@ mod tests {
         "#;
         let mut output = Vec::new();
         Vm::new().run_source(source, &mut output).unwrap();
-        assert_eq!(String::from_utf8(output).unwrap(), 
-            "scone with berries and cream\nscone with berries and cream\n");
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "scone with berries and cream\nscone with berries and cream\n"
+        );
     }
 
     #[test]
     fn classes() {
         let source = r#"
-            class Pair { }
+            class Pair {
+                init(first, second) {
+                    this.first_ = first;
+                    this.second_ = second;
+                }
+                first() { return this.first_; }
+                second() { return this.second_; }
+            }
 
-            var pair = Pair();
-            pair.first = 1;
-            pair.second = 2;
+            var pair = Pair(1, 2);
             print pair;
-            print pair.first + pair.second;
+            print pair.first_ + pair.second_;
+            print pair.first() + pair.second();
+            print pair.first() == pair.first_;
         "#;
         let mut output = Vec::new();
         Vm::new().run_source(source, &mut output).unwrap();
         assert_eq!(
             String::from_utf8(output).unwrap().lines().collect_vec(),
-            vec!["Pair instance", "3"]
+            vec!["Pair instance", "3", "3", "true"]
         );
     }
 
@@ -646,15 +677,15 @@ mod tests {
         let mut output = Vec::new();
         let mut vm = Vm::new();
         vm.run_source(source, &mut output).unwrap();
-        assert_eq!(
-            String::from_utf8(output.clone()).unwrap().lines().collect_vec(),
-            vec!["123"]
-        );
+        assert_eq!(String::from_utf8(output.clone()).unwrap().lines().collect_vec(), vec!["123"]);
 
-        assert_eq!(vm.run_source("print foo.bar();", &mut output), Err(InterpretError::RuntimeError {
-            line: 1,
-            error: RuntimeError::NotAFunction(Value::Number(123.0)),
-        }));
+        assert_eq!(
+            vm.run_source("print foo.bar();", &mut output),
+            Err(InterpretError::RuntimeError {
+                line: 1,
+                error: RuntimeError::NotAFunction(Value::Number(123.0)),
+            })
+        );
     }
 
     #[test]
@@ -708,5 +739,38 @@ mod tests {
                 Col(1),
             )]))
         )
+    }
+
+    #[test]
+    fn class_init() {
+        let source = r#"
+            class Foo { 
+                init(foo) {}
+            }
+            class Bar {}
+        "#;
+        let mut output = Vec::new();
+
+        let mut vm = Vm::new();
+        vm.run_source(source, &mut output).unwrap();
+
+        output.clear();
+        vm.run_source("var foo = Foo(123); print foo;", &mut output).unwrap();
+        assert_eq!(String::from_utf8(output.clone()).unwrap().lines().collect_vec(), vec!["Foo instance"]);
+
+        assert_eq!(vm.run_source("var foo = Foo();", &mut output).unwrap_err(), InterpretError::RuntimeError {
+            line: 1,
+            error: RuntimeError::InvalidArgumentCount { expected: Arity(1), got: Arity(0) }
+        });
+
+        assert_eq!(vm.run_source("foo = Foo(123, 456);", &mut output).unwrap_err(), InterpretError::RuntimeError {
+            line: 1,
+            error: RuntimeError::InvalidArgumentCount { expected: Arity(1), got: Arity(2) }
+        });
+
+        assert_eq!(vm.run_source("var bar = Bar(123);", &mut output).unwrap_err(), InterpretError::RuntimeError {
+            line: 1,
+            error: RuntimeError::InvalidArgumentCount { expected: Arity(0), got: Arity(1) }
+        });
     }
 }

@@ -46,6 +46,10 @@ impl<T, const N: usize> ArrayStack<T, N> {
         self.top -= n;
     }
 
+    pub fn clear(&mut self) {
+        self.top = 0;
+    }
+
     pub fn len(&self) -> usize {
         self.top
     }
