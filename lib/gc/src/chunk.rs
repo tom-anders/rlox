@@ -149,6 +149,7 @@ impl Chunk {
             | Instruction::Less
             | Instruction::Print
             | Instruction::CloseUpvalue
+            | Instruction::Inherit
             | Instruction::Pop => "".to_string(),
         };
 

@@ -3,7 +3,7 @@ use std::{io::Write, ops::Deref};
 use compiler::{Compiler, CompilerErrors};
 use gc::{
     BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef, NativeFun,
-    Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value,
+    Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value, ClassRef,
 };
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
@@ -52,6 +52,8 @@ pub enum RuntimeError {
     InvalidPropertyAccess,
     #[error("Only instances have methods.")]
     OnlyInstancesHaveMethods,
+    #[error("Superclass must be a class.")]
+    SuperclassMustBeAClass,
 }
 
 pub type Result<T> = std::result::Result<T, InterpretError>;
@@ -487,6 +489,22 @@ impl Vm {
                     let class = self.alloc(Class::new(name));
                     self.push(class);
                 }
+                Instruction::Inherit => {
+                    let superclass = self.stack.value_stack().peek_nth(1);
+                    match superclass {
+                        Value::Object(o) => match o.deref() {
+                            Object::Class(class) => {
+                                let mut subclass = self.stack.value_stack().peek().clone().unwrap_object().unwrap_class();
+                                // SAFETY: The VM never holds on to any references to the class for longer than a single instruction,
+                                // so at this point we can be sure to have an exclusive reference to the class.
+                                unsafe { subclass.deref_mut().set_methods(superclass.methods().clone()) } 
+                                self.stack.pop(); // the subclass
+                            }
+                            _ => return Err(self.runtime_error(RuntimeError::SuperclassMustBeAClass)),
+                        }
+                        _ => return Err(self.runtime_error(RuntimeError::SuperclassMustBeAClass)),
+                    }
+                }
                 Instruction::GetProperty { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
@@ -820,5 +838,22 @@ mod tests {
                     Col(29),
                     )])
                 ));
+    }
+
+    #[test]
+    fn inheritance() {
+        let source = r#"
+            class Foo { 
+                method() { print "foo"; }
+            }
+            class Bar < Foo {}
+            class Baz < Bar {}
+            var baz = Baz();
+            baz.method();
+        "#;
+
+        let mut output = Vec::new();
+        Vm::new().run_source(source, &mut output).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap().lines().collect_vec(), vec!["foo"]);
     }
 }

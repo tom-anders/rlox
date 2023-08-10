@@ -100,6 +100,10 @@ pub enum CompilerErrorType {
     ThisOutsideClass,
     #[error("Can't return a value from an initializer.")]
     InitializerCannotReturn,
+    #[error("Expecrte superclass name.")]
+    ExpectedSuperclassName,
+    #[error("A class can't inherit from itself.")]
+    InheritanceFromSelf,
 }
 
 impl CompilerErrorType {
@@ -310,18 +314,31 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn class_declaration(&mut self) -> Result<()> {
-        let identifier = self.consume_or_error(Identifier, CompilerErrorType::ExpectedClassName)?;
-        let constant_index = self.add_identifier_constant(&identifier)?;
+        let class_ident = self.consume_or_error(Identifier, CompilerErrorType::ExpectedClassName)?;
+        let constant_index = self.add_identifier_constant(&class_ident)?;
 
-        self.declare_variable(&identifier)?;
+        self.declare_variable(&class_ident)?;
         self.current_chunk()
-            .write_instruction(Instruction::Class { constant_index }, identifier.line());
+            .write_instruction(Instruction::Class { constant_index }, class_ident.line());
 
-        self.define_variable(constant_index, identifier.line())?;
+        self.define_variable(constant_index, class_ident.line())?;
 
-        self.classes.push(identifier.clone());
+        self.classes.push(class_ident.clone());
 
-        self.named_variable(&identifier, false)?;
+        if self.consume(Less)?.is_ok() {
+            let super_class_ident = self.consume_or_error(Identifier, CompilerErrorType::ExpectedSuperclassName)?;
+            self.variable(&super_class_ident, false)?;
+            self.named_variable(&class_ident, false)?;
+
+            if super_class_ident == class_ident {
+                return Err(CompilerErrorType::InheritanceFromSelf.at(&class_ident));
+            }
+
+            // TODO I think  we should create a new helper write_instruction()
+            self.current_chunk().write_instruction(Instruction::Inherit, super_class_ident.line());
+        }
+
+        self.named_variable(&class_ident, false)?;
         self.consume_or_error(LeftBrace, CompilerErrorType::ExpectedLeftBrace("class body"))?;
 
         loop {
@@ -336,7 +353,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.consume_or_error(RightBrace, CompilerErrorType::ExpectedRightBrace("class body"))?;
 
         // pop the class name
-        self.current_chunk().write_instruction(Instruction::Pop, identifier.line());
+        self.current_chunk().write_instruction(Instruction::Pop, class_ident.line());
         self.classes.pop().unwrap();
 
         Ok(())
@@ -488,6 +505,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Ok(arg_count)
     }
 
+    // TODO looks like we can merge the two, in clox this is needed because of the precedence table
     fn variable(&mut self, token: &Token<'a>, can_assign: bool) -> Result<()> {
         self.named_variable(token, can_assign)
     }

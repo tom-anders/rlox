@@ -1,6 +1,8 @@
+use std::ops::Deref;
+
 use strings::{string_interner::InternedString, table::StringTable};
 
-use crate::ClosureRef;
+use crate::{ClosureRef, Value, Object};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
@@ -19,6 +21,14 @@ impl Class {
 
     pub fn get_method(&self, name: &InternedString) -> Option<&ClosureRef> {
         self.methods.get(*name)
+    }
+
+    pub fn methods(&self) -> &StringTable<ClosureRef> {
+        &self.methods
+    }
+
+    pub fn set_methods(&mut self, methods: StringTable<ClosureRef>) {
+        self.methods = methods;
     }
 
     pub(crate) fn methods_mut(&mut self) -> &mut StringTable<ClosureRef> {
