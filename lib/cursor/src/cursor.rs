@@ -47,7 +47,7 @@ impl Display for Line {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Col(pub usize);
 
 impl Display for Col {

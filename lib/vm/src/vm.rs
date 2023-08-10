@@ -519,6 +519,24 @@ impl Vm {
                         );
                     }
                 }
+                Instruction::GetSuper { constant_index } => {
+                    let name = self.stack.frame_chunk().get_string_constant(constant_index);
+                    let superclass = self.stack.pop().unwrap_object().unwrap_class();
+
+                    let instance: InstanceRef = self.stack.peek().clone().unwrap_object().into();
+                    
+                    // TODO factor out into bind_method with logic in GetProperty
+                    if let Some(method) = superclass.get_method(&name) {
+                        let bound_method =
+                            self.alloc(BoundMethod::new(instance.clone(), method.clone()));
+                        self.stack.pop();
+                        self.push(bound_method);
+                    } else {
+                        return Err(
+                            self.runtime_error(RuntimeError::UndefinedProperty(name.to_string()))
+                        );
+                    }
+                }
                 Instruction::SetProperty { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
@@ -888,5 +906,25 @@ mod tests {
         let mut output = Vec::new();
         Vm::new().run_source(source, &mut output).unwrap();
         assert_eq!(String::from_utf8(output).unwrap().lines().collect_vec(), vec!["foo"]);
+    }
+
+    #[test]
+    fn call_super_class_method() {
+        let source = r#"
+            class A { 
+                method() { print "A"; }
+            }
+            class B < A {
+                method() {
+                    super.method();
+                }
+            }
+            var b = B();
+            b.method();
+        "#;
+
+        let mut output = Vec::new();
+        Vm::new().run_source(source, &mut output).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap().lines().collect_vec(), vec!["A"]);
     }
 }

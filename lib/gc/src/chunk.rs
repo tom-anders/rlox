@@ -125,6 +125,7 @@ impl Chunk {
             Instruction::GetProperty { constant_index } => get_constant(constant_index),
             Instruction::Class { constant_index } => get_constant(constant_index),
             Instruction::Method { constant_index } => get_constant(constant_index),
+            Instruction::GetSuper { constant_index: name } => get_constant(name),
             Instruction::SetLocal { stack_slot } => format!("'{stack_slot}'"),
             Instruction::GetLocal { stack_slot } => format!("'{stack_slot}'"),
             Instruction::GetUpvalue { upvalue_index } => format!("'{}'", upvalue_index),

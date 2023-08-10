@@ -104,6 +104,14 @@ pub enum CompilerErrorType {
     ExpectedSuperclassName,
     #[error("A class can't inherit from itself.")]
     InheritanceFromSelf,
+    #[error("Expected '.' after 'super'.")]
+    ExpectedDotAfterSuper,
+    #[error("Expect superclass method name")]
+    ExpectedSuperclassMethodName,
+    #[error("Can't use 'super' outside of a class.")]
+    SuperOutsideClass,
+    #[error("Can't use 'super' in a class with no superclass.")]
+    SuperclasslessClass,
 }
 
 impl CompilerErrorType {
@@ -200,11 +208,23 @@ impl FunctionToCompile<'_> {
     }
 }
 
+#[derive(Debug, Clone)]
+struct ClassToCompile<'a> {
+    ident: Token<'a>,
+    has_superclass: bool,
+}
+
+impl<'a> ClassToCompile<'a> {
+    fn new(ident: Token<'a>) -> Self {
+        Self { ident, has_superclass: false }
+    }
+}
+
 #[derive(Debug)]
 pub struct Compiler<'a, 'b> {
     token_stream: Peekable<TokenStream<'a>>,
     functions: Vec<FunctionToCompile<'a>>,
-    classes: Vec<Token<'a>>,
+    classes: Vec<ClassToCompile<'a>>,
     interner: &'b mut StringInterner,
     heap: &'b mut Heap,
 }
@@ -229,6 +249,14 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn current_function_mut(&mut self) -> &mut Function {
         &mut self.functions.last_mut().unwrap().function
+    }
+
+    fn current_class(&self) -> Option<&ClassToCompile<'a>> {
+        self.classes.last()
+    }
+
+    fn current_class_mut(&mut self) -> Option<&mut ClassToCompile<'a>> {
+        self.classes.last_mut()
     }
 
     fn current_chunk(&mut self) -> &mut Chunk {
@@ -323,11 +351,16 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.define_variable(constant_index, class_ident.line())?;
 
-        self.classes.push(class_ident.clone());
+        self.classes.push(ClassToCompile::new(class_ident.clone()));
 
         if self.consume(Less)?.is_ok() {
             let super_class_ident = self.consume_or_error(Identifier, CompilerErrorType::ExpectedSuperclassName)?;
             self.variable(&super_class_ident, false)?;
+
+            self.current_scope_mut().begin_scope();
+            self.add_local(&Token::synthetic_identifier("super"))?;
+            self.define_variable(0, super_class_ident.line())?;
+
             self.named_variable(&class_ident, false)?;
 
             if super_class_ident == class_ident {
@@ -336,7 +369,9 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
             // TODO I think  we should create a new helper write_instruction()
             self.current_chunk().write_instruction(Instruction::Inherit, super_class_ident.line());
-        }
+
+            self.current_class_mut().unwrap().has_superclass = true;
+        };
 
         self.named_variable(&class_ident, false)?;
         self.consume_or_error(LeftBrace, CompilerErrorType::ExpectedLeftBrace("class body"))?;
@@ -350,11 +385,14 @@ impl<'a, 'b> Compiler<'a, 'b> {
             }
         }
 
-        self.consume_or_error(RightBrace, CompilerErrorType::ExpectedRightBrace("class body"))?;
+        let right_brace = self.consume_or_error(RightBrace, CompilerErrorType::ExpectedRightBrace("class body"))?;
 
         // pop the class name
         self.current_chunk().write_instruction(Instruction::Pop, class_ident.line());
-        self.classes.pop().unwrap();
+
+        if self.classes.pop().unwrap().has_superclass {
+            self.end_scope(right_brace.line());
+        }
 
         Ok(())
     }
@@ -514,11 +552,14 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let (get_instr, set_instr) = if let Some(stack_slot) =
             Self::resolve_local(self.locals(), identifier)
         {
+            log::debug!("Resolved local {:?} @{stack_slot}", identifier);
             (Instruction::GetLocal { stack_slot }, Instruction::SetLocal { stack_slot })
         } else if let Some(upvalue_index) = Self::resolve_upvalue(&mut self.functions, identifier) {
+            log::debug!("Resolved upvalue {:?} @{upvalue_index}", identifier);
             (Instruction::GetUpvalue { upvalue_index }, Instruction::SetUpvalue { upvalue_index })
         } else {
             let constant_index = self.add_identifier_constant(identifier)?;
+            log::debug!("Resolved global {:?} @{constant_index}", identifier);
             (Instruction::GetGlobal { constant_index }, Instruction::SetGlobal { constant_index })
         };
 
@@ -532,6 +573,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn resolve_upvalue(functions: &mut [FunctionToCompile], identifier: &Token<'a>) -> Option<u8> {
+        log::debug!("Trying to resolve upvalue for {:?}", identifier);
+
         let previous = functions.iter_mut().rev().nth(1)?;
 
         if let Some(index) = Self::resolve_local(&previous.locals, identifier) {
@@ -566,7 +609,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn resolve_local(locals: &[Local], identifier: &Token<'a>) -> Option<u8> {
-        trace!("Resolving local {:?} from {:?}", identifier.lexeme(), locals);
+        trace!("Trying to resolve local {:?} from {:?}", identifier.lexeme(), locals);
         locals.iter().rev().enumerate().find_map(|(i, local)| {
             (local.depth.is_some() && local.name == identifier.lexeme())
                 .then_some((locals.len() - i - 1) as u8)
@@ -623,6 +666,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         if self.num_locals() == self.functions.last().unwrap().locals.capacity() {
             return Err(CompilerErrorType::TooManyLocals.at(name));
         }
+        log::debug!("Adding local {:?}", name);
 
         self.locals_mut().push(Local::new(name.lexeme(), None));
         Ok(())
@@ -636,9 +680,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn define_variable(&mut self, constant_index: u8, line: Line) -> Result<()> {
         if self.current_scope().inside_local() {
+            log::debug!("Defining local {:?}", self.locals().last());
             self.mark_initialized();
             return Ok(());
         }
+        log::debug!("Defining global {constant_index} -> {:?}", self.current_chunk().constants()[constant_index as usize]);
         self.current_chunk().write_instruction(Instruction::DefineGlobal { constant_index }, line);
         Ok(())
     }
@@ -773,7 +819,12 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 self.current_chunk().write_instruction(Instruction::PopN(num_locals_to_pop), line);
                 // split_inclusive puts the separator at the end, which is a local that was
                 // captured, so close the upvalue instead of emitting a pop.
-                self.current_chunk().write_instruction(Instruction::CloseUpvalue, line);
+                // If there was no capture at all, we can just do another pop instead.
+                if locals.last().unwrap().is_captured {
+                    self.current_chunk().write_instruction(Instruction::CloseUpvalue, line);
+                } else {
+                    self.current_chunk().write_instruction(Instruction::Pop, line);
+                }
             });
 
         self.current_scope_mut().end_scope();
@@ -828,6 +879,26 @@ impl<'a, 'b> Compiler<'a, 'b> {
             return Err(CompilerErrorType::ThisOutsideClass.at(token));
         }
         self.variable(token, false)
+    }
+
+    fn super_(&mut self, super_token: &Token<'a>) -> Result<()> {
+        let current_class = self.current_class().cloned().ok_or_else(|| {
+            CompilerErrorType::SuperOutsideClass.at(super_token)
+        })?;
+        if !current_class.has_superclass {
+            return Err(CompilerErrorType::SuperclasslessClass.at(super_token));
+        }
+
+        self.consume_or_error(Dot, CompilerErrorType::ExpectedDotAfterSuper)?;
+        let identifier = self.consume_or_error(Identifier, CompilerErrorType::ExpectedSuperclassMethodName)?;
+        let name = self.add_identifier_constant(&identifier)?;
+
+        self.named_variable(&Token::synthetic_identifier("this"), false)?;
+        self.named_variable(super_token, false)?;
+
+        self.current_chunk().write_instruction(Instruction::GetSuper { constant_index: name }, super_token.line());
+
+        Ok(())
     }
 
     fn number(&mut self, prefix_token: &Token<'a>) -> Result<()> {
@@ -923,6 +994,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             Number => self.number(&token),
             True | False | Nil => self.literal(&token),
             This => self.this(&token),
+            Super => self.super_(&token),
             LeftParen => self.grouping(&token),
             Minus | Bang => self.unary(&token),
             Str => self.string(&token),

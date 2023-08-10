@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use cursor::{Col, Line, SourceRange};
+use cursor::{Col, Line, SourceRange, Cursor};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token<'a> {
@@ -11,6 +11,16 @@ pub struct Token<'a> {
 impl<'a> Token<'a> {
     pub fn new(data: TokenData<'a>, range: impl Into<SourceRange<'a>>) -> Token<'a> {
         Self { data, range: range.into() }
+    }
+
+    pub fn synthetic_identifier(name: &'a str) -> Self {
+        let start = Cursor::new(name);
+        let mut end = start.clone();
+        for _ in 0..name.len() {
+            end.next();
+        }
+
+        Self::new(TokenData::Identifier, (start, end))
     }
 
     pub fn ty(&self) -> TokenType {

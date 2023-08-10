@@ -68,6 +68,7 @@ pub enum Instruction {
     Method { constant_index: u8 },
     Invoke { constant_index: u8, arg_count: Arity },
     Inherit,
+    GetSuper { constant_index: u8 },
 }
 
 #[cfg(test)]
