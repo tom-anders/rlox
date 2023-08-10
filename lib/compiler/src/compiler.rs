@@ -450,6 +450,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
             self.expression()?;
             self.current_chunk()
                 .write_instruction(Instruction::SetProperty { constant_index }, identifier.line());
+        } else if self.consume(LeftParen)?.is_ok() {
+            let arg_count = self.argument_list()?.into();
+            self.current_chunk()
+                .write_instruction(Instruction::Invoke { constant_index, arg_count }, identifier.line());
         } else {
             self.current_chunk()
                 .write_instruction(Instruction::GetProperty { constant_index }, identifier.line());

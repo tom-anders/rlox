@@ -50,6 +50,8 @@ pub enum RuntimeError {
     InvalidArgumentCount { expected: Arity, got: Arity },
     #[error("Only instances have properties.")]
     InvalidPropertyAccess,
+    #[error("Only instances have methods.")]
+    OnlyInstancesHaveMethods,
 }
 
 pub type Result<T> = std::result::Result<T, InterpretError>;
@@ -187,6 +189,13 @@ impl Vm {
                 _ => Err(self.runtime_error(RuntimeError::NotAFunction(obj.into()))),
             },
             _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
+        }
+    }
+
+    fn invoke_from_class(&mut self, class: &Class, name: InternedString, arg_count: Arity) -> Result<()> {
+        match class.get_method(&name) {
+            Some(method) => self.call(method.into(), arg_count),
+            None => Err(self.runtime_error(RuntimeError::UndefinedProperty(name.to_string()))),
         }
     }
 
@@ -384,6 +393,24 @@ impl Vm {
                 Instruction::Call { arg_count } => {
                     let callee = self.stack.value_stack().peek_nth(arg_count.0 as usize);
                     self.call(callee.clone(), arg_count)?;
+                }
+                Instruction::Invoke { constant_index, arg_count } => {
+                    let receiver = self.stack.value_stack().peek_nth(arg_count.0 as usize).clone();
+                    let name = self.stack.frame_chunk().get_string_constant(constant_index);
+        
+                    match receiver {
+                        Value::Object(o) => match o.deref() {
+                            Object::Instance(instance) => {
+                                if let Some(field) = instance.field(&name) {
+                                    self.call(field.clone(), arg_count)?
+                                } else {
+                                    self.invoke_from_class(instance.class(), name, arg_count)?
+                                }
+                            },
+                            _ => return Err(self.runtime_error(RuntimeError::OnlyInstancesHaveMethods)),
+                        }
+                        _ => return Err(self.runtime_error(RuntimeError::OnlyInstancesHaveMethods)),
+                    }
                 }
                 Instruction::Closure { constant_index, upvalue_count } => {
                     let function = self.stack.frame_chunk().get_function_constant(constant_index);

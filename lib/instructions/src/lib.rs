@@ -66,6 +66,7 @@ pub enum Instruction {
     Call { arg_count: Arity },
     Class { constant_index: u8 },
     Method { constant_index: u8 },
+    Invoke { constant_index: u8, arg_count: Arity },
 }
 
 #[cfg(test)]

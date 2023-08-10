@@ -133,6 +133,7 @@ impl Chunk {
             Instruction::Jump(jump) => format!("'{}'", jump.0),
             Instruction::Loop(jump) => format!("'{}'", jump.0),
             Instruction::Call { arg_count } => format!("'{}'", arg_count),
+            Instruction::Invoke { constant_index, arg_count } => format!("{} '{}'", get_constant(constant_index), arg_count),
             Instruction::Return
             | Instruction::Negate
             | Instruction::Not
