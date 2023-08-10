@@ -119,6 +119,26 @@ impl Value {
             _ => None,
         }
     }
+
+    pub fn as_instance(&self) -> Option<&Instance> {
+        match self {
+            Value::Object(o) => match o.deref() {
+                Object::Instance(i) => Some(i),
+                _ => None,
+            }
+            _ => None,
+        }
+    }
+
+    pub fn as_class(&self) -> Option<&Class> {
+        match self {
+            Value::Object(o) => match o.deref() {
+                Object::Class(c) => Some(c),
+                _ => None,
+            }
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Debug for Value {

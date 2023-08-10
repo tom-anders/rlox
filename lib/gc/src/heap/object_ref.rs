@@ -179,17 +179,3 @@ impl<T: Clone> From<&TypedObjectRef<T>> for Value {
         Value::Object((*object).clone().into())
     }
 }
-
-impl<T> TryFrom<Value> for TypedObjectRef<T> {
-    type Error = Value;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        match value {
-            Value::Object(object) => match object.deref().try_into() {
-                Ok(object) => Ok(object),
-                Err(_) => Err(Value::Object(object)),
-            },
-            _ => Err(value),
-        }
-    }
-}

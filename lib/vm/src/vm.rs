@@ -399,19 +399,16 @@ impl Vm {
                 Instruction::Invoke { constant_index, arg_count } => {
                     let receiver = self.stack.value_stack().peek_nth(arg_count.0 as usize).clone();
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
-        
-                    match receiver {
-                        Value::Object(o) => match o.deref() {
-                            Object::Instance(instance) => {
-                                if let Some(field) = instance.field(&name) {
-                                    self.call(field.clone(), arg_count)?
-                                } else {
-                                    self.invoke_from_class(instance.class(), name, arg_count)?
-                                }
-                            },
-                            _ => return Err(self.runtime_error(RuntimeError::OnlyInstancesHaveMethods)),
+                    
+                    match receiver.as_instance() {
+                        Some(instance) => {
+                            if let Some(field) = instance.field(&name) {
+                                self.call(field.clone(), arg_count)?
+                            } else {
+                                self.invoke_from_class(instance.class(), name, arg_count)?
+                            }
                         }
-                        _ => return Err(self.runtime_error(RuntimeError::OnlyInstancesHaveMethods)),
+                        None => return Err(self.runtime_error(RuntimeError::OnlyInstancesHaveMethods)),
                     }
                 }
                 Instruction::Closure { constant_index, upvalue_count } => {
@@ -490,19 +487,16 @@ impl Vm {
                     self.push(class);
                 }
                 Instruction::Inherit => {
-                    let superclass = self.stack.value_stack().peek_nth(1);
-                    match superclass {
-                        Value::Object(o) => match o.deref() {
-                            Object::Class(class) => {
-                                let mut subclass = self.stack.value_stack().peek().clone().unwrap_object().unwrap_class();
-                                // SAFETY: The VM never holds on to any references to the class for longer than a single instruction,
-                                // so at this point we can be sure to have an exclusive reference to the class.
-                                unsafe { subclass.deref_mut().set_methods(superclass.methods().clone()) } 
-                                self.stack.pop(); // the subclass
-                            }
-                            _ => return Err(self.runtime_error(RuntimeError::SuperclassMustBeAClass)),
+                    let mut subclass = self.stack.pop().unwrap_object().unwrap_class();
+                    match self.stack.value_stack().peek().as_class() {
+                        Some(superclass) => {
+                            // SAFETY: The VM never holds on to any references to the class for longer than a single instruction,
+                            // so at this point we can be sure to have an exclusive reference to the class.
+                            unsafe { 
+                                subclass.deref_mut().set_methods(superclass.methods().clone()) 
+                            } 
                         }
-                        _ => return Err(self.runtime_error(RuntimeError::SuperclassMustBeAClass)),
+                        None => return Err(self.runtime_error(RuntimeError::SuperclassMustBeAClass)),
                     }
                 }
                 Instruction::GetProperty { constant_index } => {
