@@ -1,9 +1,22 @@
 use crate::{Col, Cursor, Line};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct SourceRange<'a> {
     start: Cursor<'a>,
     end: Cursor<'a>,
+}
+
+impl<'a> std::fmt::Debug for SourceRange<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            f.debug_struct("SourceRange")
+                .field("start", &self.start)
+                .field("end", &self.end)
+                .finish()
+        } else {
+            write!(f, "\"{}\"", self.lexeme())
+        }
+    }
 }
 
 impl<'a> From<(Cursor<'a>, Cursor<'a>)> for SourceRange<'a> {

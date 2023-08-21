@@ -4,7 +4,7 @@ use strings::string_interner::InternedString;
 
 use crate::{garbage_collector::GcObject, Object, Function, Closure, Upvalue, Class, Instance, BoundMethod, Value};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ObjectRef(*mut GcObject, #[cfg(debug_assertions)] Weak<()>);
 
 impl From<&mut GcObject> for ObjectRef {
@@ -49,6 +49,12 @@ impl Deref for ObjectRef {
 impl std::fmt::Display for ObjectRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.deref())
+    }
+}
+
+impl std::fmt::Debug for ObjectRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.deref().fmt(f)
     }
 }
 
@@ -106,8 +112,14 @@ impl ObjectRef {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct TypedObjectRef<T>(ObjectRef, PhantomData<T>);
+
+impl<T> std::fmt::Debug for TypedObjectRef<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.deref().fmt(f)
+    }
+}
 
 pub type FunctionRef = TypedObjectRef<Function>;
 pub type InstanceRef = TypedObjectRef<Instance>;

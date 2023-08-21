@@ -2,7 +2,7 @@ use std::{hash::Hash, ops::Deref};
 
 use crate::table::StringTable;
 
-#[derive(Eq, Debug, Clone, Copy)]
+#[derive(Eq, Clone, Copy)]
 pub struct InternedString {
     ptr: *const str,
     pub(crate) hash: usize,
@@ -40,6 +40,20 @@ impl PartialEq for InternedString {
 impl std::fmt::Display for InternedString {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.deref())
+    }
+}
+
+impl std::fmt::Debug for InternedString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            f.debug_struct("InternedString")
+                .field("ptr", &self.ptr)
+                .field("hash", &self.hash)
+                .field("string", &self.deref())
+                .finish()
+        } else {
+            write!(f, "\"{}\"", self.deref())
+        }
     }
 }
 
