@@ -158,7 +158,7 @@ impl Vm {
                 Object::Class(_) => {
                     let instance =
                         self.alloc(Instance::new(obj.clone().unwrap_class(), StringTable::new()));
-                    *self.stack.frame_stack_at_mut(self.stack.len() - 1 - arg_count.0) =
+                    *self.stack.global_stack_at_mut(self.stack.len() - 1 - arg_count.0) =
                         instance.clone().into();
 
                     match instance.class().get_method(&self.init_string) {
@@ -184,7 +184,7 @@ impl Vm {
                     Ok(())
                 }
                 Object::BoundMethod(bound_method) => {
-                    *self.stack.frame_stack_at_mut(self.stack.len() - 1 - arg_count.0) =
+                    *self.stack.global_stack_at_mut(self.stack.len() - 1 - arg_count.0) =
                         bound_method.receiver().into();
                     self.call(bound_method.method().into(), arg_count)
                 }
@@ -844,6 +844,45 @@ mod tests {
             class Baz < Bar {}
             var baz = Baz();
             baz.method();
+        "#;
+
+        let mut output = Vec::new();
+        Vm::new().run_source(source, &mut output).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap().lines().collect_vec(), vec!["foo"]);
+    }
+
+    #[test]
+    fn call_bound_method_inside_class() {
+        let source = r#"
+            class Foo { 
+                foo() { print "foo"; }
+                bar() {
+                    var bar = this.foo;
+                    bar();
+                    return bar;
+                }
+            }
+            var bar = Foo().bar();
+            bar();
+        "#;
+
+        let mut output = Vec::new();
+        Vm::new().run_source(source, &mut output).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap().lines().collect_vec(), vec!["foo", "foo"]);
+    }
+
+    #[test]
+    fn class_constructor_inside_local_scope() {
+        let source = r#"
+            class Foo {
+                init() {
+                    print "foo";
+                }
+            }
+            fun bar() {
+                var foo = Foo();
+            }
+            bar();
         "#;
 
         let mut output = Vec::new();
