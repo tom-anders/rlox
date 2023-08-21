@@ -396,6 +396,12 @@ impl Vm {
                     let callee = self.stack.value_stack().peek_nth(arg_count.0 as usize);
                     self.call(callee.clone(), arg_count)?;
                 }
+                Instruction::InvokeSuper { constant_index, arg_count } => {
+                    let name = self.stack.frame_chunk().get_string_constant(constant_index);
+                    let superclass = self.stack.pop().unwrap_object().unwrap_class();
+
+                    self.invoke_from_class(superclass.deref(), name, arg_count)?;
+                }
                 Instruction::Invoke { constant_index, arg_count } => {
                     let receiver = self.stack.value_stack().peek_nth(arg_count.0 as usize).clone();
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
@@ -917,14 +923,16 @@ mod tests {
             class B < A {
                 method() {
                     super.method();
+                    var m = super.method;
+                    return m;
                 }
             }
             var b = B();
-            b.method();
+            b.method()();
         "#;
 
         let mut output = Vec::new();
         Vm::new().run_source(source, &mut output).unwrap();
-        assert_eq!(String::from_utf8(output).unwrap().lines().collect_vec(), vec!["A"]);
+        assert_eq!(String::from_utf8(output).unwrap().lines().collect_vec(), vec!["A", "A"]);
     }
 }

@@ -891,12 +891,19 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.consume_or_error(Dot, CompilerErrorType::ExpectedDotAfterSuper)?;
         let identifier = self.consume_or_error(Identifier, CompilerErrorType::ExpectedSuperclassMethodName)?;
-        let name = self.add_identifier_constant(&identifier)?;
+        let constant_index = self.add_identifier_constant(&identifier)?;
 
         self.named_variable(&Token::synthetic_identifier("this"), false)?;
-        self.named_variable(super_token, false)?;
 
-        self.current_chunk().write_instruction(Instruction::GetSuper { constant_index: name }, super_token.line());
+        if self.consume(LeftParen)?.is_ok() {
+            let arg_count = self.argument_list()?.into();
+            self.named_variable(super_token, false)?;
+            self.current_chunk().write_instruction(Instruction::InvokeSuper { constant_index, arg_count }, super_token.line());
+        } else {
+            self.named_variable(super_token, false)?;
+
+            self.current_chunk().write_instruction(Instruction::GetSuper { constant_index }, super_token.line());
+        }
 
         Ok(())
     }
