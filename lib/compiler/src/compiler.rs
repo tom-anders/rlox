@@ -206,14 +206,13 @@ impl FunctionToCompile<'_> {
 }
 
 #[derive(Debug, Clone)]
-struct ClassToCompile<'a> {
-    ident: Token<'a>,
+struct ClassToCompile {
     has_superclass: bool,
 }
 
-impl<'a> ClassToCompile<'a> {
-    fn new(ident: Token<'a>) -> Self {
-        Self { ident, has_superclass: false }
+impl ClassToCompile {
+    fn new() -> Self {
+        Self { has_superclass: false }
     }
 }
 
@@ -221,7 +220,7 @@ impl<'a> ClassToCompile<'a> {
 pub struct Compiler<'a, 'b> {
     token_stream: Peekable<TokenStream<'a>>,
     functions: Vec<FunctionToCompile<'a>>,
-    classes: Vec<ClassToCompile<'a>>,
+    classes: Vec<ClassToCompile>,
     interner: &'b mut StringInterner,
     heap: &'b mut Heap,
 }
@@ -248,11 +247,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
         &mut self.functions.last_mut().unwrap().function
     }
 
-    fn current_class(&self) -> Option<&ClassToCompile<'a>> {
+    fn current_class(&self) -> Option<&ClassToCompile> {
         self.classes.last()
     }
 
-    fn current_class_mut(&mut self) -> Option<&mut ClassToCompile<'a>> {
+    fn current_class_mut(&mut self) -> Option<&mut ClassToCompile> {
         self.classes.last_mut()
     }
 
@@ -349,7 +348,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.define_variable(constant_index, class_ident.line())?;
 
-        self.classes.push(ClassToCompile::new(class_ident.clone()));
+        self.classes.push(ClassToCompile::new());
 
         if self.consume(Less)?.is_ok() {
             let super_class_ident =
