@@ -1,10 +1,10 @@
-use std::{fmt::Debug, mem::size_of, writeln, ops::Deref};
+use std::{fmt::Debug, mem::size_of, ops::Deref, writeln};
 
 use instructions::{Instruction, Jump, OpCode};
 use itertools::Itertools;
 use strings::string_interner::InternedString;
 
-use crate::{Value, FunctionRef};
+use crate::{FunctionRef, Value};
 
 #[derive(Clone, Default, PartialEq)]
 pub struct Chunk {
@@ -66,19 +66,26 @@ impl Chunk {
     }
 
     pub fn get_string_constant(&self, index: u8) -> InternedString {
-        *self.constants().get(index as usize).expect("Missing string constant").clone()
-            .unwrap_object().unwrap_string().deref()
+        *self
+            .constants()
+            .get(index as usize)
+            .expect("Missing string constant")
+            .clone()
+            .unwrap_object()
+            .unwrap_string()
+            .deref()
     }
 
     pub fn get_function_constant(&self, index: u8) -> FunctionRef {
-        self.constants().get(index as usize).expect("Missing function constant").clone()
-            .unwrap_object().unwrap_function()
+        self.constants()
+            .get(index as usize)
+            .expect("Missing function constant")
+            .clone()
+            .unwrap_object()
+            .unwrap_function()
     }
 
-    pub fn disassemble_instruction(
-        &self,
-        offset: usize,
-    ) -> (String, usize) {
+    pub fn disassemble_instruction(&self, offset: usize) -> (String, usize) {
         let instr = Instruction::from_bytes(&self.code[offset..]);
 
         let line = self.lines[offset];
@@ -134,8 +141,12 @@ impl Chunk {
             Instruction::Jump(jump) => format!("'{}'", jump.0),
             Instruction::Loop(jump) => format!("'{}'", jump.0),
             Instruction::Call { arg_count } => format!("'{}'", arg_count),
-            Instruction::Invoke { constant_index, arg_count } => format!("{} '{}'", get_constant(constant_index), arg_count),
-            Instruction::InvokeSuper { constant_index, arg_count } => format!("{} '{}'", get_constant(constant_index), arg_count),
+            Instruction::Invoke { constant_index, arg_count } => {
+                format!("{} '{}'", get_constant(constant_index), arg_count)
+            }
+            Instruction::InvokeSuper { constant_index, arg_count } => {
+                format!("{} '{}'", get_constant(constant_index), arg_count)
+            }
             Instruction::Return
             | Instruction::Negate
             | Instruction::Not

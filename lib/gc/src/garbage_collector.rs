@@ -1,6 +1,4 @@
-use std::{rc::Rc};
-
-
+use std::rc::Rc;
 
 use crate::{Heap, Object, ObjectRef, Upvalue, Value};
 
@@ -110,7 +108,7 @@ impl GarbageCollector {
                         for method in class.methods_mut().values_mut() {
                             self.mark_ref(method);
                         }
-                    },
+                    }
                     Object::Instance(instance) => {
                         self.mark_ref(instance.class_mut());
                         for field in instance.fields_mut().values_mut() {

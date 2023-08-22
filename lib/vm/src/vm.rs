@@ -2,13 +2,16 @@ use std::{io::Write, ops::Deref};
 
 use compiler::{Compiler, CompilerErrors};
 use gc::{
-    BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef, NativeFun,
-    Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value, ClassRef,
+    BoundMethod, Chunk, Class, ClassRef, Closure, GarbageCollector, Heap, Instance, InstanceRef,
+    NativeFun, Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value,
 };
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
 use log::trace;
-use strings::{string_interner::{StringInterner, InternedString}, table::StringTable};
+use strings::{
+    string_interner::{InternedString, StringInterner},
+    table::StringTable,
+};
 
 use self::stack::Stack;
 
@@ -194,7 +197,12 @@ impl Vm {
         }
     }
 
-    fn invoke_from_class(&mut self, class: &Class, name: InternedString, arg_count: Arity) -> Result<()> {
+    fn invoke_from_class(
+        &mut self,
+        class: &Class,
+        name: InternedString,
+        arg_count: Arity,
+    ) -> Result<()> {
         match class.get_method(&name) {
             Some(method) => self.call(method.into(), arg_count),
             None => Err(self.runtime_error(RuntimeError::UndefinedProperty(name.to_string()))),
@@ -405,7 +413,7 @@ impl Vm {
                 Instruction::Invoke { constant_index, arg_count } => {
                     let receiver = self.stack.value_stack().peek_nth(arg_count.0 as usize).clone();
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
-                    
+
                     match receiver.as_instance() {
                         Some(instance) => {
                             if let Some(field) = instance.field(&name) {
@@ -414,7 +422,9 @@ impl Vm {
                                 self.invoke_from_class(instance.class(), name, arg_count)?
                             }
                         }
-                        None => return Err(self.runtime_error(RuntimeError::OnlyInstancesHaveMethods)),
+                        None => {
+                            return Err(self.runtime_error(RuntimeError::OnlyInstancesHaveMethods))
+                        }
                     }
                 }
                 Instruction::Closure { constant_index, upvalue_count } => {
@@ -498,11 +508,13 @@ impl Vm {
                         Some(superclass) => {
                             // SAFETY: The VM never holds on to any references to the class for longer than a single instruction,
                             // so at this point we can be sure to have an exclusive reference to the class.
-                            unsafe { 
-                                subclass.deref_mut().set_methods(superclass.methods().clone()) 
-                            } 
+                            unsafe {
+                                subclass.deref_mut().set_methods(superclass.methods().clone())
+                            }
                         }
-                        None => return Err(self.runtime_error(RuntimeError::SuperclassMustBeAClass)),
+                        None => {
+                            return Err(self.runtime_error(RuntimeError::SuperclassMustBeAClass))
+                        }
                     }
                 }
                 Instruction::GetProperty { constant_index } => {
@@ -530,7 +542,7 @@ impl Vm {
                     let superclass = self.stack.pop().unwrap_object().unwrap_class();
 
                     let instance: InstanceRef = self.stack.peek().clone().unwrap_object().into();
-                    
+
                     // TODO factor out into bind_method with logic in GetProperty
                     if let Some(method) = superclass.get_method(&name) {
                         let bound_method =
@@ -820,22 +832,34 @@ mod tests {
 
         output.clear();
         vm.run_source("var foo = Foo(123); print foo;", &mut output).unwrap();
-        assert_eq!(String::from_utf8(output.clone()).unwrap().lines().collect_vec(), vec!["Foo instance"]);
+        assert_eq!(
+            String::from_utf8(output.clone()).unwrap().lines().collect_vec(),
+            vec!["Foo instance"]
+        );
 
-        assert_eq!(vm.run_source("var foo = Foo();", &mut output).unwrap_err(), InterpretError::RuntimeError {
-            line: 1,
-            error: RuntimeError::InvalidArgumentCount { expected: Arity(1), got: Arity(0) }
-        });
+        assert_eq!(
+            vm.run_source("var foo = Foo();", &mut output).unwrap_err(),
+            InterpretError::RuntimeError {
+                line: 1,
+                error: RuntimeError::InvalidArgumentCount { expected: Arity(1), got: Arity(0) }
+            }
+        );
 
-        assert_eq!(vm.run_source("foo = Foo(123, 456);", &mut output).unwrap_err(), InterpretError::RuntimeError {
-            line: 1,
-            error: RuntimeError::InvalidArgumentCount { expected: Arity(1), got: Arity(2) }
-        });
+        assert_eq!(
+            vm.run_source("foo = Foo(123, 456);", &mut output).unwrap_err(),
+            InterpretError::RuntimeError {
+                line: 1,
+                error: RuntimeError::InvalidArgumentCount { expected: Arity(1), got: Arity(2) }
+            }
+        );
 
-        assert_eq!(vm.run_source("var bar = Bar(123);", &mut output).unwrap_err(), InterpretError::RuntimeError {
-            line: 1,
-            error: RuntimeError::InvalidArgumentCount { expected: Arity(0), got: Arity(1) }
-        });
+        assert_eq!(
+            vm.run_source("var bar = Bar(123);", &mut output).unwrap_err(),
+            InterpretError::RuntimeError {
+                line: 1,
+                error: RuntimeError::InvalidArgumentCount { expected: Arity(0), got: Arity(1) }
+            }
+        );
     }
 
     #[test]
@@ -849,13 +873,14 @@ mod tests {
         "#;
         let mut output = Vec::new();
 
-        assert_eq!(Vm::new().run_source(source, &mut output).unwrap_err(), InterpretError::CompileError(
-                CompilerErrors(vec![CompilerError::new(
-                    CompilerErrorType::InitializerCannotReturn,
-                    Line(4),
-                    Col(29),
-                    )])
-                ));
+        assert_eq!(
+            Vm::new().run_source(source, &mut output).unwrap_err(),
+            InterpretError::CompileError(CompilerErrors(vec![CompilerError::new(
+                CompilerErrorType::InitializerCannotReturn,
+                Line(4),
+                Col(29),
+            )]))
+        );
     }
 
     #[test]

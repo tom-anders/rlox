@@ -1,17 +1,14 @@
 use std::{fmt::Display, iter::Peekable, mem::size_of, unreachable};
 
 use cursor::{Col, Line};
-use gc::{
-    Chunk, Closure, ClosureRef, Function, Heap, Object, ObjectRef,
-    Value,
-};
+use gc::{Chunk, Closure, ClosureRef, Function, Heap, Object, ObjectRef, Value};
 use instructions::{Arity, CompiledUpvalue, Instruction, Jump};
 use itertools::Itertools;
 use log::trace;
 use scanner::{token::TokenData, ScanError, ScanErrorType, Token, TokenStream, TokenType};
 
-use TokenType::*;
 use strings::string_interner::StringInterner;
+use TokenType::*;
 
 use crate::scope::Scope;
 
@@ -342,7 +339,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn class_declaration(&mut self) -> Result<()> {
-        let class_ident = self.consume_or_error(Identifier, CompilerErrorType::ExpectedClassName)?;
+        let class_ident =
+            self.consume_or_error(Identifier, CompilerErrorType::ExpectedClassName)?;
         let constant_index = self.add_identifier_constant(&class_ident)?;
 
         self.declare_variable(&class_ident)?;
@@ -354,7 +352,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.classes.push(ClassToCompile::new(class_ident.clone()));
 
         if self.consume(Less)?.is_ok() {
-            let super_class_ident = self.consume_or_error(Identifier, CompilerErrorType::ExpectedSuperclassName)?;
+            let super_class_ident =
+                self.consume_or_error(Identifier, CompilerErrorType::ExpectedSuperclassName)?;
             self.variable(&super_class_ident, false)?;
 
             self.current_scope_mut().begin_scope();
@@ -385,7 +384,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
             }
         }
 
-        let right_brace = self.consume_or_error(RightBrace, CompilerErrorType::ExpectedRightBrace("class body"))?;
+        let right_brace =
+            self.consume_or_error(RightBrace, CompilerErrorType::ExpectedRightBrace("class body"))?;
 
         // pop the class name
         self.current_chunk().write_instruction(Instruction::Pop, class_ident.line());
@@ -507,8 +507,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 .write_instruction(Instruction::SetProperty { constant_index }, identifier.line());
         } else if self.consume(LeftParen)?.is_ok() {
             let arg_count = self.argument_list()?.into();
-            self.current_chunk()
-                .write_instruction(Instruction::Invoke { constant_index, arg_count }, identifier.line());
+            self.current_chunk().write_instruction(
+                Instruction::Invoke { constant_index, arg_count },
+                identifier.line(),
+            );
         } else {
             self.current_chunk()
                 .write_instruction(Instruction::GetProperty { constant_index }, identifier.line());
@@ -679,7 +681,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
             self.mark_initialized();
             return Ok(());
         }
-        log::debug!("Defining global {constant_index} -> {:?}", self.current_chunk().constants()[constant_index as usize]);
+        log::debug!(
+            "Defining global {constant_index} -> {:?}",
+            self.current_chunk().constants()[constant_index as usize]
+        );
         self.current_chunk().write_instruction(Instruction::DefineGlobal { constant_index }, line);
         Ok(())
     }
@@ -877,15 +882,17 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn super_(&mut self, super_token: &Token<'a>) -> Result<()> {
-        let current_class = self.current_class().cloned().ok_or_else(|| {
-            CompilerErrorType::SuperOutsideClass.at(super_token)
-        })?;
+        let current_class = self
+            .current_class()
+            .cloned()
+            .ok_or_else(|| CompilerErrorType::SuperOutsideClass.at(super_token))?;
         if !current_class.has_superclass {
             return Err(CompilerErrorType::SuperclasslessClass.at(super_token));
         }
 
         self.consume_or_error(Dot, CompilerErrorType::ExpectedDotAfterSuper)?;
-        let identifier = self.consume_or_error(Identifier, CompilerErrorType::ExpectedSuperclassMethodName)?;
+        let identifier =
+            self.consume_or_error(Identifier, CompilerErrorType::ExpectedSuperclassMethodName)?;
         let constant_index = self.add_identifier_constant(&identifier)?;
 
         self.variable(&Token::synthetic_identifier("this"), false)?;
@@ -893,11 +900,15 @@ impl<'a, 'b> Compiler<'a, 'b> {
         if self.consume(LeftParen)?.is_ok() {
             let arg_count = self.argument_list()?.into();
             self.variable(super_token, false)?;
-            self.current_chunk().write_instruction(Instruction::InvokeSuper { constant_index, arg_count }, super_token.line());
+            self.current_chunk().write_instruction(
+                Instruction::InvokeSuper { constant_index, arg_count },
+                super_token.line(),
+            );
         } else {
             self.variable(super_token, false)?;
 
-            self.current_chunk().write_instruction(Instruction::GetSuper { constant_index }, super_token.line());
+            self.current_chunk()
+                .write_instruction(Instruction::GetSuper { constant_index }, super_token.line());
         }
 
         Ok(())

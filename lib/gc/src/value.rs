@@ -1,4 +1,4 @@
-use std::{ops::Deref};
+use std::ops::Deref;
 
 use crate::{Heap, ObjectRef};
 
@@ -24,12 +24,19 @@ pub use instance::*;
 mod bound_method;
 pub use bound_method::*;
 
-#[derive(Clone, PartialEq, derive_more::From, derive_more::TryInto, derive_more::Unwrap, derive_more::Display)]
+#[derive(
+    Clone,
+    PartialEq,
+    derive_more::From,
+    derive_more::TryInto,
+    derive_more::Unwrap,
+    derive_more::Display,
+)]
 #[try_into(owned, ref, ref_mut)]
 pub enum Value {
     Number(f64),
     Boolean(bool),
-    #[display(fmt="Nil")]
+    #[display(fmt = "Nil")]
     Nil,
     Object(ObjectRef),
 }
@@ -125,7 +132,7 @@ impl Value {
             Value::Object(o) => match o.deref() {
                 Object::Instance(i) => Some(i),
                 _ => None,
-            }
+            },
             _ => None,
         }
     }
@@ -135,7 +142,7 @@ impl Value {
             Value::Object(o) => match o.deref() {
                 Object::Class(c) => Some(c),
                 _ => None,
-            }
+            },
             _ => None,
         }
     }

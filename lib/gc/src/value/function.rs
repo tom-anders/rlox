@@ -3,10 +3,7 @@ use std::fmt::{Debug, Display};
 use instructions::Arity;
 use strings::string_interner::{InternedString, StringInterner};
 
-use crate::{
-    chunk::Chunk,
-    value::Value
-};
+use crate::{chunk::Chunk, value::Value};
 
 #[derive(Clone, PartialEq)]
 pub struct Function {
@@ -34,10 +31,7 @@ impl Debug for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Intenionally ignoring the chunk here, since we'd need a heap ref to resolve it,
         // but it would make the output too verbose anyway.
-        f.debug_struct("Function")
-            .field("arity", &self.arity)
-            .field("name", &self.name)
-            .finish()
+        f.debug_struct("Function").field("arity", &self.arity).field("name", &self.name).finish()
     }
 }
 

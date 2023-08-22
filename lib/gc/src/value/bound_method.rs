@@ -1,4 +1,4 @@
-use crate::{InstanceRef, ClosureRef};
+use crate::{ClosureRef, InstanceRef};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BoundMethod {
@@ -14,7 +14,7 @@ impl BoundMethod {
     pub(crate) fn method_mut(&mut self) -> &mut ClosureRef {
         &mut self.method
     }
-    
+
     pub(crate) fn receiver_mut(&mut self) -> &mut InstanceRef {
         &mut self.receiver
     }

@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use strings::{string_interner::InternedString, table::StringTable};
 
-use crate::{ClosureRef, Value, Object};
+use crate::{ClosureRef, Object, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {

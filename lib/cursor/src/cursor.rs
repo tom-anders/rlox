@@ -24,10 +24,7 @@ impl<'a> std::fmt::Debug for Cursor<'a> {
                 .field("source", &self.source)
                 .finish()
         } else {
-            f.debug_struct("Cursor")
-                .field("line", &self.line)
-                .field("col", &self.col())
-                .finish()
+            f.debug_struct("Cursor").field("line", &self.line).field("col", &self.col()).finish()
         }
     }
 }

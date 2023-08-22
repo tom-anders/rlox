@@ -1,7 +1,7 @@
 pub mod token;
 pub use token::*;
 
-use cursor::{Cursor, Line, Col};
+use cursor::{Col, Cursor, Line};
 use token::TokenData::{self, *};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -174,7 +174,9 @@ impl<'a> Scanner<'a> {
                 }
                 None => {
                     return self
-                        .error(ScanErrorType::UnterminatedBlockComment(self.lexeme()[2..].to_string()))
+                        .error(ScanErrorType::UnterminatedBlockComment(
+                            self.lexeme()[2..].to_string(),
+                        ))
                         .map(|_| ())
                 }
                 _ => (),

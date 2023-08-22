@@ -13,7 +13,7 @@ impl<V: Debug> Debug for StringTable<V> {
     }
 }
 
-impl <V: PartialEq> PartialEq for StringTable<V> {
+impl<V: PartialEq> PartialEq for StringTable<V> {
     fn eq(&self, other: &Self) -> bool {
         if self.len() != other.len() {
             return false;
@@ -94,9 +94,9 @@ impl<V> StringTable<V> {
         key: InternedString,
         cmp: impl Fn(&InternedString, &InternedString) -> bool,
     ) -> usize {
-        // capacity is always a power of 2, in which case this is 
+        // capacity is always a power of 2, in which case this is
         // equivalent to key.hash % self.capacity(), but a lot faster.
-        let mut first_index = key.hash & ( self.capacity() - 1);
+        let mut first_index = key.hash & (self.capacity() - 1);
 
         loop {
             match &self.entries[first_index] {
@@ -107,7 +107,7 @@ impl<V> StringTable<V> {
                     }
                 }
             }
-            first_index = (first_index + 1) & ( self.capacity() - 1);
+            first_index = (first_index + 1) & (self.capacity() - 1);
         }
     }
 
@@ -207,6 +207,9 @@ mod tests {
         let s2 = s.clone();
         assert_eq!(table.get(InternedString::new(s2.as_str())), None);
         assert_eq!(table.get_str_eq(InternedString::new("hkjhkjhkj")), None);
-        assert_eq!(table.get_str_eq(InternedString::new(s2.as_str())), Some(&InternedString::new(s.as_str())));
+        assert_eq!(
+            table.get_str_eq(InternedString::new(s2.as_str())),
+            Some(&InternedString::new(s.as_str()))
+        );
     }
 }

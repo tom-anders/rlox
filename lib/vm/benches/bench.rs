@@ -2,8 +2,9 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use vm::Vm;
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("fib", |b| b.iter(|| {
-        let source = r#"
+    c.bench_function("fib", |b| {
+        b.iter(|| {
+            let source = r#"
             fun fib(n) {
                 if (n <= 1) return n;
                 return fib(n - 2) + fib(n - 1);
@@ -11,12 +12,14 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
             print fib(10);
         "#;
-        let mut output = Vec::new();
-        Vm::new().run_source(source, &mut output).unwrap();
-    }));
+            let mut output = Vec::new();
+            Vm::new().run_source(source, &mut output).unwrap();
+        })
+    });
 
-    c.bench_function("zoo example from the book", |b| b.iter(|| {
-        let source = r#"
+    c.bench_function("zoo example from the book", |b| {
+        b.iter(|| {
+            let source = r#"
             class Zoo {
               init() {
                 this.aardvark = 1;
@@ -46,9 +49,10 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                         + zoo.mouse();
             }
         "#;
-        let mut output = Vec::new();
-        Vm::new().run_source(source, &mut output).unwrap();
-    }));
+            let mut output = Vec::new();
+            Vm::new().run_source(source, &mut output).unwrap();
+        })
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);

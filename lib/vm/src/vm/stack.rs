@@ -1,13 +1,10 @@
-
-
-use gc::{Chunk, Value, ClosureRef};
+use gc::{Chunk, ClosureRef, Value};
 
 use itertools::Itertools;
 use log::trace;
 
 mod array_stack;
 pub use array_stack::ArrayStack;
-
 
 #[derive(Debug, Clone)]
 pub struct CallFrame {
@@ -59,10 +56,7 @@ pub struct Stack {
 
 impl Stack {
     pub fn new() -> Self {
-        Self {
-            values: ArrayStack::new(),
-            frames: ArrayStack::new(),
-        }
+        Self { values: ArrayStack::new(), frames: ArrayStack::new() }
     }
 
     pub fn clear(&mut self) {
@@ -99,7 +93,10 @@ impl Stack {
     }
 
     pub fn push_frame(&mut self, closure: ClosureRef) {
-        self.frames.push(CallFrame::new(closure.clone(), self.values.len() - closure.arity().0 as usize - 1));
+        self.frames.push(CallFrame::new(
+            closure.clone(),
+            self.values.len() - closure.arity().0 as usize - 1,
+        ));
     }
 
     pub fn pop_frame(&mut self) -> CallFrame {

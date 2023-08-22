@@ -1,5 +1,3 @@
-
-
 use strings::{string_interner::InternedString, table::StringTable};
 
 use crate::{ClassRef, Value};

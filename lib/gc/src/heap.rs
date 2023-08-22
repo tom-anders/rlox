@@ -1,5 +1,5 @@
 mod object_ref;
-use std::{pin::Pin, ops::DerefMut};
+use std::{ops::DerefMut, pin::Pin};
 
 pub use object_ref::*;
 
@@ -12,9 +12,7 @@ pub struct Heap {
 
 impl Heap {
     pub fn with_capacity(cap: usize) -> Self {
-        Self {
-            objects: Vec::with_capacity(cap),
-        }
+        Self { objects: Vec::with_capacity(cap) }
     }
 
     pub fn alloc(&mut self, object: impl Into<Object>) -> ObjectRef {
