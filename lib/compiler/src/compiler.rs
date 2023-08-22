@@ -361,7 +361,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             self.add_local(&Token::synthetic_identifier("super"))?;
             self.define_variable(0, super_class_ident.line())?;
 
-            self.named_variable(&class_ident, false)?;
+            self.variable(&class_ident, false)?;
 
             if super_class_ident == class_ident {
                 return Err(CompilerErrorType::InheritanceFromSelf.at(&class_ident));
@@ -373,7 +373,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             self.current_class_mut().unwrap().has_superclass = true;
         };
 
-        self.named_variable(&class_ident, false)?;
+        self.variable(&class_ident, false)?;
         self.consume_or_error(LeftBrace, CompilerErrorType::ExpectedLeftBrace("class body"))?;
 
         loop {
@@ -543,12 +543,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Ok(arg_count)
     }
 
-    // TODO looks like we can merge the two, in clox this is needed because of the precedence table
-    fn variable(&mut self, token: &Token<'a>, can_assign: bool) -> Result<()> {
-        self.named_variable(token, can_assign)
-    }
-
-    fn named_variable(&mut self, identifier: &Token<'a>, can_assign: bool) -> Result<()> {
+    fn variable(&mut self, identifier: &Token<'a>, can_assign: bool) -> Result<()> {
         let (get_instr, set_instr) = if let Some(stack_slot) =
             Self::resolve_local(self.locals(), identifier)
         {
@@ -893,14 +888,14 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let identifier = self.consume_or_error(Identifier, CompilerErrorType::ExpectedSuperclassMethodName)?;
         let constant_index = self.add_identifier_constant(&identifier)?;
 
-        self.named_variable(&Token::synthetic_identifier("this"), false)?;
+        self.variable(&Token::synthetic_identifier("this"), false)?;
 
         if self.consume(LeftParen)?.is_ok() {
             let arg_count = self.argument_list()?.into();
-            self.named_variable(super_token, false)?;
+            self.variable(super_token, false)?;
             self.current_chunk().write_instruction(Instruction::InvokeSuper { constant_index, arg_count }, super_token.line());
         } else {
-            self.named_variable(super_token, false)?;
+            self.variable(super_token, false)?;
 
             self.current_chunk().write_instruction(Instruction::GetSuper { constant_index }, super_token.line());
         }
