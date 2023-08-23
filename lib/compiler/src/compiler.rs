@@ -780,6 +780,28 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Ok(())
     }
 
+    fn and(&mut self, token: Token<'a>) -> Result<()> {
+        let end_jump = self.write_jump(Instruction::JumpIfFalse(Jump(0)), token.line());
+        self.current_chunk().write_instruction(Instruction::Pop, token.line());
+        self.parse_precedence(Precedence::And)?;
+        self.patch_jump(end_jump, token)?;
+        Ok(())
+    }
+
+    fn or(&mut self, token: Token<'a>) -> Result<()> {
+        let else_jump = self.write_jump(Instruction::JumpIfFalse(Jump(0)), token.line());
+        let end_jump = self.write_jump(Instruction::Jump(Jump(0)), token.line());
+
+        self.patch_jump(else_jump, token.clone())?;
+        self.current_chunk().write_instruction(Instruction::Pop, token.line());
+
+        self.parse_precedence(Precedence::Or)?;
+
+        self.patch_jump(end_jump, token)?;
+
+        Ok(())
+    }
+
     fn write_jump(&mut self, instruction: Instruction, line: Line) -> usize {
         self.current_chunk().write_instruction(instruction, line);
         self.current_chunk().code().len() - size_of::<Jump>()
@@ -1023,6 +1045,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
             | Less | LessEqual => self.binary(&token),
             LeftParen => self.call(&token),
             Dot => self.dot(&token, can_assign),
+            And => self.and(token),
+            Or => self.or(token),
             _ => Err(CompilerErrorType::ExpectedExpression.at(&token)),
         }
     }
@@ -1034,6 +1058,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
             EqualEqual | BangEqual => Precedence::Equality,
             Greater | GreaterEqual | Less | LessEqual => Precedence::Comparison,
             LeftParen | Dot => Precedence::Call,
+            And => Precedence::And,
+            Or => Precedence::Or,
             _ => Precedence::None,
         }
     }
