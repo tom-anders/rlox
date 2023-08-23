@@ -36,7 +36,7 @@ pub use bound_method::*;
 pub enum Value {
     Number(f64),
     Boolean(bool),
-    #[display(fmt = "Nil")]
+    #[display(fmt = "nil")]
     Nil,
     Object(ObjectRef),
 }
