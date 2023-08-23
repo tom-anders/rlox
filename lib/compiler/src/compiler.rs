@@ -361,7 +361,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
             self.variable(&class_ident, false)?;
 
-            if super_class_ident == class_ident {
+            if super_class_ident.lexeme() == class_ident.lexeme() {
                 return Err(CompilerErrorType::InheritanceFromSelf.at(&class_ident));
             }
 
