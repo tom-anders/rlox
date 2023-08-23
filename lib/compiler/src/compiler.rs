@@ -53,45 +53,45 @@ impl From<ScanError> for CompilerError {
 pub enum CompilerErrorType {
     #[error("{0}")]
     ScanError(ScanErrorType),
-    #[error("Too many constants")]
+    #[error("Too many constants.")]
     TooManyConstants,
-    #[error("Too many locals")]
+    #[error("Too many locals.")]
     TooManyLocals,
-    #[error("Expected EOF")]
+    #[error("Expected EOF.")]
     ExpectedEof,
-    #[error("Expected ')' after '{0}")]
+    #[error("Expected ')' after '{0}.")]
     ExpectedRightParen(&'static str),
-    #[error("Expected expression")]
+    #[error("Expected expression.")]
     ExpectedExpression,
-    #[error("Expected ';'")]
+    #[error("Expected ';'.")]
     ExpectedSemicolon,
-    #[error("Expected variable name")]
+    #[error("Expected variable name.")]
     ExpectedVariableName,
-    #[error("Invalid assignment target")]
+    #[error("Invalid assignment target.")]
     InvalidAssignmentTarget,
-    #[error("Expected '}}' after {0}")]
+    #[error("Expected '}}' after {0}.")]
     ExpectedRightBrace(&'static str),
-    #[error("Expected '{{' after {0}")]
+    #[error("Expected '{{' after {0}.")]
     ExpectedLeftBrace(&'static str),
-    #[error("Variable already in scope")]
+    #[error("Variable already in scope.")]
     VariableAlreadyInScope,
-    #[error("Expected '(' after '{0}'")]
+    #[error("Expected '(' after '{0}'.")]
     ExpectedLeftParen(&'static str),
-    #[error("Too much code to jump over")]
+    #[error("Too much code to jump over.")]
     TooLargeJump,
-    #[error("Expected function name")]
+    #[error("Expected function name.")]
     ExpectedFunctionName,
-    #[error("Too many function arguments")]
+    #[error("Too many function arguments.")]
     TooManyArguments,
-    #[error("Expected parameter name")]
+    #[error("Expected parameter name.")]
     ExpectedParameterName,
-    #[error("Can't return from top-level code")]
+    #[error("Can't return from top-level code.")]
     ReturnOutsideFunction,
     #[error("Expected class name.")]
     ExpectedClassName,
     #[error("Expected identifier after '{0}'.")]
     ExpectedIdentifier(&'static str),
-    #[error("Expected method name")]
+    #[error("Expected method name.")]
     ExpectedMethodName,
     #[error("Can't use 'this' outside of a class.")]
     ThisOutsideClass,
