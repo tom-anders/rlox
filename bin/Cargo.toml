@@ -12,6 +12,7 @@ clap = { version = "4.3.0", features = ["derive"] }
 itertools.workspace = true
 
 scanner.path = "../lib/scanner"
+compiler.path = "../lib/compiler"
 vm.path = "../lib/vm"
 
 log.workspace = true

@@ -693,6 +693,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "compiler",
  "env_logger",
  "itertools",
  "log",

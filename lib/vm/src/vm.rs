@@ -812,7 +812,7 @@ mod tests {
             InterpretError::CompileError(CompilerErrors(vec![CompilerError::new(
                 CompilerErrorType::ThisOutsideClass,
                 Line(1),
-                Col(1),
+                "this",
             )]))
         )
     }
@@ -878,7 +878,7 @@ mod tests {
             InterpretError::CompileError(CompilerErrors(vec![CompilerError::new(
                 CompilerErrorType::InitializerCannotReturn,
                 Line(4),
-                Col(29),
+                "return",
             )]))
         );
     }

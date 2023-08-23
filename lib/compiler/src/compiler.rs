@@ -15,11 +15,11 @@ use crate::scope::Scope;
 pub type Result<T> = std::result::Result<T, CompilerError>;
 
 #[derive(thiserror::Error, Debug, PartialEq)]
-#[error("error (l. {line}, c. {col}): {error}")]
+#[error("[line {line}] Error at '{lexeme}': {error}")]
 pub struct CompilerError {
     error: CompilerErrorType,
     line: Line,
-    col: Col,
+    lexeme: String,
 }
 
 #[derive(thiserror::Error, Debug, PartialEq)]
@@ -38,14 +38,14 @@ impl From<CompilerError> for CompilerErrors {
 }
 
 impl CompilerError {
-    pub fn new(error: CompilerErrorType, line: Line, col: Col) -> Self {
-        Self { error, line, col }
+    pub fn new(error: CompilerErrorType, line: Line, lexeme: &str) -> Self {
+        Self { error, line, lexeme: lexeme.to_string() }
     }
 }
 
 impl From<ScanError> for CompilerError {
     fn from(value: ScanError) -> Self {
-        Self { error: CompilerErrorType::ScanError(value.error), line: value.line, col: value.col }
+        Self { error: CompilerErrorType::ScanError(value.error), line: value.line, lexeme: "".to_string() }
     }
 }
 
@@ -61,7 +61,7 @@ pub enum CompilerErrorType {
     ExpectedEof,
     #[error("Expected ')' after '{0}.")]
     ExpectedRightParen(&'static str),
-    #[error("Expected expression.")]
+    #[error("Expect expression.")]
     ExpectedExpression,
     #[error("Expected ';'.")]
     ExpectedSemicolon,
@@ -113,7 +113,7 @@ pub enum CompilerErrorType {
 
 impl CompilerErrorType {
     fn at(self, token: &Token) -> CompilerError {
-        CompilerError::new(self, token.line(), token.col())
+        CompilerError::new(self, token.line(), token.lexeme())
     }
 }
 
