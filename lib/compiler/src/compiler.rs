@@ -97,7 +97,7 @@ pub enum CompilerErrorType {
     ThisOutsideClass,
     #[error("Can't return a value from an initializer.")]
     InitializerCannotReturn,
-    #[error("Expecrte superclass name.")]
+    #[error("Expected superclass name.")]
     ExpectedSuperclassName,
     #[error("A class can't inherit from itself.")]
     InheritanceFromSelf,
