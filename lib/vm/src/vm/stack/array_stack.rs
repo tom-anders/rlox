@@ -26,12 +26,17 @@ impl<T, const N: usize> ArrayStack<T, N> {
         }
     }
 
-    pub fn push(&mut self, t: T) {
-        assert!(self.top != N, "stack overflow");
+    #[must_use]
+    pub fn push(&mut self, t: T) -> Option<()> {
+        if self.top == N {
+            None // stack overflow
+        } else {
+            self.stack[self.top].write(t);
 
-        self.stack[self.top].write(t);
+            self.top += 1;
 
-        self.top += 1;
+            Some(())
+        }
     }
 
     pub fn pop(&mut self) -> T {
@@ -114,16 +119,16 @@ mod tests {
     #[should_panic]
     fn stack_overflow() {
         let mut stack = ArrayStack::<usize, 2>::new();
-        stack.push(1);
-        stack.push(1);
-        stack.push(1);
+        stack.push(1).unwrap();
+        stack.push(1).unwrap();
+        stack.push(1).unwrap();
     }
 
     #[test]
     #[should_panic]
     fn stack_underflow() {
         let mut stack = make_stack();
-        stack.push(1);
+        stack.push(1).unwrap();
         stack.pop();
         stack.pop();
     }
@@ -134,9 +139,9 @@ mod tests {
         assert_eq!(stack.len(), 0);
         assert!(stack.is_empty());
 
-        stack.push(1);
-        stack.push(2);
-        stack.push(3);
+        stack.push(1).unwrap();
+        stack.push(2).unwrap();
+        stack.push(3).unwrap();
         assert_eq!(stack.len(), 3);
         assert!(!stack.is_empty());
 

@@ -59,6 +59,8 @@ pub enum RuntimeError {
     OnlyInstancesHaveMethods,
     #[error("Superclass must be a class.")]
     SuperclassMustBeAClass,
+    #[error("Stack overflow.")]
+    StackOverflow,
 }
 
 pub type InterpretResult<T> = std::result::Result<T, InterpretError>;
@@ -120,8 +122,9 @@ impl Vm {
         self.heap.alloc(object.into()).into()
     }
 
-    fn push(&mut self, value: impl Into<Value>) {
-        self.stack.push(value.into());
+    #[must_use = "Must handle stack overflow"]
+    fn push(&mut self, value: impl Into<Value>) -> RuntimeResult<()> {
+        self.stack.push(value.into())
     }
 
     pub fn stack_trace(&self) -> String {
@@ -138,7 +141,7 @@ impl Vm {
             Compiler::new(source, &mut self.string_interner, &mut self.heap).compile()?.into(),
         );
 
-        self.push(closure.clone());
+        self.push(closure.clone())?;
         self.call(closure, Arity(0)).unwrap();
         self.run(stdout)?;
         Ok(())
@@ -154,7 +157,7 @@ impl Vm {
                             got: arg_count,
                         });
                     }
-                    self.stack.push_frame(obj.clone().try_into().unwrap());
+                    self.stack.push_frame(obj.clone().try_into().unwrap())?;
                     Ok(())
                 }
                 Object::Class(_) => {
@@ -182,7 +185,7 @@ impl Vm {
                     let args = self.stack.iter().rev().take(arg_count.0 as usize).cloned();
                     let result = native_fun.0(args.collect());
                     self.stack.pop_n(arg_count.0 as usize);
-                    self.push(result);
+                    self.push(result)?;
                     Ok(())
                 }
                 Object::BoundMethod(bound_method) => {
@@ -254,7 +257,7 @@ impl Vm {
                         retain
                     });
                     self.stack.truncate_stack(popped_frame.base_slot());
-                    self.stack.push(result);
+                    self.stack.push(result)?;
                 }
                 Instruction::Print => writeln!(stdout, "{}", self.stack.pop()).unwrap(),
                 Instruction::Pop => {
@@ -284,7 +287,7 @@ impl Vm {
                 Instruction::Constant { index } => {
                     let constant = self.frame_chunk().constants().get(index as usize).unwrap();
                     trace!("Pushed constant: {:?}", constant);
-                    self.push(constant.clone());
+                    self.push(constant.clone())?;
                 }
                 Instruction::DefineGlobal { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
@@ -311,32 +314,32 @@ impl Vm {
                         RuntimeError::UndefinedVariable(name.to_string())
                     })?;
 
-                    self.push(value.clone());
+                    self.push(value.clone())?;
                 }
                 Instruction::GetLocal { stack_slot } => {
-                    self.push(self.stack.frame_stack_at(stack_slot).clone());
+                    self.push(self.stack.frame_stack_at(stack_slot).clone())?;
                 }
                 Instruction::SetLocal { stack_slot } => {
                     *self.stack.frame_stack_at_mut(stack_slot) = self.stack.peek().clone();
                 }
-                Instruction::Nil => self.push(Value::Nil),
-                Instruction::True => self.push(Value::Boolean(true)),
-                Instruction::False => self.push(Value::Boolean(false)),
+                Instruction::Nil => self.push(Value::Nil)?,
+                Instruction::True => self.push(Value::Boolean(true))?,
+                Instruction::False => self.push(Value::Boolean(false))?,
                 Instruction::Negate => {
                     let v = self.stack.pop();
                     let neg = v
                         .negate()
                         .ok_or_else(|| RuntimeError::InvalidNegateOperant(v))?;
-                    self.push(neg);
+                    self.push(neg)?;
                 }
                 Instruction::Not => {
                     let v = self.stack.pop();
-                    self.push(Value::Boolean(!v.is_truthy()));
+                    self.push(Value::Boolean(!v.is_truthy()))?;
                 }
                 Instruction::Equal => {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
-                    self.push(Value::Boolean(a.equals(&b)));
+                    self.push(Value::Boolean(a.equals(&b)))?;
                 }
                 Instruction::Less => {
                     let b = self.stack.pop();
@@ -344,7 +347,7 @@ impl Vm {
                     let res = a.less_than(&b).ok_or_else(|| {
                         RuntimeError::InvalidBinaryOperants(a, b)
                     })?;
-                    self.push(res);
+                    self.push(res)?;
                 }
                 Instruction::Greater => {
                     let b = self.stack.pop();
@@ -352,7 +355,7 @@ impl Vm {
                     let res = a.greater_than(&b).ok_or_else(|| {
                         RuntimeError::InvalidBinaryOperants(a, b)
                     })?;
-                    self.push(res);
+                    self.push(res)?;
                 }
                 Instruction::Add => {
                     let b = self.stack.pop();
@@ -361,7 +364,7 @@ impl Vm {
                         a.add(&b, &mut self.heap, &mut self.string_interner).ok_or_else(|| {
                             RuntimeError::InvalidBinaryOperants(a, b)
                         })?;
-                    self.push(res);
+                    self.push(res)?;
                 }
                 Instruction::Subtract => {
                     let b = self.stack.pop();
@@ -369,7 +372,7 @@ impl Vm {
                     let res = a.subtract(&b).ok_or_else(|| {
                         RuntimeError::InvalidBinaryOperants(a, b)
                     })?;
-                    self.push(res);
+                    self.push(res)?;
                 }
                 Instruction::Multiply => {
                     let b = self.stack.pop();
@@ -377,7 +380,7 @@ impl Vm {
                     let res = a.multiply(&b).ok_or_else(|| {
                         RuntimeError::InvalidBinaryOperants(a, b)
                     })?;
-                    self.push(res);
+                    self.push(res)?;
                 }
                 Instruction::Divide => {
                     let b = self.stack.pop();
@@ -385,7 +388,7 @@ impl Vm {
                     let res = a.divide(&b).ok_or_else(|| {
                         RuntimeError::InvalidBinaryOperants(a, b)
                     })?;
-                    self.push(res);
+                    self.push(res)?;
                 }
                 Instruction::JumpIfFalse(Jump(jump)) => {
                     if self.stack.peek().is_falsey() {
@@ -453,7 +456,7 @@ impl Vm {
                     self.stack.frame_mut().inc_ip(upvalue_bytes.len());
 
                     let closure = self.alloc(Closure::new(function, upvalues));
-                    self.push(ObjectRef::from(closure));
+                    self.push(ObjectRef::from(closure))?
                 }
                 Instruction::GetUpvalue { upvalue_index } => self.push(
                     match self
@@ -470,7 +473,7 @@ impl Vm {
                         }
                         Upvalue::Closed(value) => value.clone(),
                     },
-                ),
+                )?,
                 Instruction::SetUpvalue { upvalue_index } => {
                     let mut upvalue_ref = self
                         .stack
@@ -498,7 +501,7 @@ impl Vm {
                 Instruction::Class { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
                     let class = self.alloc(Class::new(name));
-                    self.push(class);
+                    self.push(class)?;
                 }
                 Instruction::Inherit => {
                     let mut subclass = self.stack.pop().unwrap_object().unwrap_class();
@@ -526,12 +529,12 @@ impl Vm {
                     if let Some(field) = instance.field(&name).cloned() {
                         log::debug!("get property: {} -> {}", name.deref(), field);
                         self.stack.pop();
-                        self.push(field.clone());
+                        self.push(field.clone())?;
                     } else if let Some(method) = instance.class().get_method(&name) {
                         let bound_method =
                             self.alloc(BoundMethod::new(instance.clone(), method.clone()));
                         self.stack.pop();
-                        self.push(bound_method);
+                        self.push(bound_method)?;
                     } else {
                         return Err(
                             RuntimeError::UndefinedProperty(name.to_string())
@@ -549,7 +552,7 @@ impl Vm {
                         let bound_method =
                             self.alloc(BoundMethod::new(instance.clone(), method.clone()));
                         self.stack.pop();
-                        self.push(bound_method);
+                        self.push(bound_method)?;
                     } else {
                         return Err(
                             RuntimeError::UndefinedProperty(name.to_string())
@@ -569,7 +572,7 @@ impl Vm {
                         let value = self.stack.pop();
                         instance.set_field(&name, value.clone());
                         self.stack.pop();
-                        self.stack.push(value);
+                        self.stack.push(value)?;
                     } else {
                         return Err(RuntimeError::InvalidFieldAccess);
                     }

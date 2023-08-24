@@ -6,6 +6,8 @@ use log::trace;
 mod array_stack;
 pub use array_stack::ArrayStack;
 
+use crate::{RuntimeError, RuntimeResult};
+
 #[derive(Debug, Clone)]
 pub struct CallFrame {
     closure: ClosureRef,
@@ -92,11 +94,12 @@ impl Stack {
         self.frames.iter_mut()
     }
 
-    pub fn push_frame(&mut self, closure: ClosureRef) {
+    #[must_use = "Must handle stack overflow"]
+    pub fn push_frame(&mut self, closure: ClosureRef) -> RuntimeResult<()> {
         self.frames.push(CallFrame::new(
             closure.clone(),
             self.values.len() - closure.arity().0 as usize - 1,
-        ));
+        )).ok_or_else(|| RuntimeError::StackOverflow)
     }
 
     pub fn pop_frame(&mut self) -> CallFrame {
@@ -111,9 +114,10 @@ impl Stack {
         self.values.truncate(len);
     }
 
-    pub fn push(&mut self, value: Value) {
+    #[must_use = "Must handle stack overflow"]
+    pub fn push(&mut self, value: Value) -> RuntimeResult<()> {
         trace!("Pushing {:?}", value);
-        self.values.push(value);
+        self.values.push(value).ok_or_else(|| RuntimeError::StackOverflow)
     }
 
     pub fn pop(&mut self) -> Value {
