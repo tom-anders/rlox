@@ -33,8 +33,8 @@ pub struct Vm {
 pub enum InterpretError {
     #[error(transparent)]
     CompileError(#[from] CompilerErrors),
-    #[error("line {line}: {error}")]
-    RuntimeError { line: usize, error: RuntimeError },
+    #[error(transparent)]
+    RuntimeError(#[from] RuntimeError),
 }
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq)]
@@ -53,13 +53,16 @@ pub enum RuntimeError {
     InvalidArgumentCount { expected: Arity, got: Arity },
     #[error("Only instances have properties.")]
     InvalidPropertyAccess,
+    #[error("Only instances have fields.")]
+    InvalidFieldAccess,
     #[error("Only instances have methods.")]
     OnlyInstancesHaveMethods,
     #[error("Superclass must be a class.")]
     SuperclassMustBeAClass,
 }
 
-pub type Result<T> = std::result::Result<T, InterpretError>;
+pub type InterpretResult<T> = std::result::Result<T, InterpretError>;
+pub type RuntimeResult<T> = std::result::Result<T, RuntimeError>;
 
 impl Default for Vm {
     fn default() -> Self {
@@ -125,11 +128,7 @@ impl Vm {
         self.stack.stack_trace()
     }
 
-    fn runtime_error(&self, error: RuntimeError) -> InterpretError {
-        InterpretError::RuntimeError { line: self.stack.current_line(), error }
-    }
-
-    pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> Result<()> {
+    pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> std::result::Result<(), InterpretError> {
         // If the previous call to run_source failed, the stack will still contain values/frames.
         // This is needed so that we can show the strack trace.
         // But once we try to execute more code, we need to clear the stack.
@@ -145,15 +144,15 @@ impl Vm {
         Ok(())
     }
 
-    fn call(&mut self, value: Value, arg_count: Arity) -> Result<()> {
+    fn call(&mut self, value: Value, arg_count: Arity) -> RuntimeResult<()> {
         match value {
             Value::Object(obj) => match obj.deref() {
                 Object::Closure(closure) => {
                     if closure.function().arity != arg_count {
-                        return Err(self.runtime_error(RuntimeError::InvalidArgumentCount {
+                        return Err(RuntimeError::InvalidArgumentCount {
                             expected: closure.function().arity,
                             got: arg_count,
-                        }));
+                        });
                     }
                     self.stack.push_frame(obj.clone().try_into().unwrap());
                     Ok(())
@@ -171,10 +170,10 @@ impl Vm {
                                 Ok(())
                             } else {
                                 // Class has no explicit init method, but arguments where passed anyway
-                                Err(self.runtime_error(RuntimeError::InvalidArgumentCount {
+                                Err(RuntimeError::InvalidArgumentCount {
                                     expected: Arity(0),
                                     got: arg_count,
-                                }))
+                                })
                             }
                         }
                     }
@@ -191,9 +190,9 @@ impl Vm {
                         bound_method.receiver().into();
                     self.call(bound_method.method().into(), arg_count)
                 }
-                _ => Err(self.runtime_error(RuntimeError::NotAFunction(obj.into()))),
+                _ => Err(RuntimeError::NotAFunction(obj.into())),
             },
-            _ => Err(self.runtime_error(RuntimeError::NotAFunction(value))),
+            _ => Err(RuntimeError::NotAFunction(value)),
         }
     }
 
@@ -202,10 +201,10 @@ impl Vm {
         class: &Class,
         name: InternedString,
         arg_count: Arity,
-    ) -> Result<()> {
+    ) -> RuntimeResult<()> {
         match class.get_method(&name) {
             Some(method) => self.call(method.into(), arg_count),
-            None => Err(self.runtime_error(RuntimeError::UndefinedProperty(name.to_string()))),
+            None => Err(RuntimeError::UndefinedProperty(name.to_string())),
         }
     }
 
@@ -218,7 +217,7 @@ impl Vm {
         self.stack.frame_chunk()
     }
 
-    fn run(&mut self, stdout: &mut impl Write) -> Result<()> {
+    fn run(&mut self, stdout: &mut impl Write) -> RuntimeResult<()> {
         loop {
             let bytes = &self.frame_chunk().code()[self.stack.frame().ip()..];
             let op = Instruction::from_bytes(bytes);
@@ -301,8 +300,7 @@ impl Vm {
                     match self.globals.get_mut(name) {
                         Some(entry) => *entry = val.clone(),
                         None => {
-                            return Err(self
-                                .runtime_error(RuntimeError::UndefinedVariable(name.to_string())))
+                            return Err(RuntimeError::UndefinedVariable(name.to_string()))
                         }
                     };
                 }
@@ -310,7 +308,7 @@ impl Vm {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
                     let value = self.globals.get(name).ok_or_else(|| {
-                        self.runtime_error(RuntimeError::UndefinedVariable(name.to_string()))
+                        RuntimeError::UndefinedVariable(name.to_string())
                     })?;
 
                     self.push(value.clone());
@@ -328,7 +326,7 @@ impl Vm {
                     let v = self.stack.pop();
                     let neg = v
                         .negate()
-                        .ok_or_else(|| self.runtime_error(RuntimeError::InvalidNegateOperant(v)))?;
+                        .ok_or_else(|| RuntimeError::InvalidNegateOperant(v))?;
                     self.push(neg);
                 }
                 Instruction::Not => {
@@ -344,7 +342,7 @@ impl Vm {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
                     let res = a.less_than(&b).ok_or_else(|| {
-                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                        RuntimeError::InvalidBinaryOperants(a, b)
                     })?;
                     self.push(res);
                 }
@@ -352,7 +350,7 @@ impl Vm {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
                     let res = a.greater_than(&b).ok_or_else(|| {
-                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                        RuntimeError::InvalidBinaryOperants(a, b)
                     })?;
                     self.push(res);
                 }
@@ -361,7 +359,7 @@ impl Vm {
                     let a = self.stack.pop();
                     let res =
                         a.add(&b, &mut self.heap, &mut self.string_interner).ok_or_else(|| {
-                            self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                            RuntimeError::InvalidBinaryOperants(a, b)
                         })?;
                     self.push(res);
                 }
@@ -369,7 +367,7 @@ impl Vm {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
                     let res = a.subtract(&b).ok_or_else(|| {
-                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                        RuntimeError::InvalidBinaryOperants(a, b)
                     })?;
                     self.push(res);
                 }
@@ -377,7 +375,7 @@ impl Vm {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
                     let res = a.multiply(&b).ok_or_else(|| {
-                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                        RuntimeError::InvalidBinaryOperants(a, b)
                     })?;
                     self.push(res);
                 }
@@ -385,7 +383,7 @@ impl Vm {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
                     let res = a.divide(&b).ok_or_else(|| {
-                        self.runtime_error(RuntimeError::InvalidBinaryOperants(a, b))
+                        RuntimeError::InvalidBinaryOperants(a, b)
                     })?;
                     self.push(res);
                 }
@@ -423,7 +421,7 @@ impl Vm {
                             }
                         }
                         None => {
-                            return Err(self.runtime_error(RuntimeError::OnlyInstancesHaveMethods))
+                            return Err(RuntimeError::OnlyInstancesHaveMethods)
                         }
                     }
                 }
@@ -513,7 +511,7 @@ impl Vm {
                             }
                         }
                         None => {
-                            return Err(self.runtime_error(RuntimeError::SuperclassMustBeAClass))
+                            return Err(RuntimeError::SuperclassMustBeAClass)
                         }
                     }
                 }
@@ -533,7 +531,7 @@ impl Vm {
                         self.push(bound_method);
                     } else {
                         return Err(
-                            self.runtime_error(RuntimeError::UndefinedProperty(name.to_string()))
+                            RuntimeError::UndefinedProperty(name.to_string())
                         );
                     }
                 }
@@ -551,7 +549,7 @@ impl Vm {
                         self.push(bound_method);
                     } else {
                         return Err(
-                            self.runtime_error(RuntimeError::UndefinedProperty(name.to_string()))
+                            RuntimeError::UndefinedProperty(name.to_string())
                         );
                     }
                 }
@@ -560,7 +558,7 @@ impl Vm {
 
                     let mut object: ObjectRef =
                         self.stack.value_stack().peek_nth(1).clone().try_into().ok().ok_or_else(
-                            || self.runtime_error(RuntimeError::InvalidPropertyAccess),
+                            || RuntimeError::InvalidFieldAccess,
                         )?;
                     let object = unsafe { object.deref_mut() };
 
@@ -570,7 +568,7 @@ impl Vm {
                         self.stack.pop();
                         self.stack.push(value);
                     } else {
-                        return Err(self.runtime_error(RuntimeError::InvalidPropertyAccess));
+                        return Err(RuntimeError::InvalidFieldAccess);
                     }
                 }
                 Instruction::Method { constant_index } => {
@@ -757,10 +755,9 @@ mod tests {
 
         assert_eq!(
             vm.run_source("print foo.bar();", &mut output),
-            Err(InterpretError::RuntimeError {
-                line: 1,
-                error: RuntimeError::NotAFunction(Value::Number(123.0)),
-            })
+            Err(InterpretError::RuntimeError (
+                RuntimeError::NotAFunction(Value::Number(123.0)),
+            ))
         );
     }
 
@@ -796,10 +793,9 @@ mod tests {
         let mut output = Vec::new();
         assert_eq!(
             Vm::new().run_source(source, &mut output).unwrap_err(),
-            InterpretError::RuntimeError {
-                line: 3,
-                error: RuntimeError::UndefinedProperty("bar".to_string())
-            }
+            InterpretError::RuntimeError(
+                RuntimeError::UndefinedProperty("bar".to_string())
+            )
         )
     }
 
@@ -839,26 +835,23 @@ mod tests {
 
         assert_eq!(
             vm.run_source("var foo = Foo();", &mut output).unwrap_err(),
-            InterpretError::RuntimeError {
-                line: 1,
-                error: RuntimeError::InvalidArgumentCount { expected: Arity(1), got: Arity(0) }
-            }
+            InterpretError::RuntimeError (
+                RuntimeError::InvalidArgumentCount { expected: Arity(1), got: Arity(0) }
+            )
         );
 
         assert_eq!(
             vm.run_source("foo = Foo(123, 456);", &mut output).unwrap_err(),
-            InterpretError::RuntimeError {
-                line: 1,
-                error: RuntimeError::InvalidArgumentCount { expected: Arity(1), got: Arity(2) }
-            }
+            InterpretError::RuntimeError (
+                RuntimeError::InvalidArgumentCount { expected: Arity(1), got: Arity(2) }
+            )
         );
 
         assert_eq!(
             vm.run_source("var bar = Bar(123);", &mut output).unwrap_err(),
-            InterpretError::RuntimeError {
-                line: 1,
-                error: RuntimeError::InvalidArgumentCount { expected: Arity(0), got: Arity(1) }
-            }
+            InterpretError::RuntimeError (
+                RuntimeError::InvalidArgumentCount { expected: Arity(0), got: Arity(1) }
+            )
         );
     }
 
