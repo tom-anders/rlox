@@ -518,7 +518,10 @@ impl Vm {
                 Instruction::GetProperty { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
-                    let instance: InstanceRef = self.stack.peek().clone().unwrap_object().into();
+                    let instance: InstanceRef = ObjectRef::try_from(self.stack.peek().clone())
+                        .ok()
+                        .and_then(ObjectRef::as_instance)
+                        .ok_or_else(|| RuntimeError::InvalidPropertyAccess)?;
 
                     if let Some(field) = instance.field(&name).cloned() {
                         log::debug!("get property: {} -> {}", name.deref(), field);

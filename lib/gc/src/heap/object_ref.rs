@@ -98,6 +98,13 @@ impl ObjectRef {
         }
     }
 
+    pub fn as_instance(self) -> Option<InstanceRef> {
+        match self.deref() {
+            Object::Instance(_) => Some(InstanceRef::from(self)),
+            _ => None,
+        }
+    }
+
     pub fn unwrap_instance(self) -> InstanceRef {
         self.try_into().unwrap()
     }
