@@ -695,8 +695,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
             self.if_statement()
         } else if self.consume(While)?.is_ok() {
             self.while_statement()
-        } else if self.consume(Return)?.is_ok() {
-            self.return_statement()
+        } else if let Ok(return_token) = self.consume(Return)? {
+            self.return_statement(&return_token)
         } else if self.consume(LeftBrace)?.is_ok() {
             self.current_scope_mut().begin_scope();
             let right_brace_line = self.block()?.line();
@@ -707,7 +707,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }
     }
 
-    fn return_statement(&mut self) -> Result<()> {
+    fn return_statement(&mut self, return_token: &Token<'a>) -> Result<()> {
         if self.current_function_type() == FunctionType::Script {
             return Err(
                 CompilerErrorType::ReturnOutsideFunction.at(self.peek_token().unwrap().unwrap())
@@ -722,7 +722,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             self.current_chunk().write_instruction(Instruction::Return, token.line());
 
             if self.current_function_type() == FunctionType::Initializer {
-                return Err(CompilerErrorType::InitializerCannotReturn.at(&token));
+                return Err(CompilerErrorType::InitializerCannotReturn.at(return_token));
             }
         }
         Ok(())
