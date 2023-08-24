@@ -729,7 +729,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn while_statement(&mut self) -> Result<()> {
-        let loop_start = self.current_chunk().code().len() - 1;
+        let loop_start = self.current_chunk().code().len();
         self.consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("while"))?;
         self.expression()?;
         let token =
@@ -749,7 +749,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn write_loop(&mut self, loop_start: usize, token: &Token) -> Result<()> {
         let jump = Jump(
-            (self.current_chunk().code().len() - loop_start + size_of::<Jump>())
+            (self.current_chunk().code().len() - loop_start + 1 + size_of::<Jump>())
                 .try_into()
                 .map_err(|_| CompilerErrorType::TooLargeJump.at(token))?,
         );
