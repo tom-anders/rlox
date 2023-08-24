@@ -103,7 +103,7 @@ pub enum CompilerErrorType {
     InheritanceFromSelf,
     #[error("Expect '.' after 'super'.")]
     ExpectedDotAfterSuper,
-    #[error("Expect superclass method name")]
+    #[error("Expect superclass method name.")]
     ExpectedSuperclassMethodName,
     #[error("Can't use 'super' outside of a class.")]
     SuperOutsideClass,
