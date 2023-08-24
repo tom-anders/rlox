@@ -1,6 +1,6 @@
 use std::{fmt::Display, iter::Peekable, mem::size_of, unreachable};
 
-use cursor::{Col, Line};
+use cursor::Line;
 use gc::{Chunk, Closure, ClosureRef, Function, Heap, Object, ObjectRef, Value};
 use instructions::{Arity, CompiledUpvalue, Instruction, Jump};
 use itertools::Itertools;
@@ -59,12 +59,14 @@ pub enum CompilerErrorType {
     TooManyLocals,
     #[error("Expect EOF.")]
     ExpectedEof,
-    #[error("Expect ')' after '{0}.")]
+    #[error("Expect ')' after {0}.")]
     ExpectedRightParen(&'static str),
     #[error("Expect expression.")]
     ExpectedExpression,
     #[error("Expect ';'.")]
     ExpectedSemicolon,
+    #[error("Expect ';' after {0}.")]
+    ExpectedSemicolonAfter(&'static str),
     #[error("Expect variable name.")]
     ExpectedVariableName,
     #[error("Invalid assignment target.")]
@@ -695,6 +697,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
             self.if_statement()
         } else if self.consume(While)?.is_ok() {
             self.while_statement()
+        } else if let Ok(for_token) = self.consume(For)? {
+            self.for_statement(for_token)
         } else if let Ok(return_token) = self.consume(Return)? {
             self.return_statement(&return_token)
         } else if self.consume(LeftBrace)?.is_ok() {
@@ -728,6 +732,58 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Ok(())
     }
 
+    fn for_statement(&mut self, for_token: Token<'a>) -> Result<()> {
+        // scopes the varibale that might have been declared in the initializer
+        // Variables declared in the following block are scoped inside self.statement()
+        self.current_scope_mut().begin_scope();
+
+        self.consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("'for'"))?;
+
+        if self.consume(Semicolon)?.is_ok() {
+            // No initializer.
+        } else if self.consume(Var)?.is_ok() {
+            self.var_declaration()?;
+        } else {
+            self.expression_statement()?;
+        }
+
+        let mut loop_start = self.current_chunk().code().len();
+
+        let mut exit_jump = None;
+        if self.consume(Semicolon)?.is_err() {
+            self.expression()?;
+            self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolonAfter("loop condition"))?;
+
+            exit_jump = Some(self.write_jump(Instruction::JumpIfFalse(Jump(0)), for_token.line()));
+            self.current_chunk().write_instruction(Instruction::Pop, for_token.line()); // Condition
+        }
+
+        if self.consume(RightParen)?.is_err() {
+            let body_jump = self.write_jump(Instruction::Jump(Jump(0)), for_token.line());
+            let increment_start = self.current_chunk().code().len();
+            self.expression()?;
+            self.current_chunk().write_instruction(Instruction::Pop, for_token.line());
+            let right_paren = self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("for clauses"))?;
+
+            self.write_loop(loop_start, &right_paren)?;
+            loop_start = increment_start;
+            self.patch_jump(body_jump, &right_paren)?;
+        }
+
+        self.statement()?;
+
+        self.write_loop(loop_start, &for_token)?;
+
+        if let Some(exit_jump) = exit_jump {
+            self.patch_jump(exit_jump, &for_token)?;
+            self.current_chunk().write_instruction(Instruction::Pop, for_token.line());
+        }
+
+        self.end_scope(for_token.line());
+
+        Ok(())
+    }
+
     fn while_statement(&mut self) -> Result<()> {
         let loop_start = self.current_chunk().code().len();
         self.consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("while"))?;
@@ -741,7 +797,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.statement()?;
         self.write_loop(loop_start, &token)?;
 
-        self.patch_jump(exit_jump, token)?;
+        self.patch_jump(exit_jump, &token)?;
         self.current_chunk().write_instruction(Instruction::Pop, line);
 
         Ok(())
@@ -769,13 +825,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         let else_jump = self.write_jump(Instruction::Jump(Jump(0)), token.line());
 
-        self.patch_jump(then_jump, token.clone())?;
+        self.patch_jump(then_jump, &token)?;
         self.current_chunk().write_instruction(Instruction::Pop, token.line());
 
         if self.consume(Else)?.is_ok() {
             self.statement()?;
         }
-        self.patch_jump(else_jump, token)?;
+        self.patch_jump(else_jump, &token)?;
 
         Ok(())
     }
@@ -784,7 +840,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let end_jump = self.write_jump(Instruction::JumpIfFalse(Jump(0)), token.line());
         self.current_chunk().write_instruction(Instruction::Pop, token.line());
         self.parse_precedence(Precedence::And)?;
-        self.patch_jump(end_jump, token)?;
+        self.patch_jump(end_jump, &token)?;
         Ok(())
     }
 
@@ -792,12 +848,12 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let else_jump = self.write_jump(Instruction::JumpIfFalse(Jump(0)), token.line());
         let end_jump = self.write_jump(Instruction::Jump(Jump(0)), token.line());
 
-        self.patch_jump(else_jump, token.clone())?;
+        self.patch_jump(else_jump, &token)?;
         self.current_chunk().write_instruction(Instruction::Pop, token.line());
 
         self.parse_precedence(Precedence::Or)?;
 
-        self.patch_jump(end_jump, token)?;
+        self.patch_jump(end_jump, &token)?;
 
         Ok(())
     }
@@ -807,12 +863,12 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.current_chunk().code().len() - size_of::<Jump>()
     }
 
-    fn patch_jump(&mut self, offset: usize, token: Token<'a>) -> Result<()> {
+    fn patch_jump(&mut self, offset: usize, token: &Token<'a>) -> Result<()> {
         let jump = self.current_chunk().code().len() - offset - size_of::<Jump>();
 
         self.current_chunk().patch_jump(
             offset,
-            Jump(jump.try_into().map_err(|_| CompilerErrorType::TooLargeJump.at(&token))?),
+            Jump(jump.try_into().map_err(|_| CompilerErrorType::TooLargeJump.at(token))?),
         );
         Ok(())
     }
@@ -884,7 +940,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn expression_statement(&mut self) -> Result<()> {
         self.expression()?;
-        let line = self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolon)?.line();
+        let line = self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolonAfter("expression"))?.line();
         self.current_chunk().write_instruction(Instruction::Pop, line);
         Ok(())
     }
