@@ -53,9 +53,9 @@ impl From<ScanError> for CompilerErrors {
 pub enum CompilerErrorType {
     #[error("{0}")]
     ScanError(ScanErrorType),
-    #[error("Too many constants.")]
+    #[error("Too many constants in one chunk.")]
     TooManyConstants,
-    #[error("Too many locals.")]
+    #[error("Too many local variables in function.")]
     TooManyLocals,
     #[error("Expect EOF.")]
     ExpectedEof,
