@@ -57,51 +57,51 @@ pub enum CompilerErrorType {
     TooManyConstants,
     #[error("Too many locals.")]
     TooManyLocals,
-    #[error("Expected EOF.")]
+    #[error("Expect EOF.")]
     ExpectedEof,
-    #[error("Expected ')' after '{0}.")]
+    #[error("Expect ')' after '{0}.")]
     ExpectedRightParen(&'static str),
     #[error("Expect expression.")]
     ExpectedExpression,
-    #[error("Expected ';'.")]
+    #[error("Expect ';'.")]
     ExpectedSemicolon,
-    #[error("Expected variable name.")]
+    #[error("Expect variable name.")]
     ExpectedVariableName,
     #[error("Invalid assignment target.")]
     InvalidAssignmentTarget,
-    #[error("Expected '}}' after {0}.")]
+    #[error("Expect '}}' after {0}.")]
     ExpectedRightBrace(&'static str),
-    #[error("Expected '{{' after {0}.")]
+    #[error("Expect '{{' after {0}.")]
     ExpectedLeftBrace(&'static str),
     #[error("Variable already in scope.")]
     VariableAlreadyInScope,
-    #[error("Expected '(' after '{0}'.")]
+    #[error("Expect '(' after '{0}'.")]
     ExpectedLeftParen(&'static str),
     #[error("Too much code to jump over.")]
     TooLargeJump,
-    #[error("Expected function name.")]
+    #[error("Expect function name.")]
     ExpectedFunctionName,
     #[error("Too many function arguments.")]
     TooManyArguments,
-    #[error("Expected parameter name.")]
+    #[error("Expect parameter name.")]
     ExpectedParameterName,
     #[error("Can't return from top-level code.")]
     ReturnOutsideFunction,
-    #[error("Expected class name.")]
+    #[error("Expect class name.")]
     ExpectedClassName,
-    #[error("Expected identifier after '{0}'.")]
+    #[error("Expect identifier after '{0}'.")]
     ExpectedIdentifier(&'static str),
-    #[error("Expected method name.")]
+    #[error("Expect method name.")]
     ExpectedMethodName,
     #[error("Can't use 'this' outside of a class.")]
     ThisOutsideClass,
     #[error("Can't return a value from an initializer.")]
     InitializerCannotReturn,
-    #[error("Expected superclass name.")]
+    #[error("Expect superclass name.")]
     ExpectedSuperclassName,
     #[error("A class can't inherit from itself.")]
     InheritanceFromSelf,
-    #[error("Expected '.' after 'super'.")]
+    #[error("Expect '.' after 'super'.")]
     ExpectedDotAfterSuper,
     #[error("Expect superclass method name")]
     ExpectedSuperclassMethodName,
