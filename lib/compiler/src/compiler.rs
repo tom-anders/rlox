@@ -12,7 +12,7 @@ use TokenType::*;
 
 use crate::scope::Scope;
 
-pub type Result<T> = std::result::Result<T, CompilerError>;
+pub type Result<T> = std::result::Result<T, CompilerErrors>;
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 #[error("[line {line}] Error at '{lexeme}': {error}")]
@@ -43,9 +43,9 @@ impl CompilerError {
     }
 }
 
-impl From<ScanError> for CompilerError {
+impl From<ScanError> for CompilerErrors {
     fn from(value: ScanError) -> Self {
-        Self { error: CompilerErrorType::ScanError(value.error), line: value.line, lexeme: "".to_string() }
+        CompilerError { error: CompilerErrorType::ScanError(value.error), line: value.line, lexeme: "".to_string() }.into()
     }
 }
 
@@ -112,8 +112,8 @@ pub enum CompilerErrorType {
 }
 
 impl CompilerErrorType {
-    fn at(self, token: &Token) -> CompilerError {
-        CompilerError::new(self, token.line(), token.lexeme())
+    fn at(self, token: &Token) -> CompilerErrors {
+        CompilerError::new(self, token.line(), token.lexeme()).into()
     }
 }
 
@@ -289,10 +289,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
             match self.declaration() {
                 Ok(()) => (),
-                Err(e) => {
+                Err(mut e) => {
                     log::trace!("Hit error: {:?}, syncing...", e);
                     self.synchronize();
-                    errors.0.push(e);
+                    errors.0.append(&mut e.0);
                 }
             }
         };
@@ -852,14 +852,27 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn block(&mut self) -> Result<Token> {
+        let mut errors = CompilerErrors(Vec::new());
+
         loop {
-            match self.peek().unwrap()? {
-                RightBrace | Eof => break,
-                _ => self.declaration()?,
+            if matches!(self.peek().unwrap()?, RightBrace | Eof) {
+                break;
+            }
+            match self.declaration() {
+                Ok(()) => (),
+                Err(mut e) => {
+                    log::trace!("Hit error inside block: {:?}, syncing...", e);
+                    self.synchronize();
+                    errors.0.append(&mut e.0);
+                }
             }
         }
 
-        self.consume_or_error(RightBrace, CompilerErrorType::ExpectedRightBrace("block"))
+        if errors.0.is_empty() {
+            self.consume_or_error(RightBrace, CompilerErrorType::ExpectedRightBrace("block"))
+        } else {
+            Err(errors)
+        }
     }
 
     fn print_statement(&mut self) -> Result<()> {
@@ -1137,7 +1150,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     fn peek_token(&mut self) -> Option<Result<&Token<'a>>> {
         match self.token_stream.peek()? {
             Ok(token) => Some(Ok(token)),
-            Err(scan_error) => Some(Err(CompilerError::from(scan_error.clone()))),
+            Err(scan_error) => Some(Err(scan_error.clone().into())),
         }
     }
 
