@@ -39,17 +39,17 @@ pub enum InterpretError {
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq)]
 pub enum RuntimeError {
-    #[error("Expected a number, got {0}")]
+    #[error("Expected a number, got {0}.")]
     InvalidNegateOperant(Value),
-    #[error("Expected two numbers, got {0} and {1}")]
+    #[error("Expected two numbers, got {0} and {1}.")]
     InvalidBinaryOperants(Value, Value),
     #[error("Undefined variable '{0}'.")]
     UndefinedVariable(String),
     #[error("Undefined property '{0}'.")]
     UndefinedProperty(String),
-    #[error("Expected a function, got {0}")]
-    NotAFunction(Value),
-    #[error("Expected {expected} arguments, got {got}")]
+    #[error("Can only call functions and classes.")]
+    NotAFunction,
+    #[error("Expected {expected} arguments but got {got}.")]
     InvalidArgumentCount { expected: Arity, got: Arity },
     #[error("Only instances have properties.")]
     InvalidPropertyAccess,
@@ -190,9 +190,9 @@ impl Vm {
                         bound_method.receiver().into();
                     self.call(bound_method.method().into(), arg_count)
                 }
-                _ => Err(RuntimeError::NotAFunction(obj.into())),
+                _ => Err(RuntimeError::NotAFunction),
             },
-            _ => Err(RuntimeError::NotAFunction(value)),
+            _ => Err(RuntimeError::NotAFunction),
         }
     }
 
@@ -759,7 +759,7 @@ mod tests {
         assert_eq!(
             vm.run_source("print foo.bar();", &mut output),
             Err(InterpretError::RuntimeError (
-                RuntimeError::NotAFunction(Value::Number(123.0)),
+                RuntimeError::NotAFunction,
             ))
         );
     }
