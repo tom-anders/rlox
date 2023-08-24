@@ -237,14 +237,16 @@ impl Vm {
 
             match op {
                 Instruction::Return => {
-                    let result = self.stack.pop();
-                    let popped_frame = self.stack.pop_frame();
-                    if self.stack.frames().is_empty() {
+                    if self.stack.frames().len() == 1 {
+                        self.stack.pop_frame();
                         return Ok(());
                     }
+
+                    let result = self.stack.pop();
+                    let base_slot_of_frame_to_pop = self.stack.frame().base_slot();
                     self.open_upvalues.retain_mut(|open_upvalue| {
                         let retain =
-                            open_upvalue.stack_slot().unwrap() < popped_frame.base_slot() as u8;
+                            open_upvalue.stack_slot().unwrap() < base_slot_of_frame_to_pop as u8;
                         if !retain {
                             unsafe {
                                 let value = self
@@ -256,7 +258,8 @@ impl Vm {
                         }
                         retain
                     });
-                    self.stack.truncate_stack(popped_frame.base_slot());
+                    self.stack.pop_frame();
+                    self.stack.truncate_stack(base_slot_of_frame_to_pop);
                     self.stack.push(result)?;
                 }
                 Instruction::Print => writeln!(stdout, "{}", self.stack.pop()).unwrap(),
