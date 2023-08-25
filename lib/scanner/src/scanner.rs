@@ -58,7 +58,6 @@ impl<'a> Scanner<'a> {
         loop {
             match self.consume() {
                 Some(c) if c == stop => return true,
-                Some('\n') => return false,
                 None => return false,
                 _ => (),
             };
@@ -527,6 +526,25 @@ mod tests {
                 Ok(ExpectedToken { data: Eof, line: Line(2), col: Col(1), lexeme: "".to_string() })
             ]
         );
+        
+        assert_eq!(
+            scan_expected_tokens("\"hello\nworld\""),
+            vec![
+                Ok(ExpectedToken {
+                    data: Str("hello\nworld"),
+                    line: Line(1),
+                    col: Col(1),
+                    lexeme: "\"hello\nworld\"".to_string()
+                }),
+                Ok(ExpectedToken {
+                    data: Eof,
+                    line: Line(2),
+                    col: Col(7),
+                    lexeme: "".to_string()
+                })
+            ]
+        );
+
     }
     #[test]
     fn two_char_tokens() {
