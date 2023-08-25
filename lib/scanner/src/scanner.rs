@@ -18,7 +18,8 @@ pub enum ScanErrorType {
     #[cfg_attr(feature = "strict", error("Unexpected character."))]
     #[cfg_attr(not(feature = "strict"), error("Unexpected character: {0}"))]
     UnexpectedCharacter(char),
-    #[error("Unterminated string: {0}")]
+    #[cfg_attr(feature = "strict", error("Unterminated string."))]
+    #[cfg_attr(not(feature = "strict"), error("Unterminated string: '{0}'"))]
     UnterminatedString(String),
     #[error("Unterminated block comment: {0}")]
     UnterminatedBlockComment(String),
