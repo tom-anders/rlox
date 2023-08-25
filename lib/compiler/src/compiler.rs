@@ -73,7 +73,7 @@ pub enum CompilerErrorType {
     InvalidAssignmentTarget,
     #[error("Expect '}}' after {0}.")]
     ExpectedRightBrace(&'static str),
-    #[error("Expect '{{' after {0}.")]
+    #[error("Expect '{{' {0}.")]
     ExpectedLeftBrace(&'static str),
     #[error("Already a variable with this name in this scope.")]
     VariableAlreadyInScope,
@@ -381,7 +381,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         };
 
         self.variable(&class_ident, false)?;
-        self.consume_or_error(LeftBrace, CompilerErrorType::ExpectedLeftBrace("class body"))?;
+        self.consume_or_error(LeftBrace, CompilerErrorType::ExpectedLeftBrace("after class body"))?;
 
         loop {
             match self.peek().unwrap()? {
@@ -477,7 +477,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             },
         };
 
-        self.consume_or_error(LeftBrace, CompilerErrorType::ExpectedLeftBrace("parameters"))?;
+        self.consume_or_error(LeftBrace, CompilerErrorType::ExpectedLeftBrace("before function body"))?;
 
         let end_fun_line = self.block()?.line();
 
