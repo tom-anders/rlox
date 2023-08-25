@@ -897,15 +897,14 @@ impl<'a, 'b> Compiler<'a, 'b> {
             // Divide them into chunks, using captured locals as the separator
             .split_inclusive(|local| local.is_captured)
             .for_each(|locals| {
-                let num_locals_to_pop = locals.len() as u8 - 1;
-                self.current_chunk().write_instruction(Instruction::PopN(num_locals_to_pop), line);
                 // split_inclusive puts the separator at the end, which is a local that was
                 // captured, so close the upvalue instead of emitting a pop.
                 // If there was no capture at all, we can just do another pop instead.
-                if locals.last().unwrap().is_captured {
+                if let Some(Local { is_captured: true, .. }) = locals.last() {
+                    self.current_chunk().write_instruction(Instruction::PopN(locals.len() as u8 - 1), line);
                     self.current_chunk().write_instruction(Instruction::CloseUpvalue, line);
                 } else {
-                    self.current_chunk().write_instruction(Instruction::Pop, line);
+                    self.current_chunk().write_instruction(Instruction::PopN(locals.len() as u8), line);
                 }
             });
 
