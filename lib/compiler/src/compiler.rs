@@ -91,8 +91,8 @@ pub enum CompilerErrorType {
     ReturnOutsideFunction,
     #[error("Expect class name.")]
     ExpectedClassName,
-    #[error("Expect identifier after '{0}'.")]
-    ExpectedIdentifier(&'static str),
+    #[error("Expect property name after '.'.")]
+    ExpectedPropertyName,
     #[error("Expect method name.")]
     ExpectedMethodName,
     #[error("Can't use 'this' outside of a class.")]
@@ -499,7 +499,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn dot(&mut self, _: &Token, can_assign: bool) -> Result<()> {
         let identifier =
-            self.consume_or_error(Identifier, CompilerErrorType::ExpectedIdentifier("."))?;
+            self.consume_or_error(Identifier, CompilerErrorType::ExpectedPropertyName)?;
         let constant_index = self.add_identifier_constant(&identifier)?;
 
         if can_assign && self.consume(Equal)?.is_ok() {
