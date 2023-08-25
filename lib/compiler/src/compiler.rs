@@ -115,6 +115,8 @@ pub enum CompilerErrorType {
     SuperclasslessClass,
     #[error("Too many closure variables in function.")]
     TooManyUpvalues,
+    #[error("Can't read local variable in its own initializer.")]
+    LocalInItsOwnInitializer,
 }
 
 impl CompilerErrorType {
@@ -577,7 +579,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn variable(&mut self, identifier: &Token<'a>, can_assign: bool) -> Result<()> {
         let (get_instr, set_instr) = if let Some(stack_slot) =
-            Self::resolve_local(self.locals(), identifier)
+            Self::resolve_local(self.locals(), identifier)?
         {
             log::debug!("Resolved local {:?} @{stack_slot}", identifier);
             (Instruction::GetLocal { stack_slot }, Instruction::SetLocal { stack_slot })
@@ -607,7 +609,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             Some(previous) => previous,
         };
 
-        if let Some(index) = Self::resolve_local(&previous.locals, identifier) {
+        if let Some(index) = Self::resolve_local(&previous.locals, identifier)? {
             previous.locals[index as usize].is_captured = true;
             return Ok(Some(Self::add_upvalue(
                 &mut functions.last_mut().unwrap().upvalues,
@@ -644,12 +646,19 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }
     }
 
-    fn resolve_local(locals: &[Local], identifier: &Token<'a>) -> Option<u8> {
+    fn resolve_local(locals: &[Local], identifier: &Token<'a>) -> Result<Option<u8>> {
         trace!("Trying to resolve local {:?} from {:?}", identifier.lexeme(), locals);
         locals.iter().rev().enumerate().find_map(|(i, local)| {
-            (local.depth.is_some() && local.name == identifier.lexeme())
-                .then_some((locals.len() - i - 1) as u8)
+            if local.name == identifier.lexeme() {
+                match local.depth {
+                    Some(_) => Some(Ok((locals.len() - i - 1) as u8)),
+                    None => Some(Err(CompilerErrorType::LocalInItsOwnInitializer.at(identifier))),
+                }
+            } else {
+                None
+            }
         })
+        .transpose()
     }
 
     fn var_declaration(&mut self) -> Result<()> {
