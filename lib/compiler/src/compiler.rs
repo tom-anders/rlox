@@ -113,6 +113,8 @@ pub enum CompilerErrorType {
     SuperOutsideClass,
     #[error("Can't use 'super' in a class with no superclass.")]
     SuperclasslessClass,
+    #[error("Too many closure variables in function.")]
+    TooManyUpvalues,
 }
 
 impl CompilerErrorType {
@@ -426,16 +428,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Ok(())
     }
 
-    fn function(&mut self, ty: FunctionType, name: &'a str) -> Result<()> {
-        let function_token = self
-            .consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("function name"))?;
-
-        self.functions.push(FunctionToCompile::new(
-            ty,
-            Function::new(Arity(0), name, self.interner),
-            self.current_scope().next_depth(),
-        ));
-
+    fn parameter_list(&mut self) -> Result<Arity> {
         let mut arity = Arity(0);
         if self.peek().unwrap()? != RightParen {
             loop {
@@ -455,9 +448,34 @@ impl<'a, 'b> Compiler<'a, 'b> {
             }
         }
 
-        self.current_function_mut().arity = arity;
-
         self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("parameters"))?;
+
+        Ok(arity)
+
+    }
+
+    fn function(&mut self, ty: FunctionType, name: &'a str) -> Result<()> {
+        let function_token = self
+            .consume_or_error(LeftParen, CompilerErrorType::ExpectedLeftParen("function name"))?;
+
+        self.functions.push(FunctionToCompile::new(
+            ty,
+            Function::new(Arity(0), name, self.interner),
+            self.current_scope().next_depth(),
+        ));
+
+        let parameter_list_errors = match self.parameter_list() {
+            Ok(arity) => {
+                self.current_function_mut().arity = arity;
+                CompilerErrors(Vec::new())
+            }
+            Err(e) => {
+                // If there's an error in the parameter list, synchronize so that we still parse
+                // the function body correctly (instead of getting errors like "Expected left brace")
+                self.synchronize_until(LeftBrace);
+                e
+            },
+        };
 
         self.consume_or_error(LeftBrace, CompilerErrorType::ExpectedLeftBrace("parameters"))?;
 
@@ -494,7 +512,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
             function_token.line(),
         );
 
-        Ok(())
+        if parameter_list_errors.0.is_empty() {
+            Ok(())
+        } else {
+            Err(parameter_list_errors)
+        }
     }
 
     fn call(&mut self, token: &Token) -> Result<()> {
@@ -559,7 +581,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         {
             log::debug!("Resolved local {:?} @{stack_slot}", identifier);
             (Instruction::GetLocal { stack_slot }, Instruction::SetLocal { stack_slot })
-        } else if let Some(upvalue_index) = Self::resolve_upvalue(&mut self.functions, identifier) {
+        } else if let Some(upvalue_index) = Self::resolve_upvalue(&mut self.functions, identifier)? {
             log::debug!("Resolved upvalue {:?} @{upvalue_index}", identifier);
             (Instruction::GetUpvalue { upvalue_index }, Instruction::SetUpvalue { upvalue_index })
         } else {
@@ -577,38 +599,47 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Ok(())
     }
 
-    fn resolve_upvalue(functions: &mut [FunctionToCompile], identifier: &Token<'a>) -> Option<u8> {
+    fn resolve_upvalue(functions: &mut [FunctionToCompile], identifier: &Token<'a>) -> Result<Option<u8>> {
         log::debug!("Trying to resolve upvalue for {:?}", identifier);
 
-        let previous = functions.iter_mut().rev().nth(1)?;
+        let previous = match functions.iter_mut().rev().nth(1) {
+            None => return Ok(None),
+            Some(previous) => previous,
+        };
 
         if let Some(index) = Self::resolve_local(&previous.locals, identifier) {
             previous.locals[index as usize].is_captured = true;
-            return Some(Self::add_upvalue(
+            return Ok(Some(Self::add_upvalue(
                 &mut functions.last_mut().unwrap().upvalues,
                 CompiledUpvalue::Local(index),
-            ));
+                identifier,
+            )?));
         }
 
         let functions_len = functions.len();
         if let Some(upvalue) =
-            Self::resolve_upvalue(&mut functions[..functions_len - 1], identifier)
+            Self::resolve_upvalue(&mut functions[..functions_len - 1], identifier)?
         {
-            return Some(Self::add_upvalue(
+            return Ok(Some(Self::add_upvalue(
                 &mut functions.last_mut().unwrap().upvalues,
                 CompiledUpvalue::Upvalue(upvalue),
-            ));
+                identifier,
+            )?));
         }
 
-        None
+        Ok(None)
     }
 
-    fn add_upvalue(upvalues: &mut Vec<CompiledUpvalue>, upvalue: CompiledUpvalue) -> u8 {
+    fn add_upvalue(upvalues: &mut Vec<CompiledUpvalue>, upvalue: CompiledUpvalue, identifier: &Token<'a>) -> Result<u8> {
         match upvalues.iter().position(|u| u == &upvalue) {
-            Some(index) => index as u8,
+            Some(index) => Ok(index as u8),
             None => {
+                if upvalues.len() == u8::MAX as usize + 1 {
+                    return Err(CompilerErrorType::TooManyUpvalues.at(identifier));
+                }
+
                 upvalues.push(upvalue);
-                upvalues.len() as u8 - 1
+                Ok((upvalues.len() - 1) as u8)
             }
         }
     }
@@ -1170,6 +1201,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn synchronize(&mut self) {
+        self.synchronize_until(None);
+    }
+
+    fn synchronize_until(&mut self, until: impl Into<Option<TokenType>> + Copy) {
         loop {
             log::trace!("Syncing... {:?}", self.peek_token());
             match self.peek_token() {
@@ -1179,7 +1214,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
                         return;
                     }
                     Class | Fun | Var | For | If | While | Print | Return | Eof => return,
-                    _ => {
+                    ty => {
+                        if until.into().is_some_and(|until| until == ty) {
+                            return;
+                        }
                         self.advance().unwrap();
                     }
                 },
