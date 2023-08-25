@@ -75,7 +75,7 @@ pub enum CompilerErrorType {
     ExpectedRightBrace(&'static str),
     #[error("Expect '{{' after {0}.")]
     ExpectedLeftBrace(&'static str),
-    #[error("Variable already in scope.")]
+    #[error("Already a variable with this name in this scope.")]
     VariableAlreadyInScope,
     #[error("Expect '(' after '{0}'.")]
     ExpectedLeftParen(&'static str),
