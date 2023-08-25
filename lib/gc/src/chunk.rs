@@ -105,6 +105,7 @@ impl Chunk {
             )
         };
 
+        let mut new_offset = offset + instr.num_bytes();
         let op_args = match instr {
             Instruction::PopN(n) => format!("'{n}'"),
             Instruction::Constant { index } => get_constant(index),
@@ -123,6 +124,7 @@ impl Chunk {
                     })
                     .collect_vec()
                     .join("\n");
+                new_offset += 2 * upvalue_count as usize;
                 format!("{}\n{}", get_constant(constant_index), upvalues)
             }
             Instruction::DefineGlobal { constant_index } => get_constant(constant_index),
@@ -168,7 +170,7 @@ impl Chunk {
 
         let opcode: OpCode = instr.opcode();
 
-        (format!("{offset:04} {line_str} {opcode:16} {op_args}"), offset + instr.num_bytes())
+        (format!("{offset:04} {line_str} {opcode:16} {op_args}"), new_offset)
     }
 
     pub fn constants_mut(&mut self) -> &mut Vec<Value> {
