@@ -243,6 +243,20 @@ impl Vm {
     }
 
     fn run(&mut self, stdout: &mut impl Write) -> RuntimeResult<()> {
+        macro_rules! binary_op {
+            ($op:ident) => {
+                binary_op!($op, InvalidBinaryOperants,)
+            };
+            ($op:ident, $err:ident, $($args:expr),*) => {{
+                let b = self.stack.pop();
+                let a = self.stack.pop();
+                let res = a.$op(&b, $($args),*).ok_or_else(|| {
+                    RuntimeError::$err(a, b)
+                })?;
+                self.push(res)?;
+            }};
+        }
+
         loop {
             let bytes = &self.frame_chunk().code()[self.stack.frame().ip()..];
             let op = Instruction::from_bytes(bytes);
@@ -341,55 +355,14 @@ impl Vm {
                     let a = self.stack.pop();
                     self.push(Value::Boolean(a.equals(&b)))?;
                 }
-                Instruction::Less => {
-                    let b = self.stack.pop();
-                    let a = self.stack.pop();
-                    let res = a.less_than(&b).ok_or_else(|| {
-                        RuntimeError::InvalidBinaryOperants(a, b)
-                    })?;
-                    self.push(res)?;
-                }
-                Instruction::Greater => {
-                    let b = self.stack.pop();
-                    let a = self.stack.pop();
-                    let res = a.greater_than(&b).ok_or_else(|| {
-                        RuntimeError::InvalidBinaryOperants(a, b)
-                    })?;
-                    self.push(res)?;
-                }
-                Instruction::Add => {
-                    let b = self.stack.pop();
-                    let a = self.stack.pop();
-                    let res =
-                        a.add(&b, &mut self.heap, &mut self.string_interner).ok_or_else(|| {
-                            RuntimeError::InvalidAddOperands(a, b)
-                        })?;
-                    self.push(res)?;
-                }
-                Instruction::Subtract => {
-                    let b = self.stack.pop();
-                    let a = self.stack.pop();
-                    let res = a.subtract(&b).ok_or_else(|| {
-                        RuntimeError::InvalidBinaryOperants(a, b)
-                    })?;
-                    self.push(res)?;
-                }
-                Instruction::Multiply => {
-                    let b = self.stack.pop();
-                    let a = self.stack.pop();
-                    let res = a.multiply(&b).ok_or_else(|| {
-                        RuntimeError::InvalidBinaryOperants(a, b)
-                    })?;
-                    self.push(res)?;
-                }
-                Instruction::Divide => {
-                    let b = self.stack.pop();
-                    let a = self.stack.pop();
-                    let res = a.divide(&b).ok_or_else(|| {
-                        RuntimeError::InvalidBinaryOperants(a, b)
-                    })?;
-                    self.push(res)?;
-                }
+
+                Instruction::Less => binary_op!(less_than),
+                Instruction::Greater => binary_op!(greater_than),
+                Instruction::Add => binary_op!(add, InvalidAddOperands, &mut self.heap, &mut self.string_interner),
+                Instruction::Subtract => binary_op!(subtract),
+                Instruction::Multiply => binary_op!(multiply),
+                Instruction::Divide => binary_op!(divide),
+
                 Instruction::JumpIfFalse(Jump(jump)) => {
                     if self.stack.peek().is_falsey() {
                         self.stack.frame_mut().inc_ip(jump as usize);
