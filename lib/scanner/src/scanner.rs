@@ -15,7 +15,8 @@ pub type Result<T> = std::result::Result<T, ScanError>;
 
 #[derive(thiserror::Error, Clone, Debug, PartialEq)]
 pub enum ScanErrorType {
-    #[error("Unexpected character: {0}")]
+    #[cfg_attr(feature = "strict", error("Unexpected character."))]
+    #[cfg_attr(not(feature = "strict"), error("Unexpected character: {0}"))]
     UnexpectedCharacter(char),
     #[error("Unterminated string: {0}")]
     UnterminatedString(String),

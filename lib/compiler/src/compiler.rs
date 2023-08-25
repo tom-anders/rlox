@@ -15,11 +15,11 @@ use crate::scope::Scope;
 pub type Result<T> = std::result::Result<T, CompilerErrors>;
 
 #[derive(thiserror::Error, Debug, PartialEq)]
-#[error("[line {line}] Error at '{lexeme}': {error}")]
+#[error("[line {line}] Error{}: {error}", if at.is_empty() { "".to_string() } else { format!(" at {at}") })]
 pub struct CompilerError {
     error: CompilerErrorType,
     line: Line,
-    lexeme: String,
+    at: String,
 }
 
 #[derive(thiserror::Error, Debug, PartialEq)]
@@ -38,14 +38,14 @@ impl From<CompilerError> for CompilerErrors {
 }
 
 impl CompilerError {
-    pub fn new(error: CompilerErrorType, line: Line, lexeme: &str) -> Self {
-        Self { error, line, lexeme: lexeme.to_string() }
+    pub fn new(error: CompilerErrorType, line: Line, at: impl ToString) -> Self {
+        Self { error, line, at: at.to_string() }
     }
 }
 
 impl From<ScanError> for CompilerErrors {
     fn from(value: ScanError) -> Self {
-        CompilerError { error: CompilerErrorType::ScanError(value.error), line: value.line, lexeme: "".to_string() }.into()
+        CompilerError { error: CompilerErrorType::ScanError(value.error), line: value.line, at: "".to_string() }.into()
     }
 }
 
@@ -115,7 +115,10 @@ pub enum CompilerErrorType {
 
 impl CompilerErrorType {
     fn at(self, token: &Token) -> CompilerErrors {
-        CompilerError::new(self, token.line(), token.lexeme()).into()
+        CompilerError::new(self, token.line(), match token.ty() {
+            Eof => "end".to_string(),
+            _ => format!("'{}'", token.lexeme()),
+        }).into()
     }
 }
 

@@ -8,6 +8,11 @@ path = "src/scanner.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+# strict conformance with the lox specification to pass the official test suite.
+# Will disable any challenges/extra features and also provide less information in some error messages.
+strict = []
+
 [dependencies]
 thiserror.workspace = true
 itertools.workspace = true
