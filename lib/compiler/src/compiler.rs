@@ -1172,12 +1172,15 @@ impl<'a, 'b> Compiler<'a, 'b> {
                         return;
                     }
                     Class | Fun | Var | For | If | While | Print | Return | Eof => return,
-                    _ => {}
+                    _ => {
+                        self.advance().unwrap();
+                    }
                 },
-                Some(Err(_)) => (),
+                Some(Err(_)) => {
+                    self.advance().unwrap_err();
+                },
                 None => return,
             }
-            self.advance().unwrap();
         }
     }
 }
