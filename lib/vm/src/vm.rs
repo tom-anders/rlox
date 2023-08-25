@@ -280,8 +280,7 @@ impl Vm {
 
                     let open_upvalue = self.open_upvalues.get_mut(index).unwrap();
                     unsafe {
-                        let value =
-                            self.stack.global_stack_at(open_upvalue.stack_slot().unwrap()).clone();
+                        let value = self.stack.pop();
                         *open_upvalue.deref_mut() = Upvalue::Closed(value)
                     }
 
