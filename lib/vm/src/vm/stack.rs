@@ -80,10 +80,6 @@ impl Stack {
         self.frame().closure.chunk()
     }
 
-    pub fn current_line(&self) -> usize {
-        self.frame_chunk().lines()[self.frame().ip()]
-    }
-
     pub fn iter_frames(&self) -> impl DoubleEndedIterator<Item = &CallFrame> {
         self.frames.iter()
     }

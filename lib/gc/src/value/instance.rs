@@ -29,10 +29,6 @@ impl Instance {
         self.fields.insert(*name, value);
     }
 
-    pub(crate) fn fields(&self) -> &StringTable<Value> {
-        &self.fields
-    }
-
     pub(crate) fn fields_mut(&mut self) -> &mut StringTable<Value> {
         &mut self.fields
     }
