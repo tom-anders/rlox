@@ -129,7 +129,12 @@ impl Vm {
 
     #[must_use = "Must handle stack overflow"]
     fn push(&mut self, value: impl Into<Value>) -> RuntimeResult<()> {
-        self.stack.push(value.into())
+        self.stack.push(value.into()).map_err(|e| {
+            // Otherwise the instruction pointer for this frame won't be at the right line
+            // in the stack trace
+            self.stack.frame_mut().inc_ip(1);
+            e
+        })
     }
 
     pub fn stack_trace(&self) -> String {
@@ -284,7 +289,7 @@ impl Vm {
                     self.close_upvalues(base_slot_of_frame_to_pop as u8);
                     self.stack.pop_frame();
                     self.stack.truncate_stack(base_slot_of_frame_to_pop);
-                    self.stack.push(result)?;
+                    self.push(result)?;
                 }
                 Instruction::Print => writeln!(stdout, "{}", self.stack.pop()).unwrap(),
                 Instruction::Pop => {
@@ -545,7 +550,7 @@ impl Vm {
                         let value = self.stack.pop();
                         instance.set_field(&name, value.clone());
                         self.stack.pop();
-                        self.stack.push(value)?;
+                        self.push(value)?;
                     } else {
                         return Err(RuntimeError::InvalidFieldAccess);
                     }
