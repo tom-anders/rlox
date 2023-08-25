@@ -1,4 +1,4 @@
-use std::println;
+
 
 use gc::{Chunk, ClosureRef, Value};
 

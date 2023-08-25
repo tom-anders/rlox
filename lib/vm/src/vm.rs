@@ -2,7 +2,7 @@ use std::{io::Write, ops::Deref};
 
 use compiler::{Compiler, CompilerErrors};
 use gc::{
-    BoundMethod, Chunk, Class, ClassRef, Closure, GarbageCollector, Heap, Instance, InstanceRef,
+    BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef,
     NativeFun, Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value,
 };
 use instructions::{Arity, Instruction, Jump};
@@ -436,7 +436,6 @@ impl Vm {
 
                     let upvalues = upvalue_bytes
                         .chunks(2)
-                        .into_iter()
                         .map(|chunk| {
                             let (is_local, index) = (chunk[0], chunk[1]);
                             if is_local == 0 {
@@ -607,7 +606,7 @@ impl Vm {
 #[cfg(test)]
 mod tests {
     use compiler::{CompilerError, CompilerErrorType};
-    use cursor::{Col, Line};
+    use cursor::Line;
     use env_logger::Env;
     use pretty_assertions::assert_eq;
 

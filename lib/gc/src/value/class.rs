@@ -1,8 +1,8 @@
-use std::ops::Deref;
+
 
 use strings::{string_interner::InternedString, table::StringTable};
 
-use crate::{ClosureRef, Object, Value};
+use crate::{ClosureRef};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
