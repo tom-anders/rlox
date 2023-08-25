@@ -83,8 +83,10 @@ pub enum CompilerErrorType {
     TooLargeJump,
     #[error("Expect function name.")]
     ExpectedFunctionName,
-    #[error("Too many function arguments.")]
+    #[error("Can't have more than 255 arguments.")]
     TooManyArguments,
+    #[error("Can't have more than 255 parameters.")]
+    TooManyParameters,
     #[error("Expect parameter name.")]
     ExpectedParameterName,
     #[error("Can't return from top-level code.")]
@@ -437,10 +439,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let mut arity = Arity(0);
         if self.peek().unwrap()? != RightParen {
             loop {
+                let next_param = self.peek_token().unwrap()?;
                 arity.0 = arity
                     .0
                     .checked_add(1)
-                    .ok_or_else(|| CompilerErrorType::TooManyArguments.at(&function_token))?;
+                    .ok_or_else(|| CompilerErrorType::TooManyParameters.at(next_param))?;
 
                 let (constant_index, token) =
                     self.parse_variable(CompilerErrorType::ExpectedParameterName)?;
@@ -528,10 +531,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         if self.peek().unwrap()? != RightParen {
             loop {
+                let arg_token = self.peek_token().unwrap()?.clone();
                 self.expression()?;
 
                 if arg_count == 255 {
-                    return Err(CompilerErrorType::TooManyArguments.at(self.peek_token().unwrap()?));
+                    return Err(CompilerErrorType::TooManyArguments.at(&arg_token));
                 }
 
                 arg_count += 1;
