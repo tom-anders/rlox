@@ -888,6 +888,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.locals_mut()
             // Remove all locals that where in the scope that just ended
             .drain(num_locals - last_local_in_scope..)
+            // Reverse the order such that we pop locals from the stack in the correct order.
+            // For non-captured locals this does not matter, but for captured locals we emit
+            // CloseUpvalue instead of Pop, for which the VM expects the corresponding local 
+            // to be on top of the stack
+            .rev()
             .collect_vec()
             // Divide them into chunks, using captured locals as the separator
             .split_inclusive(|local| local.is_captured)
