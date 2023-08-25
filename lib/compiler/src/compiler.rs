@@ -717,7 +717,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     fn return_statement(&mut self, return_token: &Token<'a>) -> Result<()> {
         if self.current_function_type() == FunctionType::Script {
             return Err(
-                CompilerErrorType::ReturnOutsideFunction.at(self.peek_token().unwrap().unwrap())
+                CompilerErrorType::ReturnOutsideFunction.at(return_token)
             );
         }
 
