@@ -3,7 +3,10 @@ name = "vm"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+# strict conformance with the lox specification to pass the official test suite.
+# Will disable any challenges/extra features and also provide less information in some error messages.
+strict = []
 
 [dependencies]
 cursor = { path = "../cursor" }

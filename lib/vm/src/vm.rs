@@ -41,8 +41,12 @@ pub enum InterpretError {
 pub enum RuntimeError {
     #[error("Expected a number, got {0}.")]
     InvalidNegateOperant(Value),
-    #[error("Expected two numbers, got {0} and {1}.")]
+    #[cfg_attr(not(feature = "strict"), error("Expected two numbers, got {0} and {1}."))]
+    #[cfg_attr(feature = "strict", error("Operands must be numbers."))]
     InvalidBinaryOperants(Value, Value),
+    #[cfg_attr(not(feature = "strict"), error("Expected two numbers or two strings, got {0} and {1}."))]
+    #[cfg_attr(feature = "strict", error("Operands must be two numbers or two strings."))]
+    InvalidAddOperands(Value, Value),
     #[error("Undefined variable '{0}'.")]
     UndefinedVariable(String),
     #[error("Undefined property '{0}'.")]
@@ -358,7 +362,7 @@ impl Vm {
                     let a = self.stack.pop();
                     let res =
                         a.add(&b, &mut self.heap, &mut self.string_interner).ok_or_else(|| {
-                            RuntimeError::InvalidBinaryOperants(a, b)
+                            RuntimeError::InvalidAddOperands(a, b)
                         })?;
                     self.push(res)?;
                 }
