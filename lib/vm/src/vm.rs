@@ -220,6 +220,24 @@ impl Vm {
         self.stack.frame_chunk()
     }
 
+    fn close_upvalues(&mut self, last_slot: u8) {
+        self.open_upvalues.retain_mut(|open_upvalue| {
+            let retain =
+                open_upvalue.stack_slot().unwrap() < last_slot;
+            if !retain {
+                log::trace!("Closing upvalue {:?}", open_upvalue);
+                unsafe {
+                    let value = self
+                        .stack
+                        .global_stack_at(open_upvalue.stack_slot().unwrap())
+                        .clone();
+                    *open_upvalue.deref_mut() = Upvalue::Closed(value)
+                }
+            }
+            retain
+        });
+    }
+
     fn run(&mut self, stdout: &mut impl Write) -> RuntimeResult<()> {
         loop {
             let bytes = &self.frame_chunk().code()[self.stack.frame().ip()..];
@@ -244,20 +262,7 @@ impl Vm {
 
                     let result = self.stack.pop();
                     let base_slot_of_frame_to_pop = self.stack.frame().base_slot();
-                    self.open_upvalues.retain_mut(|open_upvalue| {
-                        let retain =
-                            open_upvalue.stack_slot().unwrap() < base_slot_of_frame_to_pop as u8;
-                        if !retain {
-                            unsafe {
-                                let value = self
-                                    .stack
-                                    .global_stack_at(open_upvalue.stack_slot().unwrap())
-                                    .clone();
-                                *open_upvalue.deref_mut() = Upvalue::Closed(value)
-                            }
-                        }
-                        retain
-                    });
+                    self.close_upvalues(base_slot_of_frame_to_pop as u8);
                     self.stack.pop_frame();
                     self.stack.truncate_stack(base_slot_of_frame_to_pop);
                     self.stack.push(result)?;
@@ -270,21 +275,10 @@ impl Vm {
                     self.stack.pop_n(n as usize);
                 }
                 Instruction::CloseUpvalue => {
-                    let index = self
-                        .open_upvalues
-                        .iter()
-                        .position(|open_upvalue| {
-                            open_upvalue.stack_slot().unwrap() == self.stack.len() - 1
-                        })
-                        .expect("Should have an open upvalue at the top of the stack");
+                    self.close_upvalues(self.stack.len() - 1);
 
-                    let open_upvalue = self.open_upvalues.get_mut(index).unwrap();
-                    unsafe {
-                        let value = self.stack.pop();
-                        *open_upvalue.deref_mut() = Upvalue::Closed(value)
-                    }
-
-                    self.open_upvalues.swap_remove(index);
+                    let value = self.stack.pop();
+                    log::trace!("Closed upvalue with value: {:?}", value);
                 }
                 Instruction::Constant { index } => {
                     let constant = self.frame_chunk().constants().get(index as usize).unwrap();
