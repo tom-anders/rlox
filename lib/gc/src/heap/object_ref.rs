@@ -142,6 +142,12 @@ pub type UpvalueRef = TypedObjectRef<Upvalue>;
 pub type ClassRef = TypedObjectRef<Class>;
 pub type BoundMethodRef = TypedObjectRef<BoundMethod>;
 
+impl<T> std::fmt::Display for TypedObjectRef<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0.deref())
+    }
+}
+
 impl<T> Deref for TypedObjectRef<T>
 where
     for<'a> &'a T: TryFrom<&'a Object>,

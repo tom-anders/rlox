@@ -2,7 +2,8 @@ use instructions::Arity;
 
 use crate::{FunctionRef, UpvalueRef};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, derive_more::Display)]
+#[display(fmt = "{function}")]
 pub struct Closure {
     function: FunctionRef,
     upvalues: Vec<UpvalueRef>,

@@ -2,7 +2,8 @@ use strings::{string_interner::InternedString, table::StringTable};
 
 use crate::{ClassRef, Value};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, derive_more::Display)]
+#[display(fmt = "{} instance", class)]
 pub struct Instance {
     class: ClassRef,
     fields: StringTable<Value>,

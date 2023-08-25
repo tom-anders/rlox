@@ -1,6 +1,7 @@
 use crate::{ClosureRef, InstanceRef};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, derive_more::Display)]
+#[display(fmt = "{method}")]
 pub struct BoundMethod {
     receiver: InstanceRef,
     method: ClosureRef,

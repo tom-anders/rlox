@@ -2,9 +2,10 @@
 
 use strings::{string_interner::InternedString, table::StringTable};
 
-use crate::{ClosureRef};
+use crate::ClosureRef;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, derive_more::Display)]
+#[display(fmt = "{name}")]
 pub struct Class {
     name: InternedString,
     methods: StringTable<ClosureRef>,
