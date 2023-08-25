@@ -1,3 +1,5 @@
+use std::println;
+
 use gc::{Chunk, ClosureRef, Value};
 
 use itertools::Itertools;
@@ -177,7 +179,8 @@ impl Stack {
                 } else {
                     format!("{}()", function.name)
                 };
-                format!("[line {}] in {}", function.chunk.lines()[frame.ip()], name)
+                // -1 because the IP is always on the next instruction
+                format!("[line {}] in {}", function.chunk.lines()[frame.ip() - 1], name)
             })
             .collect_vec()
             .join("\n")
