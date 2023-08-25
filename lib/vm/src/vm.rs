@@ -39,7 +39,8 @@ pub enum InterpretError {
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq)]
 pub enum RuntimeError {
-    #[error("Expected a number, got {0}.")]
+    #[cfg_attr(feature = "strict", error("Operand must be a number."))]
+    #[cfg_attr(not(feature = "strict"), error("Expected a number, got {0}."))]
     InvalidNegateOperant(Value),
     #[cfg_attr(not(feature = "strict"), error("Expected two numbers, got {0} and {1}."))]
     #[cfg_attr(feature = "strict", error("Operands must be numbers."))]
