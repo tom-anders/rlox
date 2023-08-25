@@ -1,10 +1,18 @@
 use crate::{ClosureRef, InstanceRef};
 
-#[derive(Clone, Debug, PartialEq, derive_more::Display)]
+#[derive(Clone, Debug, derive_more::Display)]
 #[display(fmt = "{method}")]
 pub struct BoundMethod {
     receiver: InstanceRef,
     method: ClosureRef,
+}
+
+// See operator/equals_method.lox in the official test suite,
+// lox considers bound method to be equal if and only if they are the same object.
+impl PartialEq for BoundMethod {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other)
+    }
 }
 
 impl BoundMethod {
