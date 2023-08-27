@@ -81,6 +81,8 @@ pub enum CompilerErrorType {
     ExpectedLeftParen(&'static str),
     #[error("Too much code to jump over.")]
     TooLargeJump,
+    #[error("Loop body too large.")]
+    LoopBodyTooLarge,
     #[error("Expect function name.")]
     ExpectedFunctionName,
     #[error("Can't have more than 255 arguments.")]
@@ -230,6 +232,7 @@ impl ClassToCompile {
 #[derive(Debug)]
 pub struct Compiler<'a, 'b> {
     token_stream: Peekable<TokenStream<'a>>,
+    current_token: Option<Token<'a>>,
     functions: Vec<FunctionToCompile<'a>>,
     classes: Vec<ClassToCompile>,
     interner: &'b mut StringInterner,
@@ -243,6 +246,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         data_stack.push(FunctionToCompile::script(interner));
         Self {
             token_stream: TokenStream::new(source).peekable(),
+            current_token: None,
             functions: data_stack,
             classes: Vec::new(),
             interner,
@@ -842,7 +846,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let exit_jump = self.write_jump(Instruction::JumpIfFalse(Jump(0)), line);
         self.current_chunk().write_instruction(Instruction::Pop, line);
         self.statement()?;
-        self.write_loop(loop_start, &token)?;
+
+        self.write_loop(loop_start, &self.current_token.as_ref().unwrap().clone())?;
 
         self.patch_jump(exit_jump, &token)?;
         self.current_chunk().write_instruction(Instruction::Pop, line);
@@ -854,7 +859,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let jump = Jump(
             (self.current_chunk().code().len() - loop_start + 1 + size_of::<Jump>())
                 .try_into()
-                .map_err(|_| CompilerErrorType::TooLargeJump.at(token))?,
+                .map_err(|_| CompilerErrorType::LoopBodyTooLarge.at(token))?,
         );
         self.current_chunk().write_instruction(Instruction::Loop(jump), token.line());
         Ok(())
@@ -1276,7 +1281,15 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn advance(&mut self) -> Result<Token<'a>> {
-        self.token_stream.next().unwrap().map_err(|e| e.into())
+        match self.token_stream.next().unwrap() {
+            Ok(token) => {
+                self.current_token = Some(token.clone());
+                Ok(token)
+            }
+            Err(scan_error) => {
+                Err(scan_error.into())
+            }
+        }
     }
 
     fn add_identifier_constant(&mut self, token: &Token<'a>) -> Result<u8> {
