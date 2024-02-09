@@ -2,7 +2,8 @@ pub mod token;
 pub use token::*;
 
 use cursor::{Col, Cursor, Line};
-use token::TokenData::{self, *};
+
+use token::TokenData::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScanError {
@@ -76,6 +77,7 @@ impl<'a> Scanner<'a> {
 
     pub fn scan_token(&mut self) -> Option<Result<Token<'a>>> {
         self.start = self.cursor.clone();
+
         match self.consume()? {
             '(' => self.token(LeftParen),
             ')' => self.token(RightParen),
@@ -527,7 +529,7 @@ mod tests {
                 Ok(ExpectedToken { data: Eof, line: Line(2), col: Col(1), lexeme: "".to_string() })
             ]
         );
-        
+
         assert_eq!(
             scan_expected_tokens("\"hello\nworld\""),
             vec![
@@ -537,15 +539,9 @@ mod tests {
                     col: Col(1),
                     lexeme: "\"hello\nworld\"".to_string()
                 }),
-                Ok(ExpectedToken {
-                    data: Eof,
-                    line: Line(2),
-                    col: Col(7),
-                    lexeme: "".to_string()
-                })
+                Ok(ExpectedToken { data: Eof, line: Line(2), col: Col(7), lexeme: "".to_string() })
             ]
         );
-
     }
     #[test]
     fn two_char_tokens() {

@@ -3,6 +3,7 @@ members = [
     "bin",
     "lib/*",
 ]
+resolver = "2"
 
 [workspace.dependencies]
 thiserror = { version = "1.0" }
