@@ -167,7 +167,7 @@ impl Vm {
                             got: arg_count,
                         });
                     }
-                    self.stack.push_frame(obj.clone().try_into().unwrap())?;
+                    self.stack.push_frame(obj.clone().into())?;
                     Ok(())
                 }
                 Object::Class(_) => {

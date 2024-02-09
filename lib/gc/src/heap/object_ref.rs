@@ -106,23 +106,23 @@ impl ObjectRef {
     }
 
     pub fn unwrap_instance(self) -> InstanceRef {
-        self.try_into().unwrap()
+        self.into()
     }
 
     pub fn unwrap_function(self) -> FunctionRef {
-        self.try_into().unwrap()
+        self.into()
     }
 
     pub fn unwrap_closure(self) -> ClosureRef {
-        self.try_into().unwrap()
+        self.into()
     }
 
     pub fn unwrap_class(self) -> ClassRef {
-        self.try_into().unwrap()
+        self.into()
     }
 
     pub fn unwrap_string(self) -> StringRef {
-        self.try_into().unwrap()
+        self.into()
     }
 }
 

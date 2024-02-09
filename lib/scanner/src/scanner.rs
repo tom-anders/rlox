@@ -296,7 +296,7 @@ mod tests {
     impl<'a> From<Token<'a>> for ExpectedToken<'a> {
         fn from(token: Token<'a>) -> Self {
             ExpectedToken {
-                data: token.data.clone(),
+                data: token.data,
                 line: token.line(),
                 col: token.col(),
                 lexeme: token.lexeme().to_string(),
