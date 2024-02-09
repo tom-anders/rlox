@@ -1,5 +1,3 @@
-
-
 use gc::{Chunk, ClosureRef, Value};
 
 use itertools::Itertools;
@@ -94,10 +92,12 @@ impl Stack {
 
     #[must_use = "Must handle stack overflow"]
     pub fn push_frame(&mut self, closure: ClosureRef) -> RuntimeResult<()> {
-        self.frames.push(CallFrame::new(
-            closure.clone(),
-            self.values.len() - closure.arity().0 as usize - 1,
-        )).ok_or_else(|| RuntimeError::StackOverflow)
+        self.frames
+            .push(CallFrame::new(
+                closure.clone(),
+                self.values.len() - closure.arity().0 as usize - 1,
+            ))
+            .ok_or_else(|| RuntimeError::StackOverflow)
     }
 
     pub fn pop_frame(&mut self) -> CallFrame {

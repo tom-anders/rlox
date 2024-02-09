@@ -2,8 +2,8 @@ use std::{io::Write, ops::Deref};
 
 use compiler::{Compiler, CompilerErrors};
 use gc::{
-    BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef,
-    NativeFun, Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value,
+    BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef, NativeFun,
+    Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value,
 };
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
@@ -45,7 +45,10 @@ pub enum RuntimeError {
     #[cfg_attr(not(feature = "strict"), error("Expected two numbers, got {0} and {1}."))]
     #[cfg_attr(feature = "strict", error("Operands must be numbers."))]
     InvalidBinaryOperants(Value, Value),
-    #[cfg_attr(not(feature = "strict"), error("Expected two numbers or two strings, got {0} and {1}."))]
+    #[cfg_attr(
+        not(feature = "strict"),
+        error("Expected two numbers or two strings, got {0} and {1}.")
+    )]
     #[cfg_attr(feature = "strict", error("Operands must be two numbers or two strings."))]
     InvalidAddOperands(Value, Value),
     #[error("Undefined variable '{0}'.")]
@@ -141,7 +144,11 @@ impl Vm {
         self.stack.stack_trace()
     }
 
-    pub fn run_source(&mut self, source: &str, stdout: &mut impl Write) -> std::result::Result<(), InterpretError> {
+    pub fn run_source(
+        &mut self,
+        source: &str,
+        stdout: &mut impl Write,
+    ) -> std::result::Result<(), InterpretError> {
         // If the previous call to run_source failed, the stack will still contain values/frames.
         // This is needed so that we can show the strack trace.
         // But once we try to execute more code, we need to clear the stack.
@@ -232,15 +239,12 @@ impl Vm {
 
     fn close_upvalues(&mut self, last_slot: u8) {
         self.open_upvalues.retain_mut(|open_upvalue| {
-            let retain =
-                open_upvalue.stack_slot().unwrap() < last_slot;
+            let retain = open_upvalue.stack_slot().unwrap() < last_slot;
             if !retain {
                 log::trace!("Closing upvalue {:?}", open_upvalue);
                 unsafe {
-                    let value = self
-                        .stack
-                        .global_stack_at(open_upvalue.stack_slot().unwrap())
-                        .clone();
+                    let value =
+                        self.stack.global_stack_at(open_upvalue.stack_slot().unwrap()).clone();
                     *open_upvalue.deref_mut() = Upvalue::Closed(value)
                 }
             }
@@ -322,17 +326,16 @@ impl Vm {
                     let val = self.stack.peek();
                     match self.globals.get_mut(name) {
                         Some(entry) => *entry = val.clone(),
-                        None => {
-                            return Err(RuntimeError::UndefinedVariable(name.to_string()))
-                        }
+                        None => return Err(RuntimeError::UndefinedVariable(name.to_string())),
                     };
                 }
                 Instruction::GetGlobal { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
-                    let value = self.globals.get(name).ok_or_else(|| {
-                        RuntimeError::UndefinedVariable(name.to_string())
-                    })?;
+                    let value = self
+                        .globals
+                        .get(name)
+                        .ok_or_else(|| RuntimeError::UndefinedVariable(name.to_string()))?;
 
                     self.push(value.clone())?;
                 }
@@ -347,9 +350,7 @@ impl Vm {
                 Instruction::False => self.push(Value::Boolean(false))?,
                 Instruction::Negate => {
                     let v = self.stack.pop();
-                    let neg = v
-                        .negate()
-                        .ok_or_else(|| RuntimeError::InvalidNegateOperant(v))?;
+                    let neg = v.negate().ok_or_else(|| RuntimeError::InvalidNegateOperant(v))?;
                     self.push(neg)?;
                 }
                 Instruction::Not => {
@@ -364,7 +365,9 @@ impl Vm {
 
                 Instruction::Less => binary_op!(less_than),
                 Instruction::Greater => binary_op!(greater_than),
-                Instruction::Add => binary_op!(add, InvalidAddOperands, &mut self.heap, &mut self.string_interner),
+                Instruction::Add => {
+                    binary_op!(add, InvalidAddOperands, &mut self.heap, &mut self.string_interner)
+                }
                 Instruction::Subtract => binary_op!(subtract),
                 Instruction::Multiply => binary_op!(multiply),
                 Instruction::Divide => binary_op!(divide),
@@ -402,9 +405,7 @@ impl Vm {
                                 self.invoke_from_class(instance.class(), name, arg_count)?
                             }
                         }
-                        None => {
-                            return Err(RuntimeError::OnlyInstancesHaveMethods)
-                        }
+                        None => return Err(RuntimeError::OnlyInstancesHaveMethods),
                     }
                 }
                 Instruction::Closure { constant_index, upvalue_count } => {
@@ -491,9 +492,7 @@ impl Vm {
                                 subclass.deref_mut().set_methods(superclass.methods().clone())
                             }
                         }
-                        None => {
-                            return Err(RuntimeError::SuperclassMustBeAClass)
-                        }
+                        None => return Err(RuntimeError::SuperclassMustBeAClass),
                     }
                 }
                 Instruction::GetProperty { constant_index } => {
@@ -514,9 +513,7 @@ impl Vm {
                         self.stack.pop();
                         self.push(bound_method)?;
                     } else {
-                        return Err(
-                            RuntimeError::UndefinedProperty(name.to_string())
-                        );
+                        return Err(RuntimeError::UndefinedProperty(name.to_string()));
                     }
                 }
                 Instruction::GetSuper { constant_index } => {
@@ -532,18 +529,20 @@ impl Vm {
                         self.stack.pop();
                         self.push(bound_method)?;
                     } else {
-                        return Err(
-                            RuntimeError::UndefinedProperty(name.to_string())
-                        );
+                        return Err(RuntimeError::UndefinedProperty(name.to_string()));
                     }
                 }
                 Instruction::SetProperty { constant_index } => {
                     let name = self.stack.frame_chunk().get_string_constant(constant_index);
 
-                    let mut object: ObjectRef =
-                        self.stack.value_stack().peek_nth(1).clone().try_into().ok().ok_or_else(
-                            || RuntimeError::InvalidFieldAccess,
-                        )?;
+                    let mut object: ObjectRef = self
+                        .stack
+                        .value_stack()
+                        .peek_nth(1)
+                        .clone()
+                        .try_into()
+                        .ok()
+                        .ok_or_else(|| RuntimeError::InvalidFieldAccess)?;
                     let object = unsafe { object.deref_mut() };
 
                     if let Object::Instance(instance) = object {
@@ -739,9 +738,7 @@ mod tests {
 
         assert_eq!(
             vm.run_source("print foo.bar();", &mut output),
-            Err(InterpretError::RuntimeError (
-                RuntimeError::NotAFunction,
-            ))
+            Err(InterpretError::RuntimeError(RuntimeError::NotAFunction,))
         );
     }
 
@@ -777,9 +774,7 @@ mod tests {
         let mut output = Vec::new();
         assert_eq!(
             Vm::new().run_source(source, &mut output).unwrap_err(),
-            InterpretError::RuntimeError(
-                RuntimeError::UndefinedProperty("bar".to_string())
-            )
+            InterpretError::RuntimeError(RuntimeError::UndefinedProperty("bar".to_string()))
         )
     }
 
@@ -819,23 +814,26 @@ mod tests {
 
         assert_eq!(
             vm.run_source("var foo = Foo();", &mut output).unwrap_err(),
-            InterpretError::RuntimeError (
-                RuntimeError::InvalidArgumentCount { expected: Arity(1), got: Arity(0) }
-            )
+            InterpretError::RuntimeError(RuntimeError::InvalidArgumentCount {
+                expected: Arity(1),
+                got: Arity(0)
+            })
         );
 
         assert_eq!(
             vm.run_source("foo = Foo(123, 456);", &mut output).unwrap_err(),
-            InterpretError::RuntimeError (
-                RuntimeError::InvalidArgumentCount { expected: Arity(1), got: Arity(2) }
-            )
+            InterpretError::RuntimeError(RuntimeError::InvalidArgumentCount {
+                expected: Arity(1),
+                got: Arity(2)
+            })
         );
 
         assert_eq!(
             vm.run_source("var bar = Bar(123);", &mut output).unwrap_err(),
-            InterpretError::RuntimeError (
-                RuntimeError::InvalidArgumentCount { expected: Arity(0), got: Arity(1) }
-            )
+            InterpretError::RuntimeError(RuntimeError::InvalidArgumentCount {
+                expected: Arity(0),
+                got: Arity(1)
+            })
         );
     }
 

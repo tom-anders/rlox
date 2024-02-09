@@ -45,7 +45,12 @@ impl CompilerError {
 
 impl From<ScanError> for CompilerErrors {
     fn from(value: ScanError) -> Self {
-        CompilerError { error: CompilerErrorType::ScanError(value.error), line: value.line, at: "".to_string() }.into()
+        CompilerError {
+            error: CompilerErrorType::ScanError(value.error),
+            line: value.line,
+            at: "".to_string(),
+        }
+        .into()
     }
 }
 
@@ -123,10 +128,15 @@ pub enum CompilerErrorType {
 
 impl CompilerErrorType {
     fn at(self, token: &Token) -> CompilerErrors {
-        CompilerError::new(self, token.line(), match token.ty() {
-            Eof => "end".to_string(),
-            _ => format!("'{}'", token.lexeme()),
-        }).into()
+        CompilerError::new(
+            self,
+            token.line(),
+            match token.ty() {
+                Eof => "end".to_string(),
+                _ => format!("'{}'", token.lexeme()),
+            },
+        )
+        .into()
     }
 }
 
@@ -457,7 +467,6 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("parameters"))?;
 
         Ok(arity)
-
     }
 
     fn function(&mut self, ty: FunctionType, name: &'a str) -> Result<()> {
@@ -480,10 +489,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 // the function body correctly (instead of getting errors like "Expected left brace")
                 self.synchronize_until(LeftBrace);
                 e
-            },
+            }
         };
 
-        self.consume_or_error(LeftBrace, CompilerErrorType::ExpectedLeftBrace("before function body"))?;
+        self.consume_or_error(
+            LeftBrace,
+            CompilerErrorType::ExpectedLeftBrace("before function body"),
+        )?;
 
         let end_fun_line = self.block()?.line();
 
@@ -587,7 +599,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
         {
             log::debug!("Resolved local {:?} @{stack_slot}", identifier);
             (Instruction::GetLocal { stack_slot }, Instruction::SetLocal { stack_slot })
-        } else if let Some(upvalue_index) = Self::resolve_upvalue(&mut self.functions, identifier)? {
+        } else if let Some(upvalue_index) = Self::resolve_upvalue(&mut self.functions, identifier)?
+        {
             log::debug!("Resolved upvalue {:?} @{upvalue_index}", identifier);
             (Instruction::GetUpvalue { upvalue_index }, Instruction::SetUpvalue { upvalue_index })
         } else {
@@ -605,7 +618,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Ok(())
     }
 
-    fn resolve_upvalue(functions: &mut [FunctionToCompile], identifier: &Token<'a>) -> Result<Option<u8>> {
+    fn resolve_upvalue(
+        functions: &mut [FunctionToCompile],
+        identifier: &Token<'a>,
+    ) -> Result<Option<u8>> {
         log::debug!("Trying to resolve upvalue for {:?}", identifier);
 
         let previous = match functions.iter_mut().rev().nth(1) {
@@ -636,7 +652,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Ok(None)
     }
 
-    fn add_upvalue(upvalues: &mut Vec<CompiledUpvalue>, upvalue: CompiledUpvalue, identifier: &Token<'a>) -> Result<u8> {
+    fn add_upvalue(
+        upvalues: &mut Vec<CompiledUpvalue>,
+        upvalue: CompiledUpvalue,
+        identifier: &Token<'a>,
+    ) -> Result<u8> {
         match upvalues.iter().position(|u| u == &upvalue) {
             Some(index) => Ok(index as u8),
             None => {
@@ -652,17 +672,23 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn resolve_local(locals: &[Local], identifier: &Token<'a>) -> Result<Option<u8>> {
         trace!("Trying to resolve local {:?} from {:?}", identifier.lexeme(), locals);
-        locals.iter().rev().enumerate().find_map(|(i, local)| {
-            if local.name == identifier.lexeme() {
-                match local.depth {
-                    Some(_) => Some(Ok((locals.len() - i - 1) as u8)),
-                    None => Some(Err(CompilerErrorType::LocalInItsOwnInitializer.at(identifier))),
+        locals
+            .iter()
+            .rev()
+            .enumerate()
+            .find_map(|(i, local)| {
+                if local.name == identifier.lexeme() {
+                    match local.depth {
+                        Some(_) => Some(Ok((locals.len() - i - 1) as u8)),
+                        None => {
+                            Some(Err(CompilerErrorType::LocalInItsOwnInitializer.at(identifier)))
+                        }
+                    }
+                } else {
+                    None
                 }
-            } else {
-                None
-            }
-        })
-        .transpose()
+            })
+            .transpose()
     }
 
     fn var_declaration(&mut self) -> Result<()> {
@@ -764,9 +790,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn return_statement(&mut self, return_token: &Token<'a>) -> Result<()> {
         if self.current_function_type() == FunctionType::Script {
-            return Err(
-                CompilerErrorType::ReturnOutsideFunction.at(return_token)
-            );
+            return Err(CompilerErrorType::ReturnOutsideFunction.at(return_token));
         }
 
         if let Ok(token) = self.consume(Semicolon)? {
@@ -803,10 +827,14 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let mut exit_jump = None;
         if self.consume(Semicolon)?.is_err() {
             self.expression()?;
-            self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolonAfter("loop condition"))?;
+            self.consume_or_error(
+                Semicolon,
+                CompilerErrorType::ExpectedSemicolonAfter("loop condition"),
+            )?;
 
             exit_jump = Some(self.write_jump(Instruction::JumpIfFalse(Jump(0)), for_token.line()));
-            self.current_chunk().write_instruction(Instruction::Pop, for_token.line()); // Condition
+            self.current_chunk().write_instruction(Instruction::Pop, for_token.line());
+            // Condition
         }
 
         if self.consume(RightParen)?.is_err() {
@@ -814,7 +842,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
             let increment_start = self.current_chunk().code().len();
             self.expression()?;
             self.current_chunk().write_instruction(Instruction::Pop, for_token.line());
-            let right_paren = self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("for clauses"))?;
+            let right_paren = self.consume_or_error(
+                RightParen,
+                CompilerErrorType::ExpectedRightParen("for clauses"),
+            )?;
 
             self.write_loop(loop_start, &right_paren)?;
             loop_start = increment_start;
@@ -942,7 +973,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             .drain(num_locals - last_local_in_scope..)
             // Reverse the order such that we pop locals from the stack in the correct order.
             // For non-captured locals this does not matter, but for captured locals we emit
-            // CloseUpvalue instead of Pop, for which the VM expects the corresponding local 
+            // CloseUpvalue instead of Pop, for which the VM expects the corresponding local
             // to be on top of the stack
             .rev()
             .collect_vec()
@@ -953,10 +984,12 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 // captured, so close the upvalue instead of emitting a pop.
                 // If there was no capture at all, we can just do another pop instead.
                 if let Some(Local { is_captured: true, .. }) = locals.last() {
-                    self.current_chunk().write_instruction(Instruction::PopN(locals.len() as u8 - 1), line);
+                    self.current_chunk()
+                        .write_instruction(Instruction::PopN(locals.len() as u8 - 1), line);
                     self.current_chunk().write_instruction(Instruction::CloseUpvalue, line);
                 } else {
-                    self.current_chunk().write_instruction(Instruction::PopN(locals.len() as u8), line);
+                    self.current_chunk()
+                        .write_instruction(Instruction::PopN(locals.len() as u8), line);
                 }
             });
 
@@ -996,7 +1029,9 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn expression_statement(&mut self) -> Result<()> {
         self.expression()?;
-        let line = self.consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolonAfter("expression"))?.line();
+        let line = self
+            .consume_or_error(Semicolon, CompilerErrorType::ExpectedSemicolonAfter("expression"))?
+            .line();
         self.current_chunk().write_instruction(Instruction::Pop, line);
         Ok(())
     }
@@ -1237,7 +1272,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 },
                 Some(Err(_)) => {
                     self.advance().unwrap_err();
-                },
+                }
                 None => return,
             }
         }
@@ -1286,9 +1321,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 self.current_token = Some(token.clone());
                 Ok(token)
             }
-            Err(scan_error) => {
-                Err(scan_error.into())
-            }
+            Err(scan_error) => Err(scan_error.into()),
         }
     }
 
