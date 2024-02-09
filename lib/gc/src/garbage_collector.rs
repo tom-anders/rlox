@@ -1,3 +1,4 @@
+#[cfg(debug_assertions)]
 use std::rc::Rc;
 
 use crate::{Heap, Object, ObjectRef, Upvalue, Value};

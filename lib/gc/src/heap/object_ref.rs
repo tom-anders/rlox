@@ -1,8 +1,10 @@
 use std::{
     marker::PhantomData,
     ops::Deref,
-    rc::{Rc, Weak},
 };
+
+#[cfg(debug_assertions)]
+use std::rc::{Rc, Weak};
 
 use strings::string_interner::InternedString;
 
