@@ -19,5 +19,10 @@ pub fn book_repo_benchmarks(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, book_repo_benchmarks);
+criterion_group! {
+    name = benches;
+    // Running the book benchmarks takes a few seconds, so use a low sample size
+    config = Criterion::default().sample_size(10);
+    targets = book_repo_benchmarks
+}
 criterion_main!(benches);
