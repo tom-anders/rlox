@@ -201,7 +201,7 @@ impl Vm {
                 Object::NativeFun(native_fun) => {
                     let args = self.stack.iter().rev().take(arg_count.0 as usize).cloned();
                     let result = native_fun.0(args.collect());
-                    self.stack.pop_n(arg_count.0 as usize);
+                    self.stack.pop_n(arg_count.0 as usize + 1);
                     self.push(result)?;
                     Ok(())
                 }
@@ -934,5 +934,18 @@ mod tests {
         let mut output = Vec::new();
         Vm::new().run_source(source, &mut output).unwrap();
         assert_eq!(String::from_utf8(output).unwrap().lines().collect_vec(), vec!["A", "A"]);
+    }
+
+    #[test]
+    fn call_native_fn() {
+        let mut vm = Vm::new();
+        vm.define_native("increment", |args| Value::Number(args[0].clone().unwrap_number() + 1.0));
+        let source = r#"
+            print increment(123);
+"#;
+
+        let mut output = Vec::new();
+        vm.run_source(source, &mut output).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap().lines().collect_vec(), vec!["124"]);
     }
 }
