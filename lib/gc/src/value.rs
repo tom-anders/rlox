@@ -12,7 +12,7 @@ mod closure;
 pub use closure::*;
 
 mod upvalue;
-use strings::string_interner::StringInterner;
+use strings::string_interner::{StringInterner, InternedString};
 pub use upvalue::*;
 
 mod class;
@@ -63,6 +63,16 @@ impl Value {
             // to the same string.
             (Value::Object(a), Value::Object(b)) => a.deref() == b.deref(),
             (a, b) => a == b,
+        }
+    }
+
+    pub fn equals_string(&self, s: &InternedString) -> bool {
+        match self {
+            Value::Object(o) => match o.deref() {
+                Object::String(string) => string == s,
+                _ => false,
+            },
+            _ => false,
         }
     }
 

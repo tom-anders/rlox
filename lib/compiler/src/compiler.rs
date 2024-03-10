@@ -1,4 +1,4 @@
-use std::{fmt::Display, iter::Peekable, mem::size_of, unreachable};
+use std::{fmt::Display, iter::Peekable, mem::size_of, ops::Deref, unreachable};
 
 use cursor::Line;
 use gc::{Chunk, Closure, ClosureRef, Function, Heap, Object, ObjectRef, Value};
@@ -1327,7 +1327,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn add_identifier_constant(&mut self, token: &Token<'a>) -> Result<u8> {
         let name = self.interner.intern(token.lexeme());
-        self.add_object_constant(name, token)
+        match self.current_chunk().constants().iter().position(|v| v.equals_string(&name)) {
+            Some(index) => Ok(index.try_into().unwrap()),
+            None => self.add_object_constant(name, token),
+        }
     }
 
     fn add_object_constant(&mut self, obj: impl Into<Object>, token: &Token<'a>) -> Result<u8> {
