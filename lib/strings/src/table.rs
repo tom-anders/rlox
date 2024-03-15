@@ -168,48 +168,59 @@ impl<V> Entry<V> {
 
 #[cfg(test)]
 mod tests {
+    use crate::string_interner::StringInterner;
+
     use super::*;
 
     #[test]
     fn table() {
         let mut table = StringTable::new();
-        table.insert(InternedString::new("hello"), 1);
-        table.insert(InternedString::new("world"), 2);
-        assert_eq!(table.get(InternedString::new("world")), Some(&2));
-        table.insert(InternedString::new("a"), 3);
-        table.insert(InternedString::new("b"), 4);
-        table.insert(InternedString::new("c"), 5);
-        table.insert(InternedString::new("d"), 6);
-        table.insert(InternedString::new("e"), 7);
-        table.insert(InternedString::new("f"), 8);
+        let mut interner = StringInterner::with_capacity(8);
+        table.insert(interner.intern("hello"), 1);
+        table.insert(interner.intern("world"), 2);
+        assert_eq!(table.get(interner.intern("world")), Some(&2));
+        table.insert(interner.intern("a"), 3);
+        table.insert(interner.intern("b"), 4);
+        table.insert(interner.intern("c"), 5);
+        table.insert(interner.intern("d"), 6);
+        table.insert(interner.intern("e"), 7);
+        table.insert(interner.intern("f"), 8);
 
-        assert_eq!(table.get(InternedString::new("world")), Some(&2));
-        assert_eq!(table.get(InternedString::new("nope")), None);
-        assert_eq!(table.get_mut(InternedString::new("world")), Some(&mut 2));
-        assert_eq!(table.get_mut(InternedString::new("nope")), None);
+        assert_eq!(table.get(interner.intern("world")), Some(&2));
+        assert_eq!(table.get(interner.intern("nope")), None);
+        assert_eq!(table.get_mut(interner.intern("world")), Some(&mut 2));
+        assert_eq!(table.get_mut(interner.intern("nope")), None);
 
-        table.insert(InternedString::new("world"), -123);
-        assert_eq!(table.get(InternedString::new("world")), Some(&-123));
+        table.insert(interner.intern("world"), -123);
+        assert_eq!(table.get(interner.intern("world")), Some(&-123));
 
-        *table.get_mut(InternedString::new("e")).unwrap() = 123;
-        assert_eq!(table.get(InternedString::new("e")), Some(&123));
+        *table.get_mut(interner.intern("e")).unwrap() = 123;
+        assert_eq!(table.get(interner.intern("e")), Some(&123));
     }
 
     #[test]
     fn get_str_eq() {
         let s = "s".to_string();
         let mut table = StringTable::new();
-        table.insert(InternedString::new(s.as_str()), 123);
+        let mut interner = StringInterner::with_capacity(16);
 
-        assert_eq!(table.get(InternedString::new(s.as_str())), Some(&123));
+        let s_internered = interner.intern(s.as_str());
+        table.insert(s_internered, 123);
 
-        #[allow(clippy::redundant_clone)]
-        let s2 = s.clone();
-        assert_eq!(table.get(InternedString::new(s2.as_str())), None);
-        assert_eq!(table.get_str_eq(InternedString::new("hkjhkjhkj")), None);
-        assert_eq!(
-            table.get_str_eq(InternedString::new(s2.as_str())),
-            Some(&InternedString::new(s.as_str()))
-        );
+        assert_eq!(table.get(s_internered), Some(&123));
+        assert_eq!(table.get_str_eq(s_internered), Some(&s_internered));
+        assert_eq!(table.get_str_eq(interner.intern("hkjhkjhkj")), None);
+
+        let mut interner2 = StringInterner::with_capacity(16);
+
+        // Clone the string to give it a different address, and then intern it in a second interner,
+        // such that the resulting interned string has a different address as well.
+        let s_cloned_interned = interner2.intern(&s.clone());
+        assert_ne!(s_internered, s_cloned_interned);
+
+        // Now, normal get() returns None because it only compares the address, but get_str_eq()
+        // findfs the original interned string since it should do full string comparison.
+        assert_eq!(table.get(s_cloned_interned), None);
+        assert_eq!(table.get_str_eq(s_cloned_interned), Some(&s_internered));
     }
 }

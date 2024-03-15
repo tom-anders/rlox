@@ -4,17 +4,13 @@ use crate::table::StringTable;
 
 #[derive(Eq, Clone, Copy)]
 pub struct InternedString {
-    ptr: *const str,
+    pub(crate) ptr: *const str,
     pub(crate) hash: usize,
 }
 
 impl InternedString {
     fn hash(s: &str) -> usize {
         s.bytes().fold(2166136261, |hash, byte| (hash ^ byte as usize).wrapping_mul(16777619))
-    }
-
-    pub fn new(s: &str) -> Self {
-        Self { ptr: s as *const str, hash: Self::hash(s) }
     }
 
     #[allow(clippy::op_ref)]
