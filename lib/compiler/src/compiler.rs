@@ -1,4 +1,4 @@
-use std::{fmt::Display, iter::Peekable, mem::size_of, ops::Deref, unreachable};
+use std::{fmt::Display, iter::Peekable, mem::size_of, unreachable};
 
 use cursor::Line;
 use gc::{Chunk, Closure, ClosureRef, Function, Heap, Object, ObjectRef, Value};
