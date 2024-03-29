@@ -16,9 +16,20 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+      with: 
+        submodules: true
     - name: Build
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Execute official test suite
+      run: |
+           # https://github.com/munificent/craftinginterpreters/issues/993#issuecomment-1613917808
+           wget https://storage.googleapis.com/dart-archive/channels/stable/release/2.12.0/sdk/dartsdk-linux-x64-release.zip
+           unzip dartsdk-linux-x64-release.zip
+           # This is the one test where rlox actually reports error like clox instead of jlox.
+           sed '2d;1s/3/2/' ext/craftinginterpreters/test/unexpected_character.lox -i
+           (cd ext/craftinginterpreters/tool && ../../../dart-sdk/bin/dart pub get)
+           cargo build --features strict && (cd ext/craftinginterpreters && ../../dart-sdk/bin/dart tool/bin/test.dart jlox --interpreter ../../target/debug/rlox)
     - name: Run tests (release)
       run: cargo test --release --verbose
