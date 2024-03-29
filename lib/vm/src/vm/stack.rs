@@ -103,7 +103,7 @@ impl Stack {
     pub fn pop_frame(&mut self) -> CallFrame {
         let popped_frame = self.frames.pop();
         // +1 for the function itself
-        self.pop_n(popped_frame.closure.arity().0 as usize + 1);
+        let _ = self.pop_n(popped_frame.closure.arity().0 as usize + 1);
 
         popped_frame
     }
@@ -141,7 +141,7 @@ impl Stack {
         &mut self.values[index]
     }
 
-    pub fn pop_n(&mut self, n: usize) {
+    pub fn pop_n(&mut self, n: usize) -> impl Iterator<Item = Value> + '_ {
         self.values.pop_n(n)
     }
 

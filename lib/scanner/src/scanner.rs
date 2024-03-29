@@ -83,6 +83,8 @@ impl<'a> Scanner<'a> {
             ')' => self.token(RightParen),
             '{' => self.token(LeftBrace),
             '}' => self.token(RightBrace),
+            '[' => self.token(LeftBracket),
+            ']' => self.token(RightBracket),
             ',' => self.token(Comma),
             '.' => self.token(Dot),
             '-' => self.token(Minus),

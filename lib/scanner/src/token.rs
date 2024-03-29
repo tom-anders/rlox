@@ -54,6 +54,8 @@ pub enum TokenData<'a> {
     RightParen,
     LeftBrace,
     RightBrace,
+    LeftBracket,
+    RightBracket,
     Comma,
     Dot,
     Minus,

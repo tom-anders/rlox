@@ -2,8 +2,8 @@ use std::{io::Write, ops::Deref};
 
 use compiler::{Compiler, CompilerErrors};
 use gc::{
-    BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef, NativeFun,
-    Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value,
+    BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef, List,
+    NativeFun, Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value,
 };
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
@@ -69,6 +69,12 @@ pub enum RuntimeError {
     SuperclassMustBeAClass,
     #[error("Stack overflow.")]
     StackOverflow,
+    #[error("Invalid index '{0}'.")]
+    InvalidIndex(Value),
+    #[error("Index '{index}' is out of bounds (len: {len})")]
+    IndexOutOfBounds { index: isize, len: usize },
+    #[error("Only lists can be indexed.")]
+    NotAList,
 }
 
 pub type InterpretResult<T> = std::result::Result<T, InterpretError>;
@@ -201,7 +207,7 @@ impl Vm {
                 Object::NativeFun(native_fun) => {
                     let args = self.stack.iter().rev().take(arg_count.0 as usize).cloned();
                     let result = native_fun.0(args.collect());
-                    self.stack.pop_n(arg_count.0 as usize + 1);
+                    let _ = self.stack.pop_n(arg_count.0 as usize + 1);
                     self.push(result)?;
                     Ok(())
                 }
@@ -300,7 +306,7 @@ impl Vm {
                     self.stack.pop();
                 }
                 Instruction::PopN(n) => {
-                    self.stack.pop_n(n as usize);
+                    let _ = self.stack.pop_n(n as usize);
                 }
                 Instruction::CloseUpvalue => {
                     self.close_upvalues(self.stack.len() - 1);
@@ -567,6 +573,35 @@ impl Vm {
                     };
                     self.stack.pop();
                 }
+                Instruction::List { num_items } => {
+                    let list = self.stack.pop_n(num_items as usize).collect::<List>();
+                    let obj = self.heap.alloc(list);
+                    self.push(obj)?;
+                }
+                Instruction::Index => match self.stack.pop() {
+                    Value::Number(idx) => {
+                        if idx.fract() != 0.0 {
+                            return Err(RuntimeError::InvalidIndex(idx.into()));
+                        }
+
+                        let Value::Object(obj) = self.stack.pop() else {
+                            return Err(RuntimeError::NotAList);
+                        };
+                        let Object::List(list) = obj.deref() else {
+                            return Err(RuntimeError::NotAList);
+                        };
+
+                        if let Some(v) = list.items().get(idx as usize) {
+                            self.push(v.clone())?;
+                        } else {
+                            return Err(RuntimeError::IndexOutOfBounds {
+                                index: idx as isize,
+                                len: list.len(),
+                            });
+                        }
+                    }
+                    v => return Err(RuntimeError::InvalidIndex(v)),
+                },
             }
         }
     }
@@ -947,5 +982,73 @@ mod tests {
         let mut output = Vec::new();
         vm.run_source(source, &mut output).unwrap();
         assert_eq!(String::from_utf8(output).unwrap().lines().collect_vec(), vec!["124"]);
+    }
+
+    #[test]
+    fn lists() {
+        let source = r#"
+            fun pow2(n) {
+                return n * n;
+            }
+
+            fun makeList() {
+                return [1, 1 + 1, pow2(2), [], [1, []]];
+            }
+
+            var list = makeList();
+            print list[0];
+            print list;
+
+            list = [];
+            print list;
+            print list == list;
+            print list == [];
+            print list == [1];
+            print [1] == ["1"];
+            print [1][0];
+        "#;
+
+        let mut output = Vec::new();
+        Vm::new().run_source(source, &mut output).unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap().lines().collect_vec(),
+            vec!["1", "[1, 2, 4, [], [1, []]]", "[]", "true", "true", "false", "false", "1"]
+        );
+    }
+
+    #[test]
+    fn unterminated_list() {
+        let source = r#"var l = [1, 2, 3;
+                              var l2 = [;
+                              var l4 = [[];
+                              print [][1;
+        "#;
+        let mut output = Vec::new();
+
+        assert_eq!(
+            Vm::new().run_source(source, &mut output).unwrap_err(),
+            InterpretError::CompileError(CompilerErrors(vec![
+                CompilerError::new(CompilerErrorType::ExpectedRightBracket("items"), Line(1), "';'",),
+                CompilerError::new(CompilerErrorType::ExpectedExpression, Line(2), "';'",),
+                CompilerError::new(CompilerErrorType::ExpectedRightBracket("items"), Line(3), "';'",),
+                CompilerError::new(CompilerErrorType::ExpectedRightBracket("index"), Line(4), "';'",),
+            ]))
+        );
+    }
+
+    #[test]
+    fn list_index_out_of_bounds() {
+        assert_eq!(
+            Vm::new().run_source("print [][0];", &mut Vec::new()).unwrap_err(),
+            InterpretError::RuntimeError(RuntimeError::IndexOutOfBounds { index: 0, len: 0 })
+        );
+        assert_eq!(
+            Vm::new().run_source("print [][-1];", &mut Vec::new()).unwrap_err(),
+            InterpretError::RuntimeError(RuntimeError::IndexOutOfBounds { index: -1, len: 0 })
+        );
+        assert_eq!(
+            Vm::new().run_source("print [][1.001];", &mut Vec::new()).unwrap_err(),
+            InterpretError::RuntimeError(RuntimeError::InvalidIndex(Value::Number(1.001)))
+        );
     }
 }

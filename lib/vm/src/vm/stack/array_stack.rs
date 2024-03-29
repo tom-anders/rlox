@@ -46,9 +46,14 @@ impl<T, const N: usize> ArrayStack<T, N> {
         unsafe { self.stack[self.top].assume_init_read() }
     }
 
-    pub fn pop_n(&mut self, n: usize) {
+    pub fn pop_n(&mut self, n: usize) -> impl Iterator<Item = T> + '_ {
         debug_assert!(n <= self.len());
         self.top -= n;
+        unsafe {
+            // SAFETY: Before pop_n, we had n initialized elements at the top of the stack,
+            // so it is safe to read them (even though we lowered the top pointer).
+            (0..n).map(move |i| self.stack[self.top + i].assume_init_read() )
+        }
     }
 
     pub fn clear(&mut self) {
@@ -158,5 +163,8 @@ mod tests {
 
         assert_eq!(stack.peek(), &4);
         assert_eq!(stack.peek_nth(1), &3);
+
+        assert_eq!(stack.pop_n(2).collect_vec(), vec![3, 4]);
+        assert_eq!(stack.iter().collect_vec(), vec![&2]);
     }
 }

@@ -78,6 +78,8 @@ pub enum CompilerErrorType {
     InvalidAssignmentTarget,
     #[error("Expect '}}' after {0}.")]
     ExpectedRightBrace(&'static str),
+    #[error("Expect ']' after {0}.")]
+    ExpectedRightBracket(&'static str),
     #[error("Expect '{{' {0}.")]
     ExpectedLeftBrace(&'static str),
     #[error("Already a variable with this name in this scope.")]
@@ -154,6 +156,7 @@ impl CompilerErrorType {
 )]
 enum Precedence {
     None,
+    Comma,
     Assignment,
     Or,
     And,
@@ -563,6 +566,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 .write_instruction(Instruction::GetProperty { constant_index }, identifier.line());
         }
 
+        Ok(())
+    }
+
+    fn index(&mut self, token: &Token) -> Result<()> {
+        self.expression()?;
+        self.consume_or_error(TokenType::RightBracket, CompilerErrorType::ExpectedRightBracket("index"))?;
+        self.current_chunk().write_instruction(Instruction::Index, token.line());
         Ok(())
     }
 
@@ -1122,6 +1132,28 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Ok(())
     }
 
+    fn list(&mut self, token: &Token<'a>) -> Result<()> {
+        let mut num_items = 0;
+        if self.peek() != Some(Ok(TokenType::RightBracket)) {
+            loop {
+                self.expression()?;
+    
+                num_items += 1;
+
+                if self.consume(Comma)?.is_err() {
+                    break;
+                }
+            }
+        }
+        self.consume_or_error(TokenType::RightBracket, CompilerErrorType::ExpectedRightBracket("items"))?;
+
+        self.current_chunk().write_instruction(Instruction::List { num_items }, token.line());
+
+        trace!("Add list literal at with {num_items} items");
+
+        Ok(())
+    }
+
     fn grouping(&mut self, _: &Token<'a>) -> Result<()> {
         self.expression()?;
         self.consume_or_error(RightParen, CompilerErrorType::ExpectedRightParen("expression"))?;
@@ -1190,6 +1222,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             This => self.this(&token),
             Super => self.super_(&token),
             LeftParen => self.grouping(&token),
+            LeftBracket => self.list(&token),
             Minus | Bang => self.unary(&token),
             Str => self.string(&token),
             Identifier => self.variable(&token, can_assign),
@@ -1204,6 +1237,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             Plus | Minus | Slash | Star | EqualEqual | BangEqual | Greater | GreaterEqual
             | Less | LessEqual => self.binary(&token),
             LeftParen => self.call(&token),
+            LeftBracket => self.index(&token),
             Dot => self.dot(&token, can_assign),
             And => self.and(token),
             Or => self.or(token),
@@ -1217,9 +1251,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
             Slash | Star => Precedence::Factor,
             EqualEqual | BangEqual => Precedence::Equality,
             Greater | GreaterEqual | Less | LessEqual => Precedence::Comparison,
-            LeftParen | Dot => Precedence::Call,
+            LeftParen | Dot | LeftBracket => Precedence::Call,
             And => Precedence::And,
             Or => Precedence::Or,
+            Comma => Precedence::Comma,
             _ => Precedence::None,
         }
     }
