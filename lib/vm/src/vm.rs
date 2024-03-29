@@ -2,8 +2,8 @@ use std::{io::Write, ops::Deref};
 
 use compiler::{Compiler, CompilerErrors};
 use gc::{
-    BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef, NativeFun,
-    Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value,
+    BoundMethod, Chunk, Class, Closure, GarbageCollector, Heap, Instance, InstanceRef, List,
+    NativeFun, Object, ObjectRef, TypedObjectRef, Upvalue, UpvalueRef, Value,
 };
 use instructions::{Arity, Instruction, Jump};
 use itertools::Itertools;
@@ -69,6 +69,12 @@ pub enum RuntimeError {
     SuperclassMustBeAClass,
     #[error("Stack overflow.")]
     StackOverflow,
+    #[error("Invalid index: '{0}'.")]
+    InvalidIndex(Value),
+    #[error("Index '{index}' is out of bounds (len: {len})")]
+    IndexOutOfBounds { index: isize, len: usize },
+    #[error("Only lists can be indexed.")]
+    NotAList,
 }
 
 pub type InterpretResult<T> = std::result::Result<T, InterpretError>;
@@ -201,7 +207,7 @@ impl Vm {
                 Object::NativeFun(native_fun) => {
                     let args = self.stack.iter().rev().take(arg_count.0 as usize).cloned();
                     let result = native_fun.0(args.collect());
-                    self.stack.pop_n(arg_count.0 as usize + 1);
+                    let _ = self.stack.pop_n(arg_count.0 as usize + 1);
                     self.push(result)?;
                     Ok(())
                 }
@@ -300,7 +306,7 @@ impl Vm {
                     self.stack.pop();
                 }
                 Instruction::PopN(n) => {
-                    self.stack.pop_n(n as usize);
+                    let _ = self.stack.pop_n(n as usize);
                 }
                 Instruction::CloseUpvalue => {
                     self.close_upvalues(self.stack.len() - 1);
@@ -567,6 +573,36 @@ impl Vm {
                     };
                     self.stack.pop();
                 }
+                Instruction::List { num_items } => {
+                    let list = self.stack.pop_n(num_items as usize).collect::<List>();
+                    let obj = self.heap.alloc(list);
+                    self.push(obj)?;
+                }
+                Instruction::Index => match self.stack.pop() {
+                    Value::Number(idx) => {
+                        let Value::Object(obj) = self.stack.pop() else {
+                            return Err(RuntimeError::NotAList);
+                        };
+                        let Object::List(list) = obj.deref() else {
+                            return Err(RuntimeError::NotAList);
+                        };
+
+                        if idx.fract() != 0.0 || idx.floor() > usize::MAX as f64 || idx < 0.0 {
+                            return Err(RuntimeError::InvalidIndex(idx.into()));
+                        }
+                        let idx = idx.floor() as usize; 
+
+                        if let Some(v) = list.items().get(idx) {
+                            self.push(v.clone())?;
+                        } else {
+                            return Err(RuntimeError::IndexOutOfBounds {
+                                index: idx as isize,
+                                len: list.len(),
+                            });
+                        }
+                    }
+                    v => return Err(RuntimeError::InvalidIndex(v)),
+                },
             }
         }
     }

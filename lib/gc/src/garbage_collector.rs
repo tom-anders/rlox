@@ -122,6 +122,11 @@ impl GarbageCollector {
                         self.mark_ref(bound_method.receiver_mut());
                         self.mark_ref(bound_method.method_mut());
                     }
+                    Object::List(list) => {
+                        for item in list.items_mut() {
+                            self.mark_value(item);
+                        }
+                    }
                 }
             }
         }

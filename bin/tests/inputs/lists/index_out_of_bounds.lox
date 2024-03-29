@@ -1,0 +1,11 @@
+[][-1]; // runtime error: Invalid index: '-1'.
+[123][-123]; // runtime error: Invalid index: '-123'.
+[0][0.01]; // runtime error: Invalid index: '0.01'.
+[0][-0.01]; // runtime error: Invalid index: '-0.01'.
+
+[][1]; // runtime error: Index '1' is out of bounds (len: 0)
+[0][1]; // runtime error: Index '1' is out of bounds (len: 1)
+
+[[]][0][0]; // runtime error: Index '0' is out of bounds (len: 0)
+
+[[], [], [1, 2]][2][2]; // runtime error: Index '2' is out of bounds (len: 2)

@@ -70,6 +70,8 @@ pub enum Instruction {
     InvokeSuper { constant_index: u8, arg_count: Arity },
     Inherit,
     GetSuper { constant_index: u8 },
+    List { num_items: u16 },
+    Index,
 }
 
 #[cfg(test)]

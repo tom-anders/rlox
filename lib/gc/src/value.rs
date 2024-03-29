@@ -24,6 +24,9 @@ pub use instance::*;
 mod bound_method;
 pub use bound_method::*;
 
+mod list;
+pub use list::*;
+
 #[derive(
     Clone,
     PartialEq,

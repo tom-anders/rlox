@@ -1,0 +1,3 @@
+fun foo(l, l2) {}
+foo([); // Error at ')': Expect expression.
+foo([[]); // Error at ')': Expect ']' after items.
