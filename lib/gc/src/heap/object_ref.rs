@@ -3,7 +3,7 @@ use std::{
     ops::Deref,
 };
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "refcount_objects")]
 use std::rc::{Rc, Weak};
 
 use strings::string_interner::InternedString;
@@ -14,13 +14,13 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct ObjectRef(*mut GcObject, #[cfg(debug_assertions)] Weak<()>);
+pub struct ObjectRef(*mut GcObject, #[cfg(feature = "refcount_objects")] Weak<()>);
 
 impl From<&mut GcObject> for ObjectRef {
     fn from(object: &mut GcObject) -> Self {
         Self(
             object,
-            #[cfg(debug_assertions)]
+            #[cfg(feature = "refcount_objects")]
             Rc::downgrade(&object._debug),
         )
     }
@@ -69,8 +69,8 @@ impl std::fmt::Debug for ObjectRef {
 
 impl ObjectRef {
     fn debug_assert_not_dangling(&self) {
-        #[cfg(debug_assertions)]
-        debug_assert!(self.1.upgrade().is_some(), "Dangling pointer!");
+        #[cfg(feature = "refcount_objects")]
+        assert!(self.1.upgrade().is_some(), "Dangling pointer!");
     }
 
     /// # Safety

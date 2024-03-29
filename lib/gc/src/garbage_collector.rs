@@ -1,4 +1,4 @@
-#[cfg(debug_assertions)]
+#[cfg(feature = "refcount_objects")]
 use std::rc::Rc;
 
 use crate::{Heap, Object, ObjectRef, Upvalue, Value};
@@ -7,16 +7,18 @@ use crate::{Heap, Object, ObjectRef, Upvalue, Value};
 pub(crate) struct GcObject {
     is_marked: bool,
     pub(crate) object: Object,
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "refcount_objects")]
     pub(crate) _debug: Rc<()>,
 }
 
 impl GcObject {
     pub(crate) fn new(object: impl Into<Object>) -> Self {
-        #[cfg(not(debug_assertions))]
-        return Self { is_marked: false, object: object.into() };
-        #[cfg(debug_assertions)]
-        return Self { is_marked: false, object: object.into(), _debug: Rc::new(()) };
+        return Self {
+            is_marked: false,
+            object: object.into(),
+            #[cfg(feature = "refcount_objects")]
+            _debug: Rc::new(()),
+        };
     }
 
     pub(crate) fn mark_reachable(&mut self) {
@@ -126,7 +128,7 @@ impl GarbageCollector {
 
         heap.objects.retain_mut(|o| {
             let is_marked = o.is_marked();
-            #[cfg(debug_assertions)]
+            #[cfg(feature = "refcount_objects")]
             {
                 let weak_count = Rc::weak_count(&o._debug);
                 if !is_marked && weak_count != 0 {
