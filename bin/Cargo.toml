@@ -17,3 +17,9 @@ vm.path = "../lib/vm"
 
 log.workspace = true
 env_logger = "0.10.0"
+
+[dev-dependencies]
+lazy-regex = "3.1.0"
+pretty_assertions.workspace = true
+ctor.workspace = true
+test_suite_proc_macro.path = "tests/test_suite_proc_macro"
