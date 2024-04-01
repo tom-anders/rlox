@@ -1,0 +1,9 @@
+class Foo { init(foo) {} }
+class Bar {}
+
+var foo = Foo(123); 
+print foo; // expect: Foo instance
+
+foo = Foo(); // runtime error: Expected 1 arguments but got 0.
+foo = Foo(123, 456); // runtime error: Expected 1 arguments but got 2.
+var bar = Bar(123); // runtime error: Expected 0 arguments but got 1.

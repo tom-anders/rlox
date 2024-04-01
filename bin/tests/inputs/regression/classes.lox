@@ -1,0 +1,15 @@
+class Pair {
+    init(first, second) {
+        this.first_ = first;
+        this.second_ = second;
+    }
+    first() { return this.first_; }
+    second() { return this.second_; }
+}
+
+var pair = Pair(1, 2);
+print pair; // expect: Pair instance
+print pair.first_ + pair.second_; // expect: 3
+print pair.first() + pair.second(); // expect: 3
+print pair.first() == pair.first_; // expect: true
+

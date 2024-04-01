@@ -1,0 +1,14 @@
+class A { 
+    method() { print "A"; }
+}
+class B < A {
+    method() {
+        super.method(); // expect: A
+        var m = super.method;
+        return m;
+    }
+}
+var b = B();
+b.method()(); // expect: A
+
+

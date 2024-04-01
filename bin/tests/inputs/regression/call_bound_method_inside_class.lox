@@ -1,0 +1,10 @@
+class Foo { 
+    foo() { print "foo"; }
+    bar() {
+        var bar = this.foo;
+        bar();
+        return bar;
+    }
+}
+var bar = Foo().bar(); // expect: foo
+bar(); // expect: foo

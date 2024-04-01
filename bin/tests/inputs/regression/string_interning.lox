@@ -1,0 +1,6 @@
+print "a" == "a"; // expect: true
+
+var a = "a";
+var b = "b";
+var ab = a + b;
+print ab == "ab"; // expect: true

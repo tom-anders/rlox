@@ -1,0 +1,10 @@
+class Foo {
+    init() {
+        print "foo";
+    }
+}
+fun bar() {
+    var foo = Foo();
+}
+bar(); // expect: foo
+

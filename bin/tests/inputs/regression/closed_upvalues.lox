@@ -1,0 +1,17 @@
+fun outer() {
+  var x = "outside";
+  fun inner() {
+    print x;
+  }
+
+  // this tests that closures capture variables, not values
+  fun mutate_x() {
+      x = "mutated";
+  }
+  mutate_x();
+
+  return inner;
+}
+
+var closure = outer();
+closure(); // expect: mutated
