@@ -13,10 +13,10 @@ Nothing special here, simply use `cargo build --release` to build the interprete
 
 ## Testing
 
-Rlox currently passes all function tests of the  [official test
+Rlox currently passes all tests of the  [official test
 suite](https://github.com/munificent/craftinginterpreters/tree/master/test). 
-While the general architecture follows clox, the error reporting and syncrhonization actually resembles jlox (the
+While the general architecture follows clox (the book's reference implementation, written in C), the error reporting and synchronization actually resembles jlox (the
 java-implementation from the book's first part). Thus the official test suite needs to be run in "jlox" mode.
 There's a single test that fails because in this case rlox actually behaves like clox, namely `unexpected_character.rlox`.
 
-There are also some unit tests and benchmark, they can be run via the usual `cargo test` and `cargo bench` commands.
+There are also some unit tests and benchmarks, they can be run via the usual `cargo test` and `cargo bench` commands.
